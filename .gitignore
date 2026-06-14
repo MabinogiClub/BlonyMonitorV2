@@ -1,0 +1,15 @@
+*.exe
+*.exe~
+node_modules/
+frontend/dist/
+frontend/dist.backup/
+frontend/wailsjs/
+*.log
+*.pcapng
+.idea/
+.DS_Store
+
+build/bin/*
+!build/bin/mabidata.db
+!build/appicon.png
+!build/windows/icon.ico

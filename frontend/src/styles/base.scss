@@ -1,0 +1,377 @@
+/**
+ * 基础样式
+ * 定义全局样式、布局和通用组件样式
+ */
+
+// ==================== Vant 暗色主题变量覆盖 ====================
+:root {
+  // 基础颜色
+  --van-primary-color: #42a5f5;
+  --van-success-color: #4caf50;
+  --van-danger-color: #f44336;
+  --van-warning-color: #ff9800;
+  
+  // 背景颜色
+  --van-background: rgba(20, 20, 20, 0.95);
+  --van-background-2: rgba(30, 30, 30, 0.95);
+  --van-background-3: rgba(40, 40, 40, 0.95);
+  
+  // 文字颜色
+  --van-text-color: #fff;
+  --van-text-color-2: #aaa;
+  --van-text-color-3: #888;
+  
+  // 边框颜色
+  --van-border-color: rgba(255, 255, 255, 0.1);
+  
+  // 激活颜色
+  --van-active-color: rgba(255, 255, 255, 0.1);
+  
+  // 覆盖层
+  --van-overlay-background: rgba(0, 0, 0, 0.7);
+  
+  // 弹出层
+  --van-popup-background: rgba(40, 40, 40, 0.98);
+  
+  // 对话框
+  --van-dialog-background: rgba(40, 40, 40, 0.98);
+  --van-dialog-header-font-weight: 600;
+  
+  // 标签页
+  --van-tabs-default-color: #42a5f5;
+  --van-tabs-bottom-bar-color: #42a5f5;
+  --van-tab-text-color: #888;
+  --van-tab-active-text-color: #fff;
+  
+  // 复选框
+  --van-checkbox-size: 14px;
+  --van-checkbox-border-color: rgba(255, 255, 255, 0.3);
+  --van-checkbox-checked-icon-color: #42a5f5;
+  --van-checkbox-label-color: #aaa;
+  
+  // 单选框
+  --van-radio-size: 16px;
+  --van-radio-border-color: rgba(255, 255, 255, 0.3);
+  --van-radio-checked-icon-color: #42a5f5;
+  --van-radio-label-color: #fff;
+  
+  // 搜索框
+  --van-search-background: transparent;
+  --van-search-content-background: rgba(40, 40, 40, 0.8);
+  --van-search-input-height: 32px;
+  
+  // 按钮
+  --van-button-default-background: rgba(255, 255, 255, 0.1);
+  --van-button-default-border-color: rgba(255, 255, 255, 0.2);
+  --van-button-default-color: #fff;
+  
+  // 标签
+  --van-tag-font-size: 10px;
+  --van-tag-padding: 2px 6px;
+  
+  // 空状态
+  --van-empty-description-color: #888;
+  --van-empty-description-font-size: 12px;
+  
+  // 加载
+  --van-loading-spinner-color: #42a5f5;
+  --van-loading-text-color: #aaa;
+  
+  // 单元格
+  --van-cell-background: transparent;
+  --van-cell-text-color: #fff;
+  --van-cell-value-color: #aaa;
+  --van-cell-border-color: rgba(255, 255, 255, 0.1);
+}
+
+// 重置样式
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+// 根元素样式
+body {
+  font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+// 主容器 - 横向布局
+.main-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  background: rgba(20, 20, 20, 0.9);
+}
+
+// 空状态
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #666;
+}
+
+.empty-state-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+// ==================== 伤害条目样式（公用） ====================
+
+// 伤害条目
+.damage-item {
+  background: rgba(40, 40, 40, 0.6);
+  border-radius: 4px;
+  margin-bottom: 3px;
+  padding: 6px 8px;
+  position: relative;
+  overflow-x: hidden;
+  overflow-y: visible;
+
+  &.expandable {
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(50, 50, 50, 0.8);
+    }
+  }
+
+  &.expanded .expand-icon {
+    transform: rotate(90deg);
+  }
+}
+
+// 进度条背景
+.damage-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  z-index: 0;
+  transition: width 0.3s ease;
+  opacity: 0.6;
+}
+
+// 进度条颜色变体
+.bar-gold { background: linear-gradient(90deg, rgba(255, 193, 7, 0.5), rgba(255, 193, 7, 0.1)); }
+.bar-purple { background: linear-gradient(90deg, rgba(156, 39, 176, 0.4), rgba(156, 39, 176, 0.1)); }
+.bar-teal { background: linear-gradient(90deg, rgba(0, 150, 136, 0.4), rgba(0, 150, 136, 0.1)); }
+.bar-blue { background: linear-gradient(90deg, rgba(66, 165, 245, 0.4), rgba(66, 165, 245, 0.1)); }
+.bar-orange { background: linear-gradient(90deg, rgba(255, 152, 0, 0.4), rgba(255, 152, 0, 0.1)); }
+.bar-pink { background: linear-gradient(90deg, rgba(233, 30, 99, 0.4), rgba(233, 30, 99, 0.1)); }
+
+// 伤害内容
+.damage-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+// 伤害名称
+.damage-name {
+  font-weight: 500;
+  color: #fff;
+  min-width: 150px;
+  max-width: 280px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+// 伤害名称包裹器（可截断部分）
+.damage-name-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+
+// 伤害名称文本（可显示省略号）
+.damage-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// 伤害信息
+.damage-info {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+}
+
+// 伤害值
+.damage-value {
+  font-weight: 600;
+  color: #ffc107;
+  min-width: 50px;
+  text-align: right;
+}
+
+// 百分比
+.damage-percent {
+  color: #aaa;
+  min-width: 36px;
+  text-align: right;
+}
+
+// DPS
+.damage-dps {
+  color: #81c784;
+  min-width: 50px;
+  text-align: right;
+  font-size: 10px;
+}
+
+// 命中次数
+.damage-hits {
+  color: #90caf9;
+  font-size: 10px;
+}
+
+// 展开图标
+.expand-icon {
+  margin-right: 4px;
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+// 子条目容器
+.sub-items {
+  margin-left: 12px;
+  margin-top: 3px;
+}
+
+// 子条目
+.sub-item {
+  background: rgba(35, 35, 35, 0.6);
+  border-radius: 3px;
+  margin-bottom: 2px;
+  padding: 4px 8px;
+  font-size: 11px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+// 子条目进度条
+.sub-item-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  z-index: 0;
+  opacity: 0.5;
+}
+
+// 子条目内容
+.sub-item-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+// 子条目名称
+.sub-item-name {
+  color: #ccc;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// 子条目统计
+.sub-item-stats {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  font-size: 10px;
+  color: #888;
+}
+
+// 子条目伤害值
+.sub-item-damage {
+  color: #ffc107;
+}
+
+// ==================== CSS Tooltip 深色主题 ====================
+.hover-tip {
+  cursor: help;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.3);
+  position: relative;
+  z-index: 10;
+
+  // Tooltip 气泡 - 显示在左侧
+  &::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    margin-right: 10px;
+    margin-top: -15px;
+    background: rgba(50, 50, 50, 0.95);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    border: 1px solid rgba(80, 80, 80, 0.8);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, visibility 0.2s;
+    pointer-events: none;
+    z-index: 99999;
+  }
+
+  // 小三角箭头 - 指向右边
+  &::before {
+    content: '';
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    margin-right: 6px;
+    margin-top: -4px;
+    border: 4px solid transparent;
+    border-left-color: rgba(50, 50, 50, 0.95);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, visibility 0.2s;
+    pointer-events: none;
+    z-index: 99999;
+  }
+
+  // 悬停时显示
+  &:hover {
+    z-index: 9999;
+
+    &::after,
+    &::before {
+      opacity: 1;
+      visibility: visible;
+    }
+  }
+
+  // 只有有 data-tooltip 属性时才显示
+  &:not([data-tooltip])::after,
+  &:not([data-tooltip])::before {
+    display: none;
+  }
+}
