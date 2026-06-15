@@ -133,23 +133,17 @@ func (a *App) Startup(ctx context.Context) {
 
 // Shutdown ???????
 func (a *App) Shutdown(ctx context.Context) {
+	a.shutdownSaveData()
 	if a.cancel != nil {
 		a.cancel()
 	}
 }
 
-// Clear ????
+// Clear 清空数据（不保存）
 func (a *App) Clear() {
 	a.mu.Lock()
-	a.damages = make([]DamageRecord, 0)
 	a.eventLogs = make([]EventLog, 0)
-	a.attackerStats = make(map[string]*attackerAggStats)
-	a.skillStats = make(map[string]map[int]*skillAggStats)
-	a.totalDamage = 0
-	a.takenStats = make(map[string]*targetAggStats)
-	a.targetDamages = make(map[string][]DamageRecord)
-	a.chartAggData = make(map[string]*chartAttackerData)
-	a.targetChartAggData = make(map[string]map[string]*chartAttackerData)
+	a.clearDamageStateUnsafe()
 	a.mu.Unlock()
 
 	runtime.EventsEmit(a.ctx, "clear")

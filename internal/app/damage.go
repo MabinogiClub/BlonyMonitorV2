@@ -185,6 +185,15 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 	if effectiveDamage > takenSkillStat.max {
 		takenSkillStat.max = effectiveDamage
 	}
+	takenSkillStat.records = append(takenSkillStat.records, SkillHitRecord{
+		Seq:            record.Seq,
+		Damage:         effectiveDamage,
+		RawDamage:      damageFloat,
+		OverflowDamage: overflowDamage,
+		Adjusted:       adjusted,
+		IsCritical:     isCritical,
+		Timestamp:      now,
+	})
 
 	// 标记需要触发目标计时器（锁外执行）
 	shouldTriggerTargetTimer = true

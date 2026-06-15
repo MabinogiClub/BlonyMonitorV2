@@ -402,9 +402,16 @@ func (a *App) recalculateTakenSkillExtremesUnsafe(stat *takenSkillAggStats) {
 	stat.max = 0
 	stat.critMin = 0
 	stat.critMax = 0
-	nonCritCount := 0
+	hitCount := 0
 	critCount := 0
 	for _, r := range stat.records {
+		hitCount++
+		if hitCount == 1 || r.Damage < stat.min {
+			stat.min = r.Damage
+		}
+		if r.Damage > stat.max {
+			stat.max = r.Damage
+		}
 		if r.IsCritical {
 			critCount++
 			if critCount == 1 || r.Damage < stat.critMin {
@@ -412,14 +419,6 @@ func (a *App) recalculateTakenSkillExtremesUnsafe(stat *takenSkillAggStats) {
 			}
 			if r.Damage > stat.critMax {
 				stat.critMax = r.Damage
-			}
-		} else {
-			nonCritCount++
-			if nonCritCount == 1 || r.Damage < stat.min {
-				stat.min = r.Damage
-			}
-			if r.Damage > stat.max {
-				stat.max = r.Damage
 			}
 		}
 	}

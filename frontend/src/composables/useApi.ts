@@ -331,11 +331,43 @@ export async function getAllCreatures(): Promise<CreatureInfo[]> {
 }
 
 /**
- * 清空统计数据
+ * 清空统计数据（不保存）
  */
 export async function clear(): Promise<void> {
   if (!isWailsReady()) return
   return window.go.app.App.Clear()
+}
+
+/**
+ * 保存并清空统计数据
+ */
+export async function clearAndSave(): Promise<void> {
+  if (!isWailsReady()) return
+  return window.go.app.App.ClearAndSave()
+}
+
+/**
+ * 获取历史记录文件列表
+ */
+export async function getCleanedTargetsList(): Promise<string[]> {
+  if (!isWailsReady()) return []
+  return window.go.app.App.GetCleanedTargetsList()
+}
+
+/**
+ * 读取历史记录文件
+ */
+export async function readCleanedTargetFileFull(fileName: string): Promise<HistoryFileData | HistoryTarget[] | { error: string }> {
+  if (!isWailsReady()) return { error: '应用未就绪' }
+  return window.go.app.App.ReadCleanedTargetFileFull(fileName)
+}
+
+/**
+ * 获取战斗记录保存目录
+ */
+export async function getSaveDir(): Promise<string> {
+  if (!isWailsReady()) return ''
+  return window.go.app.App.GetSaveDir()
 }
 
 /**

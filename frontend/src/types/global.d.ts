@@ -44,6 +44,10 @@ interface GoApp {
   GetAllPCEntities(): Promise<EntityInfo[]>
   GetAllCreatures(): Promise<CreatureInfo[]>
   Clear(): Promise<void>
+  ClearAndSave(): Promise<void>
+  GetCleanedTargetsList(): Promise<string[]>
+  ReadCleanedTargetFileFull(fileName: string): Promise<HistoryFileData | HistoryTarget[] | { error: string }>
+  GetSaveDir(): Promise<string>
   SetClickThrough(enabled: boolean): Promise<void>
   GetClickThrough(): Promise<boolean>
   SetOpacity(opacity: number): Promise<void>
@@ -166,6 +170,48 @@ interface TakenStats {
   duration: number   // 存活时间（秒）
   attackers: AttackerDetail[]
   status?: string    // 状态: active(战斗中), idle(空闲), dead(死亡)
+}
+
+interface SkillHitRecord {
+  seq?: number
+  damage: number
+  rawDamage?: number
+  overflowDamage?: number
+  adjusted?: boolean
+  lockTriggered?: boolean
+  lockThreshold?: number
+  isCritical: boolean
+  timestamp: number
+}
+
+interface HistorySkillDetail extends SkillStats {
+  hitRecords?: SkillHitRecord[]
+}
+
+interface HistoryAttacker extends AttackerDetail {
+  isPC?: boolean
+  skillsDetail?: HistorySkillDetail[]
+  appearedAt?: number
+  lastHit?: number
+}
+
+interface BossHPHistoryItem {
+  entityId: string
+  history: BossHPRecord[]
+}
+
+interface HistoryTarget extends Omit<TakenStats, 'attackers'> {
+  targetId?: string
+  targetName?: string
+  cleanedAt?: number
+  appearedAt?: number
+  deathTime?: number
+  bossHP?: BossHPExport
+  attackers: HistoryAttacker[]
+}
+
+interface HistoryFileData {
+  targets: HistoryTarget[]
 }
 
 interface AttackerDetail {

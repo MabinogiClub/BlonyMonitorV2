@@ -44,19 +44,19 @@ function confirmQuit() {
 
 async function handleClearStats() {
   const toast = showLoadingToast({
-    message: '清理中...',
+    message: '保存并清理中...',
     forbidClick: true,
     duration: 0,
   })
 
   try {
-    await appStore.clearStats()
+    await appStore.clearAndSave()
     toast.close?.()
-    showSuccessToast('清理成功')
+    showSuccessToast('已保存并清理')
   } catch (e) {
-    console.error('清空统计失败:', e)
+    console.error('保存并清理失败:', e)
     toast.close?.()
-    showFailToast('清理失败')
+    showFailToast('保存并清理失败')
   }
 }
 
@@ -114,7 +114,7 @@ const debugIcon = computed(() => {
 
       <button
         class="titlebar-btn"
-        title="清空"
+        title="保存并清空"
         @click="handleClearStats"
       >
         <svg-icon type="mdi" :path="mdiBroom" :size="14" />

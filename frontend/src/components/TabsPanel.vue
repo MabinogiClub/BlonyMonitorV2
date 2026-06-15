@@ -10,12 +10,14 @@ import TakenView from '../views/TakenView.vue'
 import TimelineView from '../views/TimelineView.vue'
 import EntitiesView from '../views/EntitiesView.vue'
 import BuffTimerView from '../views/BuffTimerView.vue'
+import HistoryView from '../views/HistoryView.vue'
 
 const appStore = useAppStore()
 
 const tabs = [
   { name: 'bySkill', title: '造成伤害' },
   { name: 'taken', title: '受到伤害' },
+  { name: 'history', title: '历史记录' },
   { name: 'timeline', title: '玩家时间轴' },
   { name: 'entities', title: '角色列表' },
   { name: 'buffTimer', title: 'Buff通知' },
@@ -46,12 +48,13 @@ watch(activeTab, (newVal) => {
         :name="tab.name"
         :title="tab.title"
       >
-        <div class="tab-content-wrapper">
-          <DamageView v-if="tab.name === 'bySkill'" />
-          <TakenView v-else-if="tab.name === 'taken'" />
-          <TimelineView v-else-if="tab.name === 'timeline'" />
-          <EntitiesView v-else-if="tab.name === 'entities'" />
-          <BuffTimerView v-else-if="tab.name === 'buffTimer'" />
+        <div class="tab-content-wrapper" :class="{ 'history-tab-content': tab.name === 'history' }">
+          <DamageView v-if="tab.name === 'bySkill' && activeTab === 'bySkill'" />
+          <TakenView v-else-if="tab.name === 'taken' && activeTab === 'taken'" />
+          <HistoryView v-else-if="tab.name === 'history' && activeTab === 'history'" />
+          <TimelineView v-else-if="tab.name === 'timeline' && activeTab === 'timeline'" />
+          <EntitiesView v-else-if="tab.name === 'entities' && activeTab === 'entities'" />
+          <BuffTimerView v-else-if="tab.name === 'buffTimer' && activeTab === 'buffTimer'" />
         </div>
       </van-tab>
     </van-tabs>
@@ -121,6 +124,11 @@ watch(activeTab, (newVal) => {
   overflow-y: auto;
   padding: 6px;
   background: transparent;
+
+  &.history-tab-content {
+    overflow: hidden;
+    padding: 4px 6px;
+  }
 
   &::-webkit-scrollbar {
     width: 4px;

@@ -117,6 +117,7 @@ type AttackerWithSkills struct {
 	TotalDamage float64            `json:"totalDamage"`
 	DPS         float64            `json:"dps"`
 	Percent     float64            `json:"percent"`
+	IsPC        bool               `json:"isPC,omitempty"`
 	Skills      []SkillDamageStats `json:"skills"`
 	Status      string             `json:"status"` // 状态: active(战斗中), idle(空闲)
 }

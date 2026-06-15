@@ -21,6 +21,17 @@ interface Config {
 interface SelectedTarget {
   id: string
   name: string
+  deathTime?: number
+}
+
+interface BossHPHistoryItem {
+  entityId: string
+  history: BossHPRecord[]
+}
+
+interface SkillFilter {
+  skillId: number
+  attackerId?: string
 }
 
 export const useAppStore = defineStore('app', () => {
@@ -37,6 +48,12 @@ export const useAppStore = defineStore('app', () => {
   const opacity = ref(100)
 
   const chartData = ref<ChartSeries[]>([])
+  const historyChartData = ref<ChartSeries[]>([])
+  const chartTimeRange = ref({ minTime: 0, maxTime: 0 })
+  const bossHPHistoryData = ref<BossHPHistoryItem[]>([])
+  const isShowingHistory = ref(false)
+  const selectedSkillFilters = ref<SkillFilter[]>([])
+  const historyWindowSize = ref({ width: 440, height: 600 })
   const skillNameMap = ref<Record<number, string>>({})
   const skillIconMap = ref<Record<number, string>>({})
   const conditionNameMap = ref<Record<number, string>>({})
@@ -95,14 +112,67 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function setActiveTab(tab: string) {
+    if (tab === 'history') {
+      if (historyChartData.value.length > 0) {
+        isShowingHistory.value = true
+      }
+    } else if (activeTab.value === 'history') {
+      historyChartData.value = []
+      isShowingHistory.value = false
+      selectedSkillFilters.value = []
+    }
     activeTab.value = tab
+  }
+
+  function setHistoryChartData(data: ChartSeries[]) {
+    historyChartData.value = data
+    isShowingHistory.value = true
+  }
+
+  function clearHistoryChartData() {
+    historyChartData.value = []
+    bossHPHistoryData.value = []
+    if (activeTab.value === 'history') {
+      isShowingHistory.value = false
+    }
+  }
+
+  function setBossHPHistoryData(data: BossHPHistoryItem[]) {
+    bossHPHistoryData.value = data
+  }
+
+  function toggleSkillFilter(skillId: number, attackerId?: string) {
+    const index = selectedSkillFilters.value.findIndex(
+      f => f.skillId === skillId && f.attackerId === attackerId
+    )
+    if (index > -1) {
+      selectedSkillFilters.value.splice(index, 1)
+    } else {
+      selectedSkillFilters.value.push({ skillId, attackerId })
+    }
+  }
+
+  function clearSelectedSkills() {
+    selectedSkillFilters.value = []
+  }
+
+  function clearChartDisplay() {
+    historyChartData.value = []
+    bossHPHistoryData.value = []
+    isShowingHistory.value = false
+    selectedSkillFilters.value = []
   }
 
   function resetState() {
     expandedItems.value.clear()
     chartData.value = []
+    chartTimeRange.value = { minTime: 0, maxTime: 0 }
     selectedTarget.value = null
+    selectedSkillFilters.value = []
     lastEntitiesJson.value = ''
+    historyChartData.value = []
+    bossHPHistoryData.value = []
+    isShowingHistory.value = false
   }
 
   function updateConnectionStatus(connected: boolean) {
@@ -121,6 +191,11 @@ export const useAppStore = defineStore('app', () => {
 
   async function clearStats() {
     await api.clear()
+    resetState()
+  }
+
+  async function clearAndSave() {
+    await api.clearAndSave()
     resetState()
   }
 
@@ -315,6 +390,12 @@ export const useAppStore = defineStore('app', () => {
     clickThroughEnabled,
     alwaysOnTop,
     chartData,
+    historyChartData,
+    chartTimeRange,
+    bossHPHistoryData,
+    isShowingHistory,
+    selectedSkillFilters,
+    historyWindowSize,
     skillNameMap,
     skillIconMap,
     conditionNameMap,
@@ -338,11 +419,18 @@ export const useAppStore = defineStore('app', () => {
     toggleLogFilter,
     toggleDebug,
     setActiveTab,
+    setHistoryChartData,
+    clearHistoryChartData,
+    setBossHPHistoryData,
+    toggleSkillFilter,
+    clearSelectedSkills,
+    clearChartDisplay,
     resetState,
     updateConnectionStatus,
     toggleClickThrough,
     toggleAlwaysOnTop,
     clearStats,
+    clearAndSave,
     initialize,
     loadChannelsConfig,
     selectChannel,

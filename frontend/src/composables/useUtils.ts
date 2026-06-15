@@ -43,6 +43,62 @@ export function formatNumber(num: number): string {
 }
 
 /**
+ * 格式化 DPS 数值
+ */
+export function formatDps(num: number): string {
+  if (num >= 1000000) {
+    return `${(num / 1000000).toFixed(2)}m`
+  }
+  if (num >= 1000) {
+    return `${(num / 1000).toFixed(2)}k`
+  }
+  return num.toFixed(2)
+}
+
+/**
+ * 格式化伤害值（简短格式）
+ */
+export function formatDamage(num: number): string {
+  if (num >= 1000000) {
+    return `${(num / 1000000).toFixed(1)}m`
+  }
+  if (num >= 1000) {
+    return `${(num / 1000).toFixed(0)}k`
+  }
+  return num.toString()
+}
+
+/**
+ * 格式化 DPS Tooltip 文本
+ */
+export function formatDpsTooltip(dps: number, label: string = 'DPS'): string {
+  return `${label}: ${Math.round(dps).toLocaleString()}`
+}
+
+/**
+ * 格式化秒数为中文时间字符串
+ */
+export function formatSeconds(seconds: number): string {
+  const mins = Math.floor(seconds / 60)
+  const secs = (seconds % 60).toFixed(2)
+  if (mins > 0) {
+    return `${mins}分${secs}秒`
+  }
+  return `${secs}秒`
+}
+
+/**
+ * 将历史记录时间戳统一转换为图表使用的毫秒时间
+ * 兼容 overlay0603（0.01秒）与当前版本（秒）
+ */
+export function historyTimeToMs(value: number): number {
+  if (!value) return 0
+  if (value > 1e12) return value
+  if (value > 1e10) return value * 10
+  return value * 1000
+}
+
+/**
  * HTML 转义，防止 XSS
  * @param text 原始文本
  * @returns 转义后的文本

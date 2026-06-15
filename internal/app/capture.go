@@ -505,6 +505,18 @@ func (a *App) handleMapChange(pkt *packet.GamePacket) {
 		return
 	}
 
+	a.mu.RLock()
+	oldMapName := ""
+	if a.currentMap != nil {
+		oldMapName = a.currentMap.LocalName
+		if oldMapName == "" || oldMapName == "???" {
+			oldMapName = a.currentMap.MapName
+		}
+	}
+	a.mu.RUnlock()
+
+	a.cleanupAndSaveTakenStats(mapID, oldMapName)
+
 	now := time.Now().UnixMilli()
 
 	// 如果切换到非地下城地图，清除地下城状态
