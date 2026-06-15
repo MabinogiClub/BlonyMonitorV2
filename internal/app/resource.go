@@ -44,6 +44,19 @@ func (a *App) GetAllConditionNames() map[uint32]string {
 	return cond_map2
 }
 
+// GetAllConditionIcons 获取所有状态图标映射 (供前端调用)
+func (a *App) GetAllConditionIcons() map[uint32]string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	iconMap := db.GetAllConditionIcons()
+	result := make(map[uint32]string, len(iconMap))
+	for k, v := range iconMap {
+		result[uint32(k)] = v
+	}
+	return result
+}
+
 // GetAllSkillIcons 获取所有技能图标映射 (供前端调用)
 func (a *App) GetAllSkillIcons() map[int]string {
 	a.mu.RLock()

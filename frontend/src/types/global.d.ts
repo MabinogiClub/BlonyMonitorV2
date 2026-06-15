@@ -28,6 +28,7 @@ interface GoApp {
   SetAcceleratorMode(enabled: boolean): Promise<void>
   GetAllSkillNames(): Promise<Record<number, string>>
   GetAllConditionNames(): Promise<Record<number, string>>
+  GetAllConditionIcons(): Promise<Record<number, string>>
   GetAllSkillIcons(): Promise<Record<number, string>>
   GetResourceURL(): Promise<string>
   GetRegion(): Promise<string>
@@ -75,6 +76,15 @@ interface GoApp {
   DeleteCharacterInventoriesFromDB(characterName: string): Promise<void>
   // 时间轴 API
   GetPlayerTimeline(playerId: string): Promise<PlayerTimeline>
+  // Buff 定时器 API
+  GetBuffDisplayList(): Promise<BuffDisplayInfo[]>
+  GetActiveBuffTimers(): Promise<ActiveBuffTimerInfo[]>
+  GetMonitoredBuffs(): Promise<BuffInfo[]>
+  CancelBuffTimer(entityId: number, ccId: number): Promise<void>
+  SetBuffSoundEnabled(ccId: number, enabled: boolean): Promise<void>
+  SetBuffOrder(order: number[]): Promise<void>
+  SetBuffNotifyThreshold(seconds: number): Promise<void>
+  GetBuffNotifyThreshold(): Promise<number>
 }
 
 /**
@@ -351,6 +361,35 @@ interface PlayerTimeline {
   startTime: number
   endTime: number
   events: EventLog[]
+}
+
+interface BuffInfo {
+  ccId: number
+  buffName: string
+}
+
+interface BuffDisplayInfo {
+  ccId: number
+  buffName: string
+  iconData: string
+  soundEnabled: boolean
+  isActive: boolean
+  entityId: number
+  entityName: string
+  remainingTime: number
+  totalTime: number
+  willNotify: boolean
+}
+
+interface ActiveBuffTimerInfo {
+  ccId: number
+  buffName: string
+  entityId: number
+  entityName: string
+  remainingTime: number
+  totalTime: number
+  notifyAt: number
+  willNotify: boolean
 }
 
 interface BossHPRecord {

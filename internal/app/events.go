@@ -29,12 +29,20 @@ func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bo
 			if !exists {
 				entity.Conditions = append(entity.Conditions, conditionId)
 			}
+
+			if a.buffTimerMgr != nil && duration > 0 {
+				a.buffTimerMgr.StartTimer(conditionId, entityId, entity.Name, duration)
+			}
 		} else {
 			for i, cid := range entity.Conditions {
 				if cid == conditionId {
 					entity.Conditions = append(entity.Conditions[:i], entity.Conditions[i+1:]...)
 					break
 				}
+			}
+
+			if a.buffTimerMgr != nil {
+				a.buffTimerMgr.StopTimer(entityId, conditionId)
 			}
 		}
 	}

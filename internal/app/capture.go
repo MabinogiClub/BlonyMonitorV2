@@ -561,6 +561,9 @@ func (a *App) handleMapChange(pkt *packet.GamePacket) {
 
 	// 发送玩家自身信息事件（在锁外发送）
 	if selfIdChanged && selfId != "" {
+		if a.buffTimerMgr != nil {
+			a.buffTimerMgr.SetSelfId(selfId)
+		}
 		runtime.EventsEmit(a.ctx, "selfInfo", &SelfInfo{ID: selfId, Name: selfName})
 	}
 

@@ -9,6 +9,7 @@ import DamageView from '../views/DamageView.vue'
 import TakenView from '../views/TakenView.vue'
 import TimelineView from '../views/TimelineView.vue'
 import EntitiesView from '../views/EntitiesView.vue'
+import BuffTimerView from '../views/BuffTimerView.vue'
 
 const appStore = useAppStore()
 
@@ -17,6 +18,7 @@ const tabs = [
   { name: 'taken', title: '受到伤害' },
   { name: 'timeline', title: '玩家时间轴' },
   { name: 'entities', title: '角色列表' },
+  { name: 'buffTimer', title: 'Buff通知' },
 ]
 
 const activeTab = ref(appStore.activeTab)
@@ -49,6 +51,7 @@ watch(activeTab, (newVal) => {
           <TakenView v-else-if="tab.name === 'taken'" />
           <TimelineView v-else-if="tab.name === 'timeline'" />
           <EntitiesView v-else-if="tab.name === 'entities'" />
+          <BuffTimerView v-else-if="tab.name === 'buffTimer'" />
         </div>
       </van-tab>
     </van-tabs>

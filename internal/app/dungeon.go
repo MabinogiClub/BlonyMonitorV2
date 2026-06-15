@@ -85,8 +85,10 @@ func (a *App) onDungeonEnter(pkt *packet.GamePacket, info *DungeonInfo) {
 	a.mu.Lock()
 	a.currentDungeon = info
 
+	selfIdChanged := false
 	if a.selfId == "" && playerIdFromPacket != 0 {
 		a.selfId = playerIdStr
+		selfIdChanged = true
 	}
 
 	newEntities := make(map[string]*EntityInfo)
@@ -101,7 +103,12 @@ func (a *App) onDungeonEnter(pkt *packet.GamePacket, info *DungeonInfo) {
 	}
 	a.entities = newEntities
 	a.lastMapChangeAt = now
+	selfId := a.selfId
 	a.mu.Unlock()
+
+	if selfIdChanged && selfId != "" && a.buffTimerMgr != nil {
+		a.buffTimerMgr.SetSelfId(selfId)
+	}
 
 	currentMap := &CurrentMapInfo{
 		MapID:     int(info.DungeonID),

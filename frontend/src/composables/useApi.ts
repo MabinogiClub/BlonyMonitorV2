@@ -507,3 +507,27 @@ export async function getPlayerTimeline(playerId: string): Promise<PlayerTimelin
   }
   return window.go.app.App.GetPlayerTimeline(playerId)
 }
+
+/**
+ * 获取 Buff 展示列表（含声音开关与倒计时）
+ */
+export async function getBuffDisplayList(): Promise<BuffDisplayInfo[]> {
+  if (!isWailsReady()) return []
+  return window.go.app.App.GetBuffDisplayList()
+}
+
+/**
+ * 设置单个 Buff 的声音开关
+ */
+export async function setBuffSoundEnabled(ccId: number, enabled: boolean): Promise<void> {
+  if (!isWailsReady()) return
+  return window.go.app.App.SetBuffSoundEnabled(ccId, enabled)
+}
+
+/**
+ * 设置 Buff 显示顺序
+ */
+export async function setBuffOrder(order: number[]): Promise<void> {
+  if (!isWailsReady()) return
+  return window.go.app.App.SetBuffOrder(order)
+}

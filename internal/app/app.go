@@ -86,6 +86,7 @@ type App struct {
 	lastMapChangeAt    int64
 	selfId             string
 	selfName           string
+	buffTimerMgr       *BuffTimerManager
 	onHide             func()
 }
 
@@ -120,6 +121,7 @@ func (a *App) Startup(ctx context.Context) {
 	a.dpsUpdateThrottler = NewDPSUpdateThrottler(a)
 	a.attackerTimerMgr = NewAttackerTimerManager(a)
 	a.targetTimerMgr = NewTargetTimerManager(a)
+	a.buffTimerMgr = NewBuffTimerManager(a.ctx, "")
 
 	db.InitDB()
 
@@ -274,5 +276,84 @@ func (a *App) setSelfInfo(id, name string) {
 	a.selfId = id
 	a.selfName = name
 	a.mu.Unlock()
+
+	if a.buffTimerMgr != nil {
+		a.buffTimerMgr.SetSelfId(id)
+	}
+
 	runtime.EventsEmit(a.ctx, "selfInfo", &SelfInfo{ID: id, Name: name})
+}
+
+// GetActiveBuffTimers 获取当前活跃的buff定时器
+func (a *App) GetActiveBuffTimers() []ActiveBuffTimerInfo {
+	if a.buffTimerMgr == nil {
+		return []ActiveBuffTimerInfo{}
+	}
+	return a.buffTimerMgr.GetActiveTimersInfo()
+}
+
+// GetMonitoredBuffs 获取所有监控的buff列表
+func (a *App) GetMonitoredBuffs() []BuffInfo {
+	if a.buffTimerMgr == nil {
+		return []BuffInfo{}
+	}
+	return a.buffTimerMgr.GetMonitoredBuffs()
+}
+
+// CancelBuffTimer 取消指定的buff定时器
+func (a *App) CancelBuffTimer(entityId uint64, ccId uint32) {
+	if a.buffTimerMgr == nil {
+		return
+	}
+	a.buffTimerMgr.StopTimer(entityId, ccId)
+}
+
+// SetBuffNotifyThreshold 设置buff语音提醒阈值（秒）
+func (a *App) SetBuffNotifyThreshold(seconds int64) {
+	if a.buffTimerMgr == nil {
+		return
+	}
+	a.buffTimerMgr.SetNotifyThreshold(seconds)
+}
+
+// GetBuffDisplayList 获取所有监控buff的展示信息
+func (a *App) GetBuffDisplayList() []BuffDisplayInfo {
+	if a.buffTimerMgr == nil {
+		return []BuffDisplayInfo{}
+	}
+	return a.buffTimerMgr.GetBuffDisplayList()
+}
+
+// SetBuffSoundEnabled 设置单个buff的声音开关
+func (a *App) SetBuffSoundEnabled(ccId uint32, enabled bool) {
+	if a.buffTimerMgr == nil {
+		return
+	}
+	a.buffTimerMgr.SetBuffSoundEnabled(ccId, enabled)
+}
+
+// SetBuffOrder 设置buff显示顺序
+func (a *App) SetBuffOrder(order []uint32) {
+	if a.buffTimerMgr == nil {
+		return
+	}
+	if err := a.buffTimerMgr.SetBuffOrder(order); err != nil {
+		logger.Printf("[BuffTimer] 设置排序失败: %v", err)
+	}
+}
+
+// GetBuffOrder 获取buff显示顺序
+func (a *App) GetBuffOrder() []uint32 {
+	if a.buffTimerMgr == nil {
+		return nil
+	}
+	return a.buffTimerMgr.GetBuffOrder()
+}
+
+// GetBuffNotifyThreshold 获取buff语音提醒阈值（秒）
+func (a *App) GetBuffNotifyThreshold() int64 {
+	if a.buffTimerMgr == nil {
+		return 30
+	}
+	return a.buffTimerMgr.GetNotifyThreshold()
 }
