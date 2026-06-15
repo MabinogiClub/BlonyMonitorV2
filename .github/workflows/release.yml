@@ -71,10 +71,10 @@ jobs:
           } elseif ("${{ github.event_name }}" -eq "workflow_dispatch") {
             $suffix = "manual-${{ github.run_number }}"
           } else {
-            $suffix = "dev-${{ github.run_number }}"
+            $suffix = "dev-latest"
           }
 
-          $zipName = "BlonyMonitorV2-${version}-windows-amd64-${suffix}.zip"
+          $zipName = "BlonyMonitorV2-windows-amd64-${suffix}.zip"
           Compress-Archive -Path "$packageDir/*" -DestinationPath $zipName -Force
           "zip_name=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -112,6 +112,7 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
+          removeArtifacts: true
           tag: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.meta.outputs.name }}
           body: |
