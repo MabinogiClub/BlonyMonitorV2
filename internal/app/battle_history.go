@@ -359,6 +359,9 @@ func readSaveFile(filePath string) ([]byte, error) {
 
 func (a *App) resolveSaveName(mapName string) string {
 	if a.currentDungeon != nil {
+		if a.dungeonSaveName != "" {
+			return a.dungeonSaveName
+		}
 		dungeonLocalName := a.currentDungeon.DungeonName
 		dungeonInfo := db.NewDungeonDB(a.currentDungeon.DungeonName)
 		if dungeonInfo.LocalName != "" {
@@ -366,15 +369,24 @@ func (a *App) resolveSaveName(mapName string) string {
 		}
 		return dungeonLocalName
 	}
+	if a.currentInstance != nil && a.currentInstance.InstanceName != "" {
+		if a.instanceSaveName != "" {
+			return a.instanceSaveName
+		}
+		return a.currentInstance.InstanceName
+	}
 	if a.currentMap != nil {
-		if a.currentMap.LocalName != "" && a.currentMap.LocalName != "???" {
+		if a.currentMap.LocalName != "" && a.currentMap.LocalName != "???" && a.currentMap.LocalName != "副本" {
 			return a.currentMap.LocalName
 		}
-		if a.currentMap.MapName != "" {
+		if a.currentMap.MapName != "" && a.currentMap.MapName != "副本" {
 			return a.currentMap.MapName
 		}
 	}
-	if mapName != "" {
+	if a.instanceSaveName != "" {
+		return a.instanceSaveName
+	}
+	if mapName != "" && mapName != "???" && mapName != "副本" {
 		return mapName
 	}
 	return "战斗记录"
@@ -434,12 +446,11 @@ func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string) {
 		oldMapID = a.currentMap.MapID
 	}
 	currentDungeon := a.currentDungeon
+	currentInstance := a.currentInstance
+	instanceSaveName := a.instanceSaveName
 	a.mu.RUnlock()
 
-	isRandomDungeon := func(id int) bool {
-		return id >= 35000 && id <= 35999
-	}
-	if isRandomDungeon(oldMapID) && isRandomDungeon(mapID) {
+	if isRandomInstanceMapID(oldMapID) && isRandomInstanceMapID(mapID) {
 		logger.Printf("[Cleanup] 副本内切换 (%d -> %d)，保留数据\n", oldMapID, mapID)
 		return
 	}
@@ -452,10 +463,15 @@ func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string) {
 	}
 
 	saveName := a.resolveSaveName(mapName)
-	if currentDungeon == nil && isRandomDungeon(oldMapID) && !isRandomDungeon(mapID) && oldMapID > 0 {
-		mapInfo := db.NewMinimapInfo_FieldMapInfoList(oldMapID)
-		if mapInfo.MapLocalName != "" {
-			saveName = mapInfo.MapLocalName
+	if saveName == "战斗记录" && currentDungeon == nil && currentInstance == nil {
+		if isRandomInstanceMapID(oldMapID) && !isRandomInstanceMapID(mapID) && oldMapID > 0 {
+			mapInfo := db.NewMinimapInfo_FieldMapInfoList(oldMapID)
+			if mapInfo.MapLocalName != "" {
+				saveName = mapInfo.MapLocalName
+			}
+		}
+		if saveName == "战斗记录" && instanceSaveName != "" {
+			saveName = instanceSaveName
 		}
 	}
 

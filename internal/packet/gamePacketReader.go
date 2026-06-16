@@ -105,6 +105,8 @@ var knownGameOpcodes = map[uint32]bool{
 	0x7921: true, // 设置终结者
 	0x9470: true, // 地下城信息
 	0x6599: true, // 地图切换
+	0x526d: true, // 中文名称包
+	0x8ca0: true, // 副本名称包
 	0x5209: true, // 背包数据
 	0x6988: true, // 技能使用事件
 }

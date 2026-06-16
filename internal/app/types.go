@@ -13,7 +13,13 @@ const (
 	opcodeSetFinisher     = 0x7921
 	opcodeDungeonInfo     = 0x9470 // 地下城信息
 	opcodeMapChange       = 0x6599 // 地图切换
+	opcodeChineseName     = 0x526d // 中文名称包
+	opcodeInstanceName    = 0x8ca0 // 副本名称包
 )
+
+func isRandomInstanceMapID(mapID int) bool {
+	return mapID >= 35000 && mapID <= 35999
+}
 
 // PC种族ID集合
 var pcRaceSet = map[int]bool{
@@ -353,6 +359,14 @@ type DungeonInfo struct {
 	EnteredAt   int64   `json:"enteredAt"`   // 进入时间
 	CompletedAt int64   `json:"completedAt"` // 完成时间 (0表示未完成)
 	IsCompleted bool    `json:"isCompleted"` // 是否已完成
+}
+
+// InstanceInfo 副本信息
+type InstanceInfo struct {
+	InstanceID   uint64 `json:"instanceId"`
+	InstanceName string `json:"instanceName"`
+	MapID        uint32 `json:"mapId"`
+	EnteredAt    int64  `json:"enteredAt"`
 }
 
 // CurrentMapInfo 当前地图信息

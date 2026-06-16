@@ -81,8 +81,14 @@ type App struct {
 	clickThrough       bool
 	opacity            int
 	alwaysOnTop        bool
-	currentDungeon     *DungeonInfo
-	currentMap         *CurrentMapInfo
+	currentDungeon             *DungeonInfo
+	dungeonSaveName            string
+	dungeonChineseNameReceived bool
+	currentInstance            *InstanceInfo
+	instanceEnterMapID         int
+	instanceSaveName           string
+	instanceNameReceived       bool
+	currentMap                 *CurrentMapInfo
 	lastMapChangeAt    int64
 	selfId             string
 	selfName           string

@@ -84,6 +84,8 @@ func (a *App) onDungeonEnter(pkt *packet.GamePacket, info *DungeonInfo) {
 
 	a.mu.Lock()
 	a.currentDungeon = info
+	a.dungeonSaveName = dungeonLocalName
+	a.dungeonChineseNameReceived = false
 
 	selfIdChanged := false
 	if a.selfId == "" && playerIdFromPacket != 0 {

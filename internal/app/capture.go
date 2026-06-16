@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -469,6 +470,12 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 		}
 		a.onDungeonEnter(pkt, dungeonInfo)
 
+	case opcodeChineseName:
+		a.handleChineseName(pkt)
+
+	case opcodeInstanceName:
+		a.handleInstanceName(pkt)
+
 	case opcodeMapChange:
 		a.handleMapChange(pkt)
 
@@ -499,6 +506,7 @@ func (a *App) handleMapChange(pkt *packet.GamePacket) {
 	// 地下城内部地图ID通常是 10000-19999 范围
 	a.mu.RLock()
 	inDungeon := a.currentDungeon != nil
+	inInstance := a.currentInstance != nil
 	currentSelfId := a.selfId
 	a.mu.RUnlock()
 
@@ -511,6 +519,16 @@ func (a *App) handleMapChange(pkt *packet.GamePacket) {
 	if inDungeon && mapID >= 10000 && mapID < 20000 {
 		// 在地下城中，忽略内部地图切换，不更新标题栏
 		return
+	}
+
+	if inInstance && isRandomInstanceMapID(mapID) {
+		a.mu.RLock()
+		existingMapID := a.currentInstance.MapID
+		a.mu.RUnlock()
+		if existingMapID != 0 && uint32(mapID) == existingMapID {
+			logger.Printf("[Instance] 检测到副本内部切换 (%d)，忽略\n", mapID)
+			return
+		}
 	}
 
 	a.mu.RLock()
@@ -532,6 +550,16 @@ func (a *App) handleMapChange(pkt *packet.GamePacket) {
 	if a.currentDungeon != nil && (mapID < 10000 || mapID >= 20000) {
 		logger.Printf("[Map] 离开地下城: %s\n", a.currentDungeon.DungeonName)
 		a.currentDungeon = nil
+		a.dungeonSaveName = ""
+		a.dungeonChineseNameReceived = false
+	}
+
+	if a.currentInstance != nil && !isRandomInstanceMapID(mapID) {
+		logger.Printf("[Map] 离开副本: %s\n", a.currentInstance.InstanceName)
+		a.currentInstance = nil
+		a.instanceEnterMapID = 0
+		a.instanceSaveName = ""
+		a.instanceNameReceived = false
 	}
 
 	// 地图切换时清空旧实体，但保留最近添加的（玩家自身可能在地图切换前加载）
@@ -589,12 +617,50 @@ func (a *App) handleMapChange(pkt *packet.GamePacket) {
 
 	// 从数据库获取地图信息
 	mapInfo := db.NewMinimapInfo_FieldMapInfoList(mapID)
-	currentMap := &CurrentMapInfo{
-		MapID:     mapID,
-		MapName:   mapInfo.MapName,      // 区
-		LocalName: mapInfo.MapLocalName, // 城
+	mapName := mapInfo.MapName
+	localName := mapInfo.MapLocalName
+
+	if mapName == "" {
+		mapName = fmt.Sprintf("地图 #%d", mapID)
+	}
+	if localName == "" {
+		localName = "未知区域"
 	}
 
-	logger.Printf("[Map] 地图切换: %s - %s (ID: %d)\n", mapInfo.MapLocalName, mapInfo.MapName, mapID)
+	if isRandomInstanceMapID(mapID) {
+		a.mu.Lock()
+		if a.currentInstance != nil && a.currentInstance.InstanceName != "" {
+			mapName = a.currentInstance.InstanceName
+			localName = "副本"
+			a.currentInstance.MapID = uint32(mapID)
+			if a.instanceEnterMapID == 0 {
+				a.instanceEnterMapID = mapID
+			}
+			a.mu.Unlock()
+		} else {
+			a.mu.Unlock()
+			time.Sleep(100 * time.Millisecond)
+			a.mu.Lock()
+			if a.currentInstance != nil && a.currentInstance.InstanceName != "" {
+				mapName = a.currentInstance.InstanceName
+				localName = "副本"
+				if a.instanceEnterMapID == 0 {
+					a.instanceEnterMapID = mapID
+				}
+			} else {
+				mapName = "副本"
+				localName = "副本"
+			}
+			a.mu.Unlock()
+		}
+	}
+
+	currentMap := &CurrentMapInfo{
+		MapID:     mapID,
+		MapName:   mapName,
+		LocalName: localName,
+	}
+
+	logger.Printf("[Map] 地图切换: %s - %s (ID: %d)\n", localName, mapName, mapID)
 	a.setCurrentMap(currentMap)
 }
