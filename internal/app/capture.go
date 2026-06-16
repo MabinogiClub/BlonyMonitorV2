@@ -15,6 +15,10 @@ import (
 
 // startCapture 自动检测模式启动抓包
 func (a *App) startCapture() {
+	if a.reportNpcapMissingIfNeeded() {
+		return
+	}
+
 	a.setStatus("正在查找网卡...")
 	logger.Println("查找网卡...")
 
@@ -145,6 +149,10 @@ func (a *App) startCapture() {
 
 // startCaptureForChannel 为指定频道启动抓包
 func (a *App) startCaptureForChannel(channel int) {
+	if a.reportNpcapMissingIfNeeded() {
+		return
+	}
+
 	// 检查频道号是否有效
 	if channel < 1 || channel > 20 {
 		logger.Printf("无效的频道号: %d，切换到自动检测模式\n", channel)

@@ -46,6 +46,8 @@ export const useAppStore = defineStore('app', () => {
   const alwaysOnTop = ref(false)
   const chartVisible = ref(false)
   const opacity = ref(100)
+  const npcapDialogVisible = ref(false)
+  const npcapMessage = ref('')
 
   const chartData = ref<ChartSeries[]>([])
   const historyChartData = ref<ChartSeries[]>([])
@@ -199,6 +201,27 @@ export const useAppStore = defineStore('app', () => {
     resetState()
   }
 
+  function dismissNpcapDialog() {
+    npcapDialogVisible.value = false
+    npcapMessage.value = ''
+  }
+
+  function showNpcapDialog(message: string) {
+    npcapMessage.value = message
+    npcapDialogVisible.value = true
+  }
+
+  async function checkNpcapOnStartup() {
+    try {
+      const status = await api.getNpcapStatus()
+      if (!status.installed) {
+        showNpcapDialog(status.message)
+      }
+    } catch (e) {
+      console.error('检测 Npcap 失败:', e)
+    }
+  }
+
   async function initialize() {
     try {
       isConnected.value = await api.isConnected()
@@ -272,6 +295,8 @@ export const useAppStore = defineStore('app', () => {
         // ignore
       }
     }, 3000)
+
+    await checkNpcapOnStartup()
   }
 
   async function loadChannelsConfig() {
@@ -344,6 +369,12 @@ export const useAppStore = defineStore('app', () => {
       }
     })
     api.onEvent('selfInfo', (info: SelfInfo) => { selfInfo.value = info })
+    api.onEvent('npcapMissing', (status: NpcapStatus) => {
+      showNpcapDialog(status.message)
+    })
+    api.onEvent('npcapReady', () => {
+      dismissNpcapDialog()
+    })
   }
 
   async function updateAllViews() {
@@ -411,6 +442,8 @@ export const useAppStore = defineStore('app', () => {
     selfInfo,
     chartVisible,
     opacity,
+    npcapDialogVisible,
+    npcapMessage,
     updateConfig,
     toggleExpanded,
     isExpanded,
@@ -443,5 +476,8 @@ export const useAppStore = defineStore('app', () => {
     quit,
     hide,
     toggleChartVisible,
+    dismissNpcapDialog,
+    showNpcapDialog,
+    checkNpcapOnStartup,
   }
 })

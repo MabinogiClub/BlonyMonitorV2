@@ -15,6 +15,7 @@ declare module 'vue' {
     DebugPanel: typeof import('./../components/DebugPanel.vue')['default']
     DpsChartPanel: typeof import('./../components/DpsChartPanel.vue')['default']
     HistoryChartPanel: typeof import('./../components/HistoryChartPanel.vue')['default']
+    NpcapGuideDialog: typeof import('./../components/NpcapGuideDialog.vue')['default']
     PlayerChart: typeof import('./../components/PlayerChart.vue')['default']
     SkillDetailItem: typeof import('./../components/SkillDetailItem.vue')['default']
     StatusBar: typeof import('./../components/StatusBar.vue')['default']

@@ -89,6 +89,9 @@ interface GoApp {
   SetBuffOrder(order: number[]): Promise<void>
   SetBuffNotifyThreshold(seconds: number): Promise<void>
   GetBuffNotifyThreshold(): Promise<number>
+  GetNpcapStatus(): Promise<NpcapStatus>
+  OpenNpcapDownloadPage(): Promise<void>
+  RecheckNpcap(): Promise<NpcapStatus>
 }
 
 /**
@@ -111,6 +114,14 @@ interface Channel {
   ID?: number
   name?: string
   Name?: string
+}
+
+/**
+ * Npcap 状态类型
+ */
+interface NpcapStatus {
+  installed: boolean
+  message: string
 }
 
 /**

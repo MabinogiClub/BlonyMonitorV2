@@ -127,7 +127,9 @@ func (a *App) Startup(ctx context.Context) {
 
 	runtime.WindowSetAlwaysOnTop(ctx, a.alwaysOnTop)
 
-	go a.startCapture()
+	if !a.reportNpcapMissingIfNeeded() {
+		go a.startCapture()
+	}
 	go startClickThroughMonitor(a.ctx, a)
 }
 

@@ -13,6 +13,7 @@ import ChartPanel from './components/ChartPanel.vue'
 import DpsChartPanel from './components/DpsChartPanel.vue'
 import HistoryChartPanel from './components/HistoryChartPanel.vue'
 import TabsPanel from './components/TabsPanel.vue'
+import NpcapGuideDialog from './components/NpcapGuideDialog.vue'
 
 const appStore = useAppStore()
 
@@ -100,6 +101,12 @@ onUnmounted(() => {
     </div>
 
     <DebugPanel />
+
+    <NpcapGuideDialog
+      :visible="appStore.npcapDialogVisible"
+      :message="appStore.npcapMessage"
+      @ready="appStore.dismissNpcapDialog"
+    />
   </div>
 </template>
 

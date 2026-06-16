@@ -102,6 +102,34 @@ const previewTargets: TakenStats[] = [
 ]
 
 /**
+ * 获取 Npcap 状态
+ */
+export async function getNpcapStatus(): Promise<NpcapStatus> {
+  if (!isWailsReady()) {
+    return { installed: true, message: '' }
+  }
+  return window.go.app.App.GetNpcapStatus()
+}
+
+/**
+ * 打开 Npcap 下载页
+ */
+export function openNpcapDownloadPage(): void {
+  if (!isWailsReady()) return
+  window.go.app.App.OpenNpcapDownloadPage()
+}
+
+/**
+ * 重新检测 Npcap
+ */
+export async function recheckNpcap(): Promise<NpcapStatus> {
+  if (!isWailsReady()) {
+    return { installed: true, message: '' }
+  }
+  return window.go.app.App.RecheckNpcap()
+}
+
+/**
  * 获取连接状态
  */
 export async function isConnected(): Promise<boolean> {
