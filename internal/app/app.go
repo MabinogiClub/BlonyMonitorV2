@@ -65,6 +65,7 @@ type App struct {
 	takenStats         map[string]*targetAggStats
 	targetDamages      map[string][]DamageRecord
 	damageSeq          int64
+	damageSeqAtLastAutoSave int64
 	bossHP             map[string]*BossHPInfo
 	bossHPHistory      map[string][]BossHPRecord
 	bossHPWatch        map[string]*BossHPWatchState

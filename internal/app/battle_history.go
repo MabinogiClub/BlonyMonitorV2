@@ -435,10 +435,11 @@ func (a *App) clearDamageStateUnsafe() {
 	a.damageSeq = 0
 	a.chartAggData = make(map[string]*chartAttackerData)
 	a.targetChartAggData = make(map[string]map[string]*chartAttackerData)
+	a.damageSeqAtLastAutoSave = 0
 	a.clearAllBossHPUnsafe()
 }
 
-// cleanupAndSaveTakenStats 地图切换时保存当前战斗数据。
+// cleanupAndSaveTakenStats 场景/副本切换时保存战斗记录，但不清空内存中的统计数据。
 func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string) {
 	a.mu.RLock()
 	oldMapID := 0
@@ -448,10 +449,16 @@ func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string) {
 	currentDungeon := a.currentDungeon
 	currentInstance := a.currentInstance
 	instanceSaveName := a.instanceSaveName
+	damageSeq := a.damageSeq
+	damageSeqAtLastAutoSave := a.damageSeqAtLastAutoSave
 	a.mu.RUnlock()
 
 	if isRandomInstanceMapID(oldMapID) && isRandomInstanceMapID(mapID) {
 		logger.Printf("[Cleanup] 副本内切换 (%d -> %d)，保留数据\n", oldMapID, mapID)
+		return
+	}
+
+	if damageSeq == damageSeqAtLastAutoSave {
 		return
 	}
 
@@ -484,10 +491,8 @@ func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string) {
 		return
 	}
 
-	logger.Printf("[Cleanup] 地图切换保存 %d 个目标, %d 个bossHP -> %s\n", targetCount, bossHPCount, finalPath)
-	a.clearDamageStateUnsafe()
-	a.eventLogs = make([]EventLog, 0)
-	logger.Printf("[Cleanup] 已清空统计数据\n")
+	a.damageSeqAtLastAutoSave = a.damageSeq
+	logger.Printf("[Cleanup] 地图切换保存 %d 个目标, %d 个bossHP -> %s（保留当前统计）\n", targetCount, bossHPCount, finalPath)
 }
 
 // ClearAndSave 保存并清空数据（供前端调用）。
@@ -524,7 +529,7 @@ func (a *App) shutdownSaveData() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if len(a.takenStats) == 0 {
+	if len(a.takenStats) == 0 || a.damageSeq == a.damageSeqAtLastAutoSave {
 		return
 	}
 
@@ -538,9 +543,8 @@ func (a *App) shutdownSaveData() {
 		return
 	}
 
+	a.damageSeqAtLastAutoSave = a.damageSeq
 	logger.Printf("[Shutdown] 保存 %d 个目标, %d 个bossHP -> %s\n", targetCount, bossHPCount, finalPath)
-	a.clearDamageStateUnsafe()
-	a.eventLogs = make([]EventLog, 0)
 }
 
 // GetCleanedTargetsList 获取所有保存的战斗记录文件列表。
