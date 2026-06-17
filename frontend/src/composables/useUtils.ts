@@ -98,6 +98,13 @@ export function historyTimeToMs(value: number): number {
   return value * 1000
 }
 
+export function appTimeToSeconds(value: number): number {
+  if (!value) return 0
+  if (value > 1e12) return value / 1000
+  if (value > 1e10) return value / 100
+  return value
+}
+
 /**
  * HTML 转义，防止 XSS
  * @param text 原始文本
@@ -116,7 +123,7 @@ export function escapeHtml(text: string | undefined | null): string {
  * @returns 格式化后的时间字符串
  */
 export function formatTime(timestamp: number): string {
-  const date = new Date(timestamp * 1000)
+  const date = new Date(appTimeToSeconds(timestamp) * 1000)
   return date.toLocaleTimeString('zh-CN', {
     hour: '2-digit',
     minute: '2-digit',
@@ -193,13 +200,14 @@ export function getDisplayName(id: string, name: string | undefined): string {
  * @returns 格式化后的时长字符串
  */
 export function formatDuration(seconds: number): string {
-  if (seconds < 60) {
-    return `${seconds}秒`
+  const normalizedSeconds = Math.max(0, seconds)
+  if (normalizedSeconds < 60) {
+    return `${normalizedSeconds.toFixed(2)}秒`
   }
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = seconds % 60
+  const minutes = Math.floor(normalizedSeconds / 60)
+  const remainingSeconds = normalizedSeconds % 60
   if (minutes < 60) {
-    return remainingSeconds > 0 ? `${minutes}分${remainingSeconds}秒` : `${minutes}分`
+    return remainingSeconds > 0 ? `${minutes}分${remainingSeconds.toFixed(2)}秒` : `${minutes}分`
   }
   const hours = Math.floor(minutes / 60)
   const remainingMinutes = minutes % 60

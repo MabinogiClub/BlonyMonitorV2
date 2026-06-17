@@ -6,7 +6,7 @@
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import * as api from '../composables/useApi'
-import { formatNumber, formatTime, getConditionName, getConditionColorClass, getSkillName } from '../composables/useUtils'
+import { appTimeToSeconds, formatNumber, formatTime, getConditionName, getConditionColorClass, getSkillName } from '../composables/useUtils'
 
 // 玩家列表
 const players = ref<EntityInfo[]>([])
@@ -92,12 +92,12 @@ async function clearTimeline() {
  * 格式化相对时间（从战斗开始算起）
  */
 function formatRelativeTime(timestamp: number, startTime: number): string {
-  const seconds = timestamp - startTime
+  const seconds = appTimeToSeconds(timestamp) - appTimeToSeconds(startTime)
   if (seconds < 60) {
-    return `${seconds}秒`
+    return `${seconds.toFixed(2)}秒`
   }
   const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = seconds % 60
+  const remainingSeconds = (seconds % 60).toFixed(2)
   return `${minutes}分${remainingSeconds}秒`
 }
 

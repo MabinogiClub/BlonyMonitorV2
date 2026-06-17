@@ -62,7 +62,7 @@ func ParseDungeonInfoPacket(pkt *packet.GamePacket) (*DungeonInfo, error) {
 		Difficulty:  difficulty,
 		FloorCount:  floorCount,
 		FloorLayout: floorLayout,
-		EnteredAt:   time.Now().Unix(),
+		EnteredAt:   nowCentiseconds(),
 	}, nil
 }
 
@@ -84,6 +84,7 @@ func (a *App) onDungeonEnter(pkt *packet.GamePacket, info *DungeonInfo) {
 
 	a.mu.Lock()
 	a.currentDungeon = info
+	a.dungeonLocalName = dungeonLocalName
 	a.dungeonSaveName = dungeonLocalName
 	a.dungeonChineseNameReceived = false
 
@@ -106,10 +107,13 @@ func (a *App) onDungeonEnter(pkt *packet.GamePacket, info *DungeonInfo) {
 	a.entities = newEntities
 	a.lastMapChangeAt = now
 	selfId := a.selfId
+	selfName := a.selfName
+	instanceID := info.InstanceID
+	enteredAt := info.EnteredAt
 	a.mu.Unlock()
 
-	if selfIdChanged && selfId != "" && a.buffTimerMgr != nil {
-		a.buffTimerMgr.SetSelfId(selfId)
+	if selfIdChanged && selfId != "" {
+		a.setSelfInfo(selfId, selfName)
 	}
 
 	currentMap := &CurrentMapInfo{
@@ -119,6 +123,7 @@ func (a *App) onDungeonEnter(pkt *packet.GamePacket, info *DungeonInfo) {
 	}
 
 	a.setCurrentMap(currentMap)
+	a.scheduleDungeonNameFallback(instanceID, enteredAt)
 }
 
 // onDungeonComplete ????????
@@ -130,7 +135,7 @@ func (a *App) onDungeonComplete() {
 		return
 	}
 
-	a.currentDungeon.CompletedAt = time.Now().Unix()
+	a.currentDungeon.CompletedAt = nowCentiseconds()
 	a.currentDungeon.IsCompleted = true
 
 	logger.Printf("[Dungeon] ?????: %s\n", a.currentDungeon.DungeonName)

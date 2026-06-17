@@ -1,16 +1,13 @@
 package app
 
-import (
-	"strconv"
-	"time"
-)
+import "strconv"
 
 // addConditionEvent ????????
 func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bool, attackerId uint64, disableAt int64, duration int64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	now := time.Now().Unix()
+	now := nowCentiseconds()
 	entityIdStr := strconv.FormatUint(entityId, 10)
 	attackerIdStr := ""
 	if attackerId != 0 {
@@ -78,7 +75,7 @@ func (a *App) addFinishEvent(targetId uint64, attackerId uint64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	now := time.Now().Unix()
+	now := nowCentiseconds()
 	targetIdStr := strconv.FormatUint(targetId, 10)
 	attackerIdStr := ""
 	if attackerId != 0 {

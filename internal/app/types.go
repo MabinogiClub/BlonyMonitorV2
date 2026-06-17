@@ -134,7 +134,7 @@ type TargetDamageStats struct {
 	Name        string               `json:"name"`
 	TotalDamage float64              `json:"totalDamage"`
 	DPS         float64              `json:"dps"`      // 每秒受到伤害
-	Duration    int64                `json:"duration"` // 存活时间（秒）
+	Duration    float64              `json:"duration"` // 存活时间（秒）
 	Attackers   []AttackerWithSkills `json:"attackers"`
 	Status      string               `json:"status"` // 状态: active(战斗中), idle(空闲), dead(死亡)
 }

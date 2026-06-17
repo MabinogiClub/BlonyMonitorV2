@@ -13,8 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"blonymonitorv2/db"
-
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -40,7 +38,7 @@ type targetExport struct {
 	TargetName  string           `json:"targetName"`
 	TotalDamage float64          `json:"totalDamage"`
 	DPS         float64          `json:"dps"`
-	Duration    int64            `json:"duration"`
+	Duration    float64          `json:"duration"`
 	Attackers   []attackerExport `json:"attackers"`
 	CleanedAt   int64            `json:"cleanedAt"`
 	AppearedAt  int64            `json:"appearedAt"`
@@ -169,7 +167,7 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 		return nil
 	}
 
-	now := time.Now().Unix()
+	now := nowCentiseconds()
 	result := make([]targetExport, 0, len(a.takenStats))
 
 	for id, stat := range a.takenStats {
@@ -296,13 +294,10 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 			endTime = stat.deathTime
 			deathTime = stat.deathTime
 		}
-		duration := endTime - targetFirstHit
-		if duration < 1 {
-			duration = 1
-		}
-		targetDps := targetTotal / float64(duration)
+		duration := durationSeconds(targetFirstHit, endTime)
+		targetDps := targetTotal / duration
 		for i := range attackers {
-			attackers[i].DPS = attackers[i].TotalDamage / float64(duration)
+			attackers[i].DPS = attackers[i].TotalDamage / duration
 		}
 
 		var targetBossHP *BossHPExport
@@ -358,7 +353,7 @@ func (a *App) buildTargetExport() []targetExport {
 		return nil
 	}
 
-	now := time.Now().Unix()
+	now := nowCentiseconds()
 	result := make([]targetExport, 0, len(a.takenStats))
 
 	for id, stat := range a.takenStats {
@@ -373,11 +368,8 @@ func (a *App) buildTargetExport() []targetExport {
 			if stat.deathTime > 0 {
 				endTime = stat.deathTime
 			}
-			duration := endTime - stat.firstHit
-			if duration < 1 {
-				duration = 1
-			}
-			dps := attackerStat.total / float64(duration)
+			duration := durationSeconds(stat.firstHit, endTime)
+			dps := attackerStat.total / duration
 
 			skills := make([]skillExport, 0)
 			for skillID, skillStat := range attackerStat.skills {
@@ -445,11 +437,8 @@ func (a *App) buildTargetExport() []targetExport {
 		if stat.deathTime > 0 {
 			endTime = stat.deathTime
 		}
-		duration := endTime - stat.firstHit
-		if duration < 1 {
-			duration = 1
-		}
-		targetDps := stat.total / float64(duration)
+		duration := durationSeconds(stat.firstHit, endTime)
+		targetDps := stat.total / duration
 
 		var targetBossHP *BossHPExport
 		if records, ok := a.bossHPHistory[id]; ok && len(records) > 0 {
@@ -624,38 +613,7 @@ func readSaveFile(filePath string) ([]byte, error) {
 }
 
 func (a *App) resolveSaveName(mapName string) string {
-	if a.currentDungeon != nil {
-		if a.dungeonSaveName != "" {
-			return a.dungeonSaveName
-		}
-		dungeonLocalName := a.currentDungeon.DungeonName
-		dungeonInfo := db.NewDungeonDB(a.currentDungeon.DungeonName)
-		if dungeonInfo.LocalName != "" {
-			dungeonLocalName = dungeonInfo.LocalName
-		}
-		return dungeonLocalName
-	}
-	if a.currentInstance != nil && a.currentInstance.InstanceName != "" {
-		if a.instanceSaveName != "" {
-			return a.instanceSaveName
-		}
-		return a.currentInstance.InstanceName
-	}
-	if a.currentMap != nil {
-		if a.currentMap.LocalName != "" && a.currentMap.LocalName != "???" && a.currentMap.LocalName != "副本" {
-			return a.currentMap.LocalName
-		}
-		if a.currentMap.MapName != "" && a.currentMap.MapName != "副本" {
-			return a.currentMap.MapName
-		}
-	}
-	if a.instanceSaveName != "" {
-		return a.instanceSaveName
-	}
-	if mapName != "" && mapName != "???" && mapName != "副本" {
-		return mapName
-	}
-	return "战斗记录"
+	return a.currentSaveNameUnsafe(mapName)
 }
 
 func (a *App) saveTakenStatsLocked(saveName string, sinceSeq int64) (string, int, int, error) {
@@ -712,9 +670,6 @@ func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string) {
 	if a.currentMap != nil {
 		oldMapID = a.currentMap.MapID
 	}
-	currentDungeon := a.currentDungeon
-	currentInstance := a.currentInstance
-	instanceSaveName := a.instanceSaveName
 	damageSeq := a.damageSeq
 	damageSeqAtLastAutoSave := a.damageSeqAtLastAutoSave
 	a.mu.RUnlock()
@@ -735,18 +690,7 @@ func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string) {
 		return
 	}
 
-	saveName := a.resolveSaveName(mapName)
-	if saveName == "战斗记录" && currentDungeon == nil && currentInstance == nil {
-		if isRandomInstanceMapID(oldMapID) && !isRandomInstanceMapID(mapID) && oldMapID > 0 {
-			mapInfo := db.NewMinimapInfo_FieldMapInfoList(oldMapID)
-			if mapInfo.MapLocalName != "" {
-				saveName = mapInfo.MapLocalName
-			}
-		}
-		if saveName == "战斗记录" && instanceSaveName != "" {
-			saveName = instanceSaveName
-		}
-	}
+	saveName := a.transitionSaveNameUnsafe(mapName, oldMapID)
 
 	sinceSeq := a.damageSeqAtLastAutoSave
 	finalPath, targetCount, bossHPCount, err := a.saveTakenStatsLocked(saveName, sinceSeq)

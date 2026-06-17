@@ -11,7 +11,7 @@ import (
 
 // addDamage 添加伤害记录
 func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage float32, isCritical bool) {
-	now := time.Now().Unix()
+	now := nowCentiseconds()
 	attackerIdStr := strconv.FormatUint(attackerId, 10)
 	targetIdStr := strconv.FormatUint(targetId, 10)
 	damageFloat := float64(damage)
@@ -102,10 +102,11 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 		// 更新图表聚合数据（每30秒一个桶，保留2小时）
 		// 使用角色名称作为 key，这样同一玩家的不同实体ID会被合并
 		attackerName := a.getEntityNameUnsafe(attackerIdStr)
-		a.updateChartAggData(attackerName, now, effectiveDamage)
+		chartTimestamp := now / timePrecisionScale
+		a.updateChartAggData(attackerName, chartTimestamp, effectiveDamage)
 
 		// 更新按目标分组的图表聚合数据（用于怪物跟踪模式）
-		a.updateTargetChartAggData(targetIdStr, attackerName, now, effectiveDamage)
+		a.updateTargetChartAggData(targetIdStr, attackerName, chartTimestamp, effectiveDamage)
 
 		// 标记需要触发计时器（锁外执行）
 		shouldTriggerAttackerTimer = true
@@ -252,21 +253,21 @@ func (a *App) GetDamageByAttacker() []DamageStats {
 	defer a.mu.RUnlock()
 
 	result := make([]DamageStats, 0)
-	now := time.Now().Unix()
+	now := nowCentiseconds()
 	for id, stats := range a.attackerStats {
 		dps := 0.0
 		// 计算状态：根据最后攻击时间判断
 		status := "idle"
-		isActive := now-stats.lastHit < 8
+		isActive := now-stats.lastHit < 8*timePrecisionScale
 		if isActive {
 			status = "active"
 		}
 
 		// DPS 计算：active 时使用当前时间（实时刷新），idle 时使用 lastHit（固定值）
 		if isActive && now > stats.firstHit {
-			dps = stats.total / float64(now-stats.firstHit)
+			dps = stats.total / durationSeconds(stats.firstHit, now)
 		} else if stats.lastHit > stats.firstHit {
-			dps = stats.total / float64(stats.lastHit-stats.firstHit)
+			dps = stats.total / durationSeconds(stats.firstHit, stats.lastHit)
 		}
 
 		percent := 0.0
@@ -299,7 +300,7 @@ func (a *App) GetDamageBySkill() []AttackerWithSkills {
 	defer a.mu.RUnlock()
 
 	result := make([]AttackerWithSkills, 0)
-	now := time.Now().Unix()
+	now := nowCentiseconds()
 	for attackerId, skillMap := range a.skillStats {
 		attackerStat := a.attackerStats[attackerId]
 		if attackerStat == nil {
@@ -309,16 +310,16 @@ func (a *App) GetDamageBySkill() []AttackerWithSkills {
 		dps := 0.0
 		// 计算状态：根据最后攻击时间判断
 		status := "idle"
-		isActive := now-attackerStat.lastHit < 8
+		isActive := now-attackerStat.lastHit < 8*timePrecisionScale
 		if isActive {
 			status = "active"
 		}
 
 		// DPS 计算：active 时使用当前时间（实时刷新），idle 时使用 lastHit（固定值）
 		if isActive && now > attackerStat.firstHit {
-			dps = attackerStat.total / float64(now-attackerStat.firstHit)
+			dps = attackerStat.total / durationSeconds(attackerStat.firstHit, now)
 		} else if attackerStat.lastHit > attackerStat.firstHit {
-			dps = attackerStat.total / float64(attackerStat.lastHit-attackerStat.firstHit)
+			dps = attackerStat.total / durationSeconds(attackerStat.firstHit, attackerStat.lastHit)
 		}
 
 		percent := 0.0
@@ -381,7 +382,7 @@ func (a *App) GetDamageTaken() []TargetDamageStats {
 
 	// 使用聚合统计数据（不受2000条记录限制）
 	result := make([]TargetDamageStats, 0)
-	now := time.Now().Unix()
+	now := nowCentiseconds()
 	for targetId, targetStat := range a.takenStats {
 		attackers := make([]AttackerWithSkills, 0)
 
@@ -392,7 +393,7 @@ func (a *App) GetDamageTaken() []TargetDamageStats {
 			}
 
 			// 计算攻击者状态
-			attackerIsActive := now-stats.lastHit < 8
+			attackerIsActive := now-stats.lastHit < 8*timePrecisionScale
 
 			// 计算该攻击者对该目标的DPS
 			// 根据攻击者状态和目标状态决定使用哪个时间点
@@ -408,11 +409,7 @@ func (a *App) GetDamageTaken() []TargetDamageStats {
 				endTime = stats.lastHit
 			}
 
-			attackerDuration := endTime - targetStat.firstHit
-			if attackerDuration < 1 {
-				attackerDuration = 1
-			}
-			attackerDps := stats.total / float64(attackerDuration)
+			attackerDps := stats.total / durationSeconds(targetStat.firstHit, endTime)
 
 			// 构建技能统计列表
 			skills := make([]SkillDamageStats, 0)
@@ -453,7 +450,7 @@ func (a *App) GetDamageTaken() []TargetDamageStats {
 
 			// 计算该攻击者的状态
 			attackerStatus := "idle"
-			if now-stats.lastHit < 8 {
+			if now-stats.lastHit < 8*timePrecisionScale {
 				attackerStatus = "active"
 			}
 
@@ -482,7 +479,7 @@ func (a *App) GetDamageTaken() []TargetDamageStats {
 		targetIsActive := false
 		if targetStat.deathTime > 0 {
 			status = "dead"
-		} else if now-targetStat.lastHit < 8 {
+		} else if now-targetStat.lastHit < 8*timePrecisionScale {
 			status = "active"
 			targetIsActive = true
 		}
@@ -501,11 +498,8 @@ func (a *App) GetDamageTaken() []TargetDamageStats {
 			endTime = targetStat.lastHit
 		}
 
-		duration := endTime - targetStat.firstHit
-		if duration < 1 {
-			duration = 1 // 至少1秒，避免除零
-		}
-		dps := targetStat.total / float64(duration)
+		duration := durationSeconds(targetStat.firstHit, endTime)
+		dps := targetStat.total / duration
 
 		result = append(result, TargetDamageStats{
 			ID:          targetId,
@@ -769,9 +763,9 @@ func (a *App) HasActivePlayer() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	now := time.Now().Unix()
+	now := nowCentiseconds()
 	for _, stats := range a.attackerStats {
-		if now-stats.lastHit < 8 {
+		if now-stats.lastHit < 8*timePrecisionScale {
 			return true
 		}
 	}
