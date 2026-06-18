@@ -1,0 +1,5 @@
+# 统一使用 LF 换行符
+* text=auto eol=lf
+
+# 二进制文件不做换行转换
+*.{png,jpg,jpeg,gif,ico,webp,svg,woff,woff2,ttf,eot,pdf,zip,gz,exe,db} binary

@@ -1,6 +1,8 @@
 *.exe
 *.exe~
 node_modules/
+frontend/package-lock.json
+frontend/package.json.md5
 frontend/dist/
 frontend/dist.backup/
 frontend/wailsjs/
