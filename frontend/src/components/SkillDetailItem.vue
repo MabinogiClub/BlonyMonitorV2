@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAppStore } from '../stores/app'
-import { formatNumber, getSkillName, getSkillIconUrl, BAR_CLASSES } from '../composables/useUtils'
+import { formatNumber, getSkillName, getSkillIconUrl, BAR_CLASSES, getDisplayDamageRange } from '../composables/useUtils'
 
 interface SkillStats {
   skillId: number
@@ -38,15 +38,6 @@ const isSelected = computed(() =>
 
 function getBarClass(index: number): string {
   return BAR_CLASSES[index % BAR_CLASSES.length]
-}
-
-function getDisplayDamageRange(skill: SkillStats): { min: number; max: number } {
-  const allMins = [skill.minDamage, skill.critMinDamage ?? 0].filter(v => v > 0)
-  const allMaxs = [skill.maxDamage, skill.critMaxDamage ?? 0].filter(v => v > 0)
-  return {
-    min: allMins.length ? Math.min(...allMins) : 0,
-    max: allMaxs.length ? Math.max(...allMaxs) : 0,
-  }
 }
 </script>
 

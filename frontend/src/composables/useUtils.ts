@@ -234,6 +234,23 @@ export function debounce<T extends (...args: any[]) => any>(fn: T, delay: number
 }
 
 /**
+ * 合并普攻与暴击极值，用于技能伤害区间展示（与历史记录一致）。
+ */
+export function getDisplayDamageRange(skill: {
+  minDamage: number
+  maxDamage: number
+  critMinDamage?: number
+  critMaxDamage?: number
+}): { min: number; max: number } {
+  const allMins = [skill.minDamage, skill.critMinDamage ?? 0].filter(v => v > 0)
+  const allMaxs = [skill.maxDamage, skill.critMaxDamage ?? 0].filter(v => v > 0)
+  return {
+    min: allMins.length ? Math.min(...allMins) : 0,
+    max: allMaxs.length ? Math.max(...allMaxs) : 0,
+  }
+}
+
+/**
  * 节流函数
  * @param fn 要节流的函数
  * @param interval 最小间隔时间（毫秒）

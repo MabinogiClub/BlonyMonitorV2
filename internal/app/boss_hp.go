@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"blonymonitorv2/internal/packet"
-
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const (
@@ -103,7 +101,6 @@ func (a *App) handleEntityProperty(pkt *packet.GamePacket) {
 		DamageSeq:   currentDamageSeq,
 	})
 
-	var adjusted []DamageRecord
 	var overflowResult bossDamageOverflowAdjustResult
 	consumeDamageWindow := !hasPrev
 	if hasPrev {
@@ -144,7 +141,6 @@ func (a *App) handleEntityProperty(pkt *packet.GamePacket) {
 				consumeDamageWindow = false
 			} else {
 				overflowResult = a.adjustBossDamageOverflowUnsafe(id, prevDamageSeq, currentDamageSeq, hpDelta, adjustThreshold, markLockTrigger, maxHP)
-				adjusted = append(adjusted, overflowResult.Records...)
 				consumeDamageWindow = true
 				delete(a.bossHPPending, id)
 			}
@@ -154,10 +150,6 @@ func (a *App) handleEntityProperty(pkt *packet.GamePacket) {
 		} else if hpDelta <= bossDamageAdjustEpsilon && currentDamageSeq > prevDamageSeq && !isPlatformContinuation {
 			consumeDamageWindow = true
 			delete(a.bossHPPending, id)
-		}
-		if currentHP <= 0 {
-			adjusted = append(adjusted, a.capDeadTargetDamageToMaxHPUnsafe(id)...)
-			consumeDamageWindow = true
 		}
 	}
 	if !consumeDamageWindow {
@@ -174,10 +166,6 @@ func (a *App) handleEntityProperty(pkt *packet.GamePacket) {
 	}
 	a.clearInactiveBossHPLockPlatformUnsafe(id, currentHP, percent)
 	a.mu.Unlock()
-
-	for _, record := range adjusted {
-		runtime.EventsEmit(a.ctx, "damage", record)
-	}
 }
 
 func (a *App) markBossHPLockUnsafe(id, name string, raceID int, currentHP, maxHP, percent, prevHP, prevPercent float64, now int64, overflowResult bossDamageOverflowAdjustResult) (float64, bool) {

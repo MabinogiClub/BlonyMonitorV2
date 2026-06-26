@@ -167,6 +167,7 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 		return nil
 	}
 
+	exportDamage := a.computeExportDamageBySeqUnsafe()
 	now := nowCentiseconds()
 	result := make([]targetExport, 0, len(a.takenStats))
 
@@ -187,7 +188,7 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 				if len(segmentRecords) == 0 {
 					continue
 				}
-				total, hits, crits, min, max, critMin, critMax, firstHit, lastHit := aggregateHitRecords(segmentRecords)
+				total, hits, crits, min, max, critMin, critMax, firstHit, lastHit := aggregateHitRecordsWithExport(segmentRecords, exportDamage)
 				attackerTotal += total
 				if !hasAttackerHits {
 					attackerFirstHit, attackerLastHit = firstHit, lastHit
@@ -218,7 +219,7 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 						CritMinDamage: critMin,
 						CritMaxDamage: critMax,
 					},
-					HitRecords: segmentRecords,
+					HitRecords: applyExportDamageToHitRecords(segmentRecords, exportDamage),
 				})
 			}
 
@@ -493,9 +494,8 @@ func (a *App) buildSaveFileDataSince(sinceSeq int64) SaveFileData {
 }
 
 func (a *App) buildSaveFileData() SaveFileData {
-	a.capAllDeadTargetDamageToMaxHPUnsafe()
 	return SaveFileData{
-		Targets: a.buildTargetExport(),
+		Targets: a.buildTargetExportSince(0),
 	}
 }
 
@@ -613,7 +613,7 @@ func readSaveFile(filePath string) ([]byte, error) {
 }
 
 func (a *App) resolveSaveName(mapName string) string {
-	return a.currentSaveNameUnsafe(mapName)
+	return finalizeSaveName(a.currentSaveNameUnsafe(mapName))
 }
 
 func (a *App) saveTakenStatsLocked(saveName string, sinceSeq int64) (string, int, int, error) {
@@ -670,6 +670,7 @@ func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string) {
 	if a.currentMap != nil {
 		oldMapID = a.currentMap.MapID
 	}
+	instanceSaveName := a.instanceSaveName
 	damageSeq := a.damageSeq
 	damageSeqAtLastAutoSave := a.damageSeqAtLastAutoSave
 	a.mu.RUnlock()
@@ -690,7 +691,7 @@ func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string) {
 		return
 	}
 
-	saveName := a.transitionSaveNameUnsafe(mapName, oldMapID)
+	saveName := a.transitionSaveNameUnsafe(mapName, oldMapID, instanceSaveName)
 
 	sinceSeq := a.damageSeqAtLastAutoSave
 	finalPath, targetCount, bossHPCount, err := a.saveTakenStatsLocked(saveName, sinceSeq)
@@ -721,9 +722,6 @@ func (a *App) ClearAndSave() {
 	sinceSeq := a.damageSeqAtLastAutoSave
 	if a.damageSeq != sinceSeq {
 		saveName := a.resolveSaveName("手动保存")
-		if sinceSeq == 0 {
-			a.capAllDeadTargetDamageToMaxHPUnsafe()
-		}
 		finalPath, targetCount, bossHPCount, err := a.saveTakenStatsLocked(saveName, sinceSeq)
 		if err != nil {
 			logger.Printf("[ClearAndSave] 保存失败: %v\n", err)

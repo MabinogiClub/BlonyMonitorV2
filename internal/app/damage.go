@@ -53,9 +53,14 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 		a.damages = a.damages[len(a.damages)-2000:]
 	}
 
-	// 更新聚合统计（只统计PC造成的伤害）
-	entity := a.entities[attackerIdStr]
-	if entity != nil && entity.IsPC {
+	attackerRaceID := a.getEntityRaceIDUnsafe(attackerIdStr)
+	attackerIsPC := attackerRaceID >= 0 && isPC(attackerRaceID)
+	if !attackerIsPC && a.selfId != "" && attackerIdStr == a.selfId {
+		attackerIsPC = true
+	}
+
+	// 更新聚合统计（只统计PC造成的伤害；与受到伤害一致，使用 raceId 缓存而非 entities 存活状态）
+	if attackerIsPC {
 		// 更新攻击者统计
 		attackerStat := a.attackerStats[attackerIdStr]
 		if attackerStat == nil {
@@ -113,9 +118,6 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 	}
 
 	// 更新受到伤害聚合统计（所有伤害都统计，不限于PC）
-	// 先获取攻击者和目标的信息（用于缓存）
-	attackerRaceID := a.getEntityRaceIDUnsafe(attackerIdStr)
-	attackerIsPC := attackerRaceID >= 0 && isPC(attackerRaceID)
 	attackerRaceName := ""
 	if attackerRaceID >= 0 && !attackerIsPC {
 		attackerRaceName = a.getRaceNameUnsafe(attackerRaceID)

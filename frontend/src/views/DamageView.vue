@@ -7,7 +7,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '../stores/app'
 import * as api from '../composables/useApi'
-import { formatNumber, getSkillName, getSkillIconUrl, BAR_CLASSES, throttle } from '../composables/useUtils'
+import { formatNumber, getSkillName, getSkillIconUrl, BAR_CLASSES, throttle, getDisplayDamageRange } from '../composables/useUtils'
 
 // 获取应用状态
 const appStore = useAppStore()
@@ -201,7 +201,7 @@ onUnmounted(() => {
                 <span class="hover-tip" :data-tooltip="skill.avgDamage.toLocaleString()">
                   平均{{ formatNumber(skill.avgDamage) }}
                 </span>
-                <span class="hover-tip" :data-tooltip="`${skill.minDamage.toLocaleString()} ~ ${skill.maxDamage.toLocaleString()}`">{{ formatNumber(skill.minDamage) }}~{{ formatNumber(skill.maxDamage) }}</span>
+                <span class="hover-tip" :data-tooltip="`${getDisplayDamageRange(skill).min.toLocaleString()} ~ ${getDisplayDamageRange(skill).max.toLocaleString()}`">{{ formatNumber(getDisplayDamageRange(skill).min) }}~{{ formatNumber(getDisplayDamageRange(skill).max) }}</span>
                 <span class="hover-tip sub-item-damage" :data-tooltip="skill.totalDamage.toLocaleString()">
                   {{ formatNumber(skill.totalDamage) }}
                 </span>

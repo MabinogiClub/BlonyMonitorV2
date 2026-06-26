@@ -35,23 +35,55 @@ func (a *App) adjustBossDamageOverflowUnsafe(targetIdStr string, fromSeq, toSeq 
 
 	triggerIndex := findBossLockTriggerIndex(records, indexes, hpDelta, tolerance)
 	canMarkLockTrigger := markLockTrigger && lockThreshold > 0 && isMeaningfulBossLockOverflow(overflow, maxHP)
-	canAttachLockThreshold := lockThreshold > 0 && (!markLockTrigger || canMarkLockTrigger)
 	if triggerIndex >= 0 && canMarkLockTrigger {
 		trigger := &a.targetDamages[targetIdStr][triggerIndex]
 		trigger.LockTriggered = true
 		trigger.LockThreshold = lockThreshold
 		result.TriggerFound = true
-		a.updateMirroredDamageRecordUnsafe(*trigger, trigger.Damage)
-		a.updateSkillHitRecordUnsafe(*trigger, trigger.Damage)
-		a.updateDamageEventLogUnsafe(*trigger, trigger.Damage)
+		result.Trigger = *trigger
+		result.TriggerSeq = trigger.Seq
+	}
+	return result
+}
+
+func (a *App) adjustBossDamageOverflowOnClone(records []DamageRecord, fromSeq, toSeq int64, hpDelta float64, lockThreshold float64, markLockTrigger bool, maxHP float64) {
+	if hpDelta < 0 || toSeq <= fromSeq || len(records) == 0 {
+		return
 	}
 
-	adjusted := make([]DamageRecord, 0)
+	indexes := make([]int, 0)
+	totalDamage := 0.0
+	for i := range records {
+		r := records[i]
+		if r.Seq <= fromSeq || r.Seq > toSeq || r.Damage <= 0 {
+			continue
+		}
+		indexes = append(indexes, i)
+		totalDamage += r.Damage
+	}
+	if len(indexes) == 0 {
+		return
+	}
+
+	tolerance := bossDamageSyncTolerance(maxHP)
+	overflow := totalDamage - hpDelta
+	if overflow <= tolerance {
+		return
+	}
+
+	triggerIndex := findBossLockTriggerIndex(records, indexes, hpDelta, tolerance)
+	canMarkLockTrigger := markLockTrigger && lockThreshold > 0 && isMeaningfulBossLockOverflow(overflow, maxHP)
+	canAttachLockThreshold := lockThreshold > 0 && (!markLockTrigger || canMarkLockTrigger)
+	if triggerIndex >= 0 && canMarkLockTrigger {
+		records[triggerIndex].LockTriggered = true
+		records[triggerIndex].LockThreshold = lockThreshold
+	}
+
 	for i := len(indexes) - 1; i >= 0 && overflow > bossDamageAdjustEpsilon; i-- {
 		if canMarkLockTrigger && triggerIndex >= 0 && indexes[i] < triggerIndex {
 			break
 		}
-		record := &a.targetDamages[targetIdStr][indexes[i]]
+		record := &records[indexes[i]]
 		cut := record.Damage
 		if cut > overflow {
 			cut = overflow
@@ -62,17 +94,9 @@ func (a *App) adjustBossDamageOverflowUnsafe(targetIdStr string, fromSeq, toSeq 
 		if canAttachLockThreshold && !record.LockTriggered {
 			record.LockThreshold = lockThreshold
 		}
-		a.applyDamageOverflowCutUnsafe(record, cut)
+		cutDamageRecordInPlace(record, cut)
 		overflow -= cut
-		adjusted = append(adjusted, *record)
 	}
-
-	if triggerIndex >= 0 {
-		result.Trigger = a.targetDamages[targetIdStr][triggerIndex]
-		result.TriggerSeq = result.Trigger.Seq
-	}
-	result.Records = adjusted
-	return result
 }
 
 func bossDamageSyncTolerance(maxHP float64) float64 {
@@ -233,7 +257,7 @@ func (a *App) consumeBossHPDamageSeqUnsafe(id string, currentHP float64, seq int
 	}
 }
 
-func (a *App) applyDamageOverflowCutUnsafe(record *DamageRecord, cut float64) {
+func cutDamageRecordInPlace(record *DamageRecord, cut float64) {
 	oldDamage := record.Damage
 	if cut > oldDamage {
 		cut = oldDamage
@@ -247,181 +271,115 @@ func (a *App) applyDamageOverflowCutUnsafe(record *DamageRecord, cut float64) {
 	}
 	record.OverflowDamage += cut
 	record.Adjusted = true
-
-	a.updateMirroredDamageRecordUnsafe(*record, oldDamage)
-	a.updateSkillHitRecordUnsafe(*record, oldDamage)
-	a.updateDamageEventLogUnsafe(*record, oldDamage)
-	a.subtractDamageAggregatesUnsafe(*record, cut)
 }
 
-func (a *App) updateMirroredDamageRecordUnsafe(adjusted DamageRecord, oldDamage float64) {
-	for i := len(a.damages) - 1; i >= 0; i-- {
-		r := &a.damages[i]
-		if adjusted.Seq > 0 && r.Seq != adjusted.Seq {
-			continue
-		}
-		if adjusted.Seq == 0 && (r.At != adjusted.At || r.AttackerID != adjusted.AttackerID || r.TargetID != adjusted.TargetID || r.SkillID != adjusted.SkillID || r.IsCritical != adjusted.IsCritical || math.Abs(r.Damage-oldDamage) > bossDamageAdjustEpsilon) {
-			continue
-		}
-		*r = adjusted
-		return
+func cloneTargetDamagesMap(src map[string][]DamageRecord) map[string][]DamageRecord {
+	dst := make(map[string][]DamageRecord, len(src))
+	for id, records := range src {
+		cloned := make([]DamageRecord, len(records))
+		copy(cloned, records)
+		dst[id] = cloned
 	}
+	return dst
 }
 
-func (a *App) updateSkillHitRecordUnsafe(adjusted DamageRecord, oldDamage float64) {
-	targetStat := a.takenStats[adjusted.TargetID]
-	if targetStat == nil {
+func capTargetDamageRecordsToMaxHP(records []DamageRecord, maxHP float64) {
+	if maxHP <= 0 || len(records) == 0 {
 		return
 	}
-	attackerStat := targetStat.attackers[adjusted.AttackerID]
-	if attackerStat == nil {
+	total := 0.0
+	for _, r := range records {
+		total += r.Damage
+	}
+	if total <= maxHP+bossDamageAdjustEpsilon {
 		return
 	}
-	skillStat := attackerStat.skills[adjusted.SkillID]
-	if skillStat == nil {
-		return
-	}
-	for i := len(skillStat.records) - 1; i >= 0; i-- {
-		r := &skillStat.records[i]
-		if adjusted.Seq > 0 && r.Seq != adjusted.Seq {
+	overflow := total - maxHP
+	for i := len(records) - 1; i >= 0 && overflow > bossDamageAdjustEpsilon; i-- {
+		if records[i].Damage <= 0 {
 			continue
 		}
-		if adjusted.Seq == 0 && (r.Timestamp != adjusted.At || r.IsCritical != adjusted.IsCritical || math.Abs(r.Damage-oldDamage) > bossDamageAdjustEpsilon) {
-			continue
+		cut := records[i].Damage
+		if cut > overflow {
+			cut = overflow
 		}
-		r.Damage = adjusted.Damage
-		r.RawDamage = adjusted.RawDamage
-		r.OverflowDamage = adjusted.OverflowDamage
-		r.Adjusted = adjusted.Adjusted
-		r.LockTriggered = adjusted.LockTriggered
-		r.LockThreshold = adjusted.LockThreshold
-		return
+		cutDamageRecordInPlace(&records[i], cut)
+		overflow -= cut
 	}
 }
 
-func (a *App) updateDamageEventLogUnsafe(adjusted DamageRecord, oldDamage float64) {
-	for i := len(a.eventLogs) - 1; i >= 0; i-- {
-		log := &a.eventLogs[i]
-		if log.Type != "damage" {
+// computeExportDamageBySeqUnsafe 在历史导出时重放 Boss HP 时间线并修正伤害，不影响实时统计。
+func (a *App) computeExportDamageBySeqUnsafe() map[int64]float64 {
+	cloned := cloneTargetDamagesMap(a.targetDamages)
+	for targetID, history := range a.bossHPHistory {
+		records := cloned[targetID]
+		if len(records) == 0 || len(history) < 2 {
 			continue
 		}
-		if adjusted.Seq > 0 && log.Seq != adjusted.Seq {
-			continue
-		}
-		if adjusted.Seq == 0 && (log.At != adjusted.At || log.EntityID != adjusted.AttackerID || log.TargetID != adjusted.TargetID || log.SkillID != adjusted.SkillID || log.IsCritical != adjusted.IsCritical || math.Abs(log.Damage-oldDamage) > bossDamageAdjustEpsilon) {
-			continue
-		}
-		log.Damage = adjusted.Damage
-		log.RawDamage = adjusted.RawDamage
-		log.OverflowDamage = adjusted.OverflowDamage
-		log.Adjusted = adjusted.Adjusted
-		log.LockTriggered = adjusted.LockTriggered
-		log.LockThreshold = adjusted.LockThreshold
-		return
-	}
-}
-
-func (a *App) subtractDamageAggregatesUnsafe(record DamageRecord, cut float64) {
-	if cut <= 0 {
-		return
-	}
-	if attacker := a.attackerStats[record.AttackerID]; attacker != nil {
-		attacker.total -= cut
-		if attacker.total < 0 {
-			attacker.total = 0
-		}
-	}
-	if skillMap := a.skillStats[record.AttackerID]; skillMap != nil {
-		if skill := skillMap[record.SkillID]; skill != nil {
-			skill.total -= cut
-			if skill.total < 0 {
-				skill.total = 0
+		for i := 1; i < len(history); i++ {
+			prev := history[i-1]
+			curr := history[i]
+			hpDelta := prev.CurrentHP - curr.CurrentHP
+			fromSeq := prev.DamageSeq
+			toSeq := curr.DamageSeq
+			if hpDelta <= bossDamageAdjustEpsilon || toSeq <= fromSeq {
+				continue
 			}
-			a.recalculateGlobalSkillExtremesUnsafe(record.AttackerID, record.SkillID, skill)
+			lockThreshold := getPotentialBossHPLockThreshold(curr.CurrentHP, curr.Percent, prev.Percent)
+			a.adjustBossDamageOverflowOnClone(
+				records,
+				fromSeq,
+				toSeq,
+				hpDelta,
+				lockThreshold,
+				lockThreshold > 0,
+				curr.MaxHP,
+			)
+		}
+		maxHP := 0.0
+		if hp := a.bossHP[targetID]; hp != nil && hp.MaxHP > 0 {
+			maxHP = hp.MaxHP
+		} else if len(history) > 0 {
+			maxHP = history[len(history)-1].MaxHP
+		}
+		last := history[len(history)-1]
+		if last.CurrentHP <= bossDamageAdjustEpsilon && maxHP > 0 {
+			capTargetDamageRecordsToMaxHP(records, maxHP)
+		}
+		cloned[targetID] = records
+	}
+	exportDamage := make(map[int64]float64)
+	for _, records := range cloned {
+		for _, r := range records {
+			exportDamage[r.Seq] = r.Damage
 		}
 	}
-	a.totalDamage -= cut
-	if a.totalDamage < 0 {
-		a.totalDamage = 0
+	return exportDamage
+}
+
+func applyExportDamageToHitRecords(records []SkillHitRecord, exportDamage map[int64]float64) []SkillHitRecord {
+	if len(exportDamage) == 0 {
+		return records
 	}
-	if target := a.takenStats[record.TargetID]; target != nil {
-		target.total -= cut
-		if target.total < 0 {
-			target.total = 0
-		}
-		if attacker := target.attackers[record.AttackerID]; attacker != nil {
-			attacker.total -= cut
-			if attacker.total < 0 {
-				attacker.total = 0
-			}
-			if skill := attacker.skills[record.SkillID]; skill != nil {
-				skill.total -= cut
-				if skill.total < 0 {
-					skill.total = 0
+	adjusted := make([]SkillHitRecord, len(records))
+	for i, r := range records {
+		adjusted[i] = r
+		if r.Seq > 0 {
+			if dmg, ok := exportDamage[r.Seq]; ok {
+				adjusted[i].Damage = dmg
+				if dmg < r.Damage {
+					adjusted[i].OverflowDamage += r.Damage - dmg
+					adjusted[i].Adjusted = true
 				}
-				a.recalculateTakenSkillExtremesUnsafe(skill)
 			}
 		}
 	}
-	// 图表数据不反向扣减；排行榜与战报使用修正后的聚合与明细。
+	return adjusted
 }
 
-func (a *App) recalculateGlobalSkillExtremesUnsafe(attackerID string, skillID int, stat *skillAggStats) {
-	stat.min = 0
-	stat.max = 0
-	stat.critMin = 0
-	stat.critMax = 0
-	nonCritCount := 0
-	critCount := 0
-	for _, r := range a.damages {
-		if r.AttackerID != attackerID || r.SkillID != skillID {
-			continue
-		}
-		if r.IsCritical {
-			critCount++
-			if critCount == 1 || r.Damage < stat.critMin {
-				stat.critMin = r.Damage
-			}
-			if r.Damage > stat.critMax {
-				stat.critMax = r.Damage
-			}
-		} else {
-			nonCritCount++
-			if nonCritCount == 1 || r.Damage < stat.min {
-				stat.min = r.Damage
-			}
-			if r.Damage > stat.max {
-				stat.max = r.Damage
-			}
-		}
-	}
-}
-
-func (a *App) recalculateTakenSkillExtremesUnsafe(stat *takenSkillAggStats) {
-	stat.min = 0
-	stat.max = 0
-	stat.critMin = 0
-	stat.critMax = 0
-	hitCount := 0
-	critCount := 0
-	for _, r := range stat.records {
-		hitCount++
-		if hitCount == 1 || r.Damage < stat.min {
-			stat.min = r.Damage
-		}
-		if r.Damage > stat.max {
-			stat.max = r.Damage
-		}
-		if r.IsCritical {
-			critCount++
-			if critCount == 1 || r.Damage < stat.critMin {
-				stat.critMin = r.Damage
-			}
-			if r.Damage > stat.critMax {
-				stat.critMax = r.Damage
-			}
-		}
-	}
+func aggregateHitRecordsWithExport(records []SkillHitRecord, exportDamage map[int64]float64) (total float64, hits, crits int, min, max, critMin, critMax float64, firstHit, lastHit int64) {
+	adjusted := applyExportDamageToHitRecords(records, exportDamage)
+	return aggregateHitRecords(adjusted)
 }
 
 func (a *App) adjustDamageAfterKnownDeathUnsafe(targetIdStr string, damageFloat float64) (float64, float64, bool) {
@@ -449,45 +407,4 @@ func (a *App) adjustDamageAfterKnownDeathUnsafe(targetIdStr string, damageFloat 
 		overflowDamage = 0
 	}
 	return effectiveDamage, overflowDamage, overflowDamage > bossDamageAdjustEpsilon
-}
-
-func (a *App) capDeadTargetDamageToMaxHPUnsafe(targetIdStr string) []DamageRecord {
-	targetStat := a.takenStats[targetIdStr]
-	if targetStat == nil {
-		return nil
-	}
-	maxHP := 0.0
-	if hp := a.bossHP[targetIdStr]; hp != nil && hp.MaxHP > 0 {
-		maxHP = hp.MaxHP
-	} else if history := a.bossHPHistory[targetIdStr]; len(history) > 0 {
-		maxHP = history[len(history)-1].MaxHP
-	}
-	if maxHP <= 0 || targetStat.total <= maxHP+bossDamageAdjustEpsilon {
-		return nil
-	}
-	overflow := targetStat.total - maxHP
-	records := a.targetDamages[targetIdStr]
-	adjusted := make([]DamageRecord, 0)
-	for i := len(records) - 1; i >= 0 && overflow > bossDamageAdjustEpsilon; i-- {
-		record := &a.targetDamages[targetIdStr][i]
-		if record.Damage <= 0 {
-			continue
-		}
-		cut := record.Damage
-		if cut > overflow {
-			cut = overflow
-		}
-		a.applyDamageOverflowCutUnsafe(record, cut)
-		overflow -= cut
-		adjusted = append(adjusted, *record)
-	}
-	return adjusted
-}
-
-func (a *App) capAllDeadTargetDamageToMaxHPUnsafe() []DamageRecord {
-	adjusted := make([]DamageRecord, 0)
-	for targetId := range a.takenStats {
-		adjusted = append(adjusted, a.capDeadTargetDamageToMaxHPUnsafe(targetId)...)
-	}
-	return adjusted
 }

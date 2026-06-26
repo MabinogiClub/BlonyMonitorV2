@@ -45,12 +45,29 @@ func (a *App) clearInstanceNameWaitUnsafe() {
 	a.instanceNameWaitUntil = 0
 }
 
-func (a *App) resetInstanceStateUnsafe() {
+func (a *App) resetInstanceBindingUnsafe() {
 	a.currentInstance = nil
 	a.instanceEnterMapID = 0
-	a.instanceSaveName = ""
 	a.instanceNameReceived = false
 	a.clearInstanceNameWaitUnsafe()
+}
+
+func (a *App) resetInstanceStateUnsafe() {
+	a.resetInstanceBindingUnsafe()
+	a.instanceSaveName = ""
+}
+
+func (a *App) restoreInstanceBindingFromSaveNameUnsafe(mapID int, nowCentis int64) bool {
+	if a.instanceSaveName == "" || isGenericSaveName(a.instanceSaveName) {
+		return false
+	}
+	a.currentInstance = &InstanceInfo{
+		InstanceName: a.instanceSaveName,
+		MapID:        0,
+		EnteredAt:    nowCentis,
+	}
+	_, ok := a.bindCurrentInstanceToMapUnsafe(mapID)
+	return ok
 }
 
 func (a *App) clearExpiredPendingInstanceUnsafe(nowCentis int64) {
@@ -88,8 +105,9 @@ func (a *App) resolveInstanceMapDisplay(mapID int) (string, string) {
 	a.clearExpiredPendingInstanceUnsafe(nowCentis)
 	a.startInstanceNameWaitUnsafe(mapID, nowCentis)
 	if a.currentInstance != nil && a.currentInstance.MapID != 0 && int(a.currentInstance.MapID) != mapID {
-		logger.Printf("[Instance] 检测到新的副本地图 (%d -> %d)，等待新副本名称\n", a.currentInstance.MapID, mapID)
-		a.resetInstanceStateUnsafe()
+		logger.Printf("[Instance] 检测到新的副本地图 (%d -> %d)，保留副本名称等待重新绑定\n", a.currentInstance.MapID, mapID)
+		a.resetInstanceBindingUnsafe()
+		a.restoreInstanceBindingFromSaveNameUnsafe(mapID, nowCentis)
 	}
 	if a.currentInstance != nil {
 		logger.Printf("[Instance Debug] currentInstance存在: %s\n", a.currentInstance.InstanceName)
@@ -114,6 +132,12 @@ func (a *App) resolveInstanceMapDisplay(mapID int) (string, string) {
 		instanceName, _ := a.bindCurrentInstanceToMapUnsafe(mapID)
 		a.mu.Unlock()
 		logger.Printf("[Instance] 延迟后获取到副本名称: %s\n", instanceName)
+		return instanceName, defaultInstanceDisplayName
+	}
+	if a.restoreInstanceBindingFromSaveNameUnsafe(mapID, time.Now().UnixMilli()/10) {
+		instanceName := a.instanceSaveName
+		a.mu.Unlock()
+		logger.Printf("[Instance] 延迟后使用已保存副本名称: %s\n", instanceName)
 		return instanceName, defaultInstanceDisplayName
 	}
 
