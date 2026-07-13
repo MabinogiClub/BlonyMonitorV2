@@ -67,29 +67,34 @@ func (a *App) scheduleBattleUpload(saveData SaveFileData, filePath, saveName str
 	playerID := a.selfId
 	playerName := a.selfName
 
+	fileName := filepath.Base(filePath)
+
 	if playerID == "" {
-		uploadLog.Printf("跳过上传：未识别到玩家 ID (dungeon=%s file=%s)\n", saveName, filepath.Base(filePath))
+		uploadLog.Printf("跳过上传：未识别到玩家 ID (dungeon=%s file=%s)\n", saveName, fileName)
+		recordUploadSkipped(saveName, fileName, "未识别到玩家 ID")
 		return
 	}
 
 	uploadData := filterSaveDataForUpload(saveData, saveName)
 	if len(uploadData.Targets) == 0 {
-		uploadLog.Printf("跳过上传：无符合血量条件的目标 (dungeon=%s file=%s)\n", saveName, filepath.Base(filePath))
+		uploadLog.Printf("跳过上传：无符合血量条件的目标 (dungeon=%s file=%s)\n", saveName, fileName)
+		recordUploadSkipped(saveName, fileName, "无符合血量条件的目标")
 		return
 	}
 
 	gzData, err := marshalSaveJSON(uploadData)
 	if err != nil {
-		uploadLog.Printf("序列化失败 (dungeon=%s file=%s): %v\n", saveName, filepath.Base(filePath), err)
+		uploadLog.Printf("序列化失败 (dungeon=%s file=%s): %v\n", saveName, fileName, err)
+		recordUploadSkipped(saveName, fileName, fmt.Sprintf("序列化失败: %v", err))
 		return
 	}
 
 	endpoint := strings.TrimSpace(config.UploadEndpoint)
-	fileName := filepath.Base(filePath)
 	dungeonName := saveName
 	targetCount := len(uploadData.Targets)
 	payloadBytes := len(gzData)
 
+	recordUploadUploading(dungeonName, fileName)
 	uploadLog.Printf(
 		"开始上传: dungeon=%s file=%s player=%s(%s) targets=%d payload=%d bytes endpoint=%s\n",
 		dungeonName, fileName, playerName, playerID, targetCount, payloadBytes, endpoint,
@@ -110,6 +115,7 @@ func postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName stri
 
 	nonce, err := newUploadNonce()
 	if err != nil {
+		recordUploadError(dungeonName, fileName, 0, "", err)
 		return err
 	}
 	timestamp := time.Now().Unix()
@@ -129,17 +135,21 @@ func postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName stri
 
 	part, err := writer.CreateFormFile("file", fileName)
 	if err != nil {
+		recordUploadError(dungeonName, fileName, 0, "", err)
 		return err
 	}
 	if _, err := io.Copy(part, bytes.NewReader(gzData)); err != nil {
+		recordUploadError(dungeonName, fileName, 0, "", err)
 		return err
 	}
 	if err := writer.Close(); err != nil {
+		recordUploadError(dungeonName, fileName, 0, "", err)
 		return err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, endpoint, &body)
 	if err != nil {
+		recordUploadError(dungeonName, fileName, 0, "", err)
 		return err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -150,22 +160,26 @@ func postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName stri
 	client := &http.Client{Timeout: battleUploadTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
+		recordUploadError(dungeonName, fileName, 0, "", err)
 		return err
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	bodyText := strings.TrimSpace(string(respBody))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyText := strings.TrimSpace(string(respBody))
-		if bodyText == "" {
-			return fmt.Errorf("server returned %s", resp.Status)
+		uploadErr := fmt.Errorf("server returned %s", resp.Status)
+		if bodyText != "" {
+			uploadErr = fmt.Errorf("server returned %s: %s", resp.Status, bodyText)
 		}
-		return fmt.Errorf("server returned %s: %s", resp.Status, bodyText)
+		recordUploadError(dungeonName, fileName, resp.StatusCode, bodyText, uploadErr)
+		return uploadErr
 	}
 
+	recordUploadSuccess(dungeonName, fileName, resp.StatusCode, bodyText)
 	uploadLog.Printf(
-		"上传成功: dungeon=%s file=%s status=%d targets=%d payload=%d bytes\n",
-		dungeonName, fileName, resp.StatusCode, targetCount, len(gzData),
+		"上传成功: dungeon=%s file=%s status=%d targets=%d payload=%d bytes response=%s\n",
+		dungeonName, fileName, resp.StatusCode, targetCount, len(gzData), bodyText,
 	)
 	return nil
 }

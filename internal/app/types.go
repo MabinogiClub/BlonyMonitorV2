@@ -207,6 +207,7 @@ type DebugInfo struct {
 	ParsedSkills   int      `json:"parsedSkills"`  // 解析到的技能数
 	ParsedStrings  int      `json:"parsedStrings"` // 解析到的字符串数
 	LoadError      string   `json:"loadError"`     // 加载错误
+	Upload         UploadDebugInfo `json:"upload"`
 }
 
 // PCEntityInfo PC实体信息（用于角色列表）

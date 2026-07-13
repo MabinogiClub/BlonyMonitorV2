@@ -58,6 +58,53 @@ const loadError = computed(() => {
   return debugInfo.value?.loadError || '无'
 })
 
+const uploadInfo = computed(() => debugInfo.value?.upload)
+
+const uploadStatusText = computed(() => {
+  const status = uploadInfo.value?.status || 'idle'
+  const map: Record<string, string> = {
+    idle: '空闲',
+    uploading: '上传中',
+    success: '成功',
+    error: '失败',
+    skipped: '跳过',
+  }
+  return map[status] || status
+})
+
+const uploadStatusClass = computed(() => {
+  const status = uploadInfo.value?.status
+  if (status === 'error') return 'debug-error'
+  if (status === 'success') return 'debug-value'
+  if (status === 'uploading') return 'debug-warn'
+  if (status === 'skipped') return 'debug-muted'
+  return 'debug-value'
+})
+
+const uploadFileText = computed(() => {
+  const info = uploadInfo.value
+  if (!info?.fileName && !info?.dungeon) return '-'
+  if (info.dungeon && info.fileName) return `${info.dungeon} / ${info.fileName}`
+  return info.fileName || info.dungeon || '-'
+})
+
+const uploadHTTPStatus = computed(() => {
+  const code = uploadInfo.value?.httpStatus ?? 0
+  return code > 0 ? String(code) : '-'
+})
+
+const uploadResponse = computed(() => {
+  return uploadInfo.value?.response || '-'
+})
+
+const uploadMessage = computed(() => {
+  return uploadInfo.value?.message || '-'
+})
+
+const uploadUpdatedAt = computed(() => {
+  return uploadInfo.value?.updatedAt || '-'
+})
+
 /**
  * 更新调试信息
  */
@@ -168,6 +215,31 @@ onUnmounted(() => {
           {{ appStore.lastError }}
         </span>
       </div>
+      <div class="debug-divider"></div>
+      <div class="debug-item">
+        <span class="debug-label">上传状态:</span>
+        <span :class="uploadStatusClass">{{ uploadStatusText }} ({{ uploadUpdatedAt }})</span>
+      </div>
+      <div class="debug-item">
+        <span class="debug-label">上传文件:</span>
+        <span class="debug-value debug-wrap">{{ uploadFileText }}</span>
+      </div>
+      <div class="debug-item">
+        <span class="debug-label">HTTP状态:</span>
+        <span :class="uploadInfo?.status === 'error' ? 'debug-error' : 'debug-value'">{{ uploadHTTPStatus }}</span>
+      </div>
+      <div class="debug-item">
+        <span class="debug-label">上传消息:</span>
+        <span :class="uploadInfo?.status === 'error' ? 'debug-error debug-wrap' : 'debug-value debug-wrap'">
+          {{ uploadMessage }}
+        </span>
+      </div>
+      <div class="debug-item">
+        <span class="debug-label">服务端返回:</span>
+        <span :class="uploadInfo?.status === 'error' ? 'debug-error debug-wrap' : 'debug-value debug-wrap'">
+          {{ uploadResponse }}
+        </span>
+      </div>
     </div>
   </van-popup>
 </template>
@@ -214,5 +286,23 @@ onUnmounted(() => {
 
 .debug-error {
   color: #f44336;
+}
+
+.debug-warn {
+  color: #ff9800;
+}
+
+.debug-muted {
+  color: #9e9e9e;
+}
+
+.debug-divider {
+  margin: 4px 0;
+  border-top: 1px solid rgba(255, 152, 0, 0.25);
+}
+
+.debug-wrap {
+  white-space: normal;
+  word-break: break-all;
 }
 </style>

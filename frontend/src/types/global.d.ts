@@ -129,6 +129,16 @@ interface NpcapStatus {
 /**
  * 调试信息类型
  */
+interface UploadDebugInfo {
+  status: string
+  dungeon: string
+  fileName: string
+  httpStatus: number
+  response: string
+  message: string
+  updatedAt: string
+}
+
 interface DebugInfo {
   connected: boolean
   skillCount: number
@@ -143,6 +153,7 @@ interface DebugInfo {
   resourceURL: string
   sampleSkills?: string[]
   loadError?: string
+  upload?: UploadDebugInfo
 }
 
 /**

@@ -253,6 +253,7 @@ func (a *App) GetDebugInfo() DebugInfo {
 		ParsedSkills:   parsedSkillCount,
 		ParsedStrings:  parsedStringCount,
 		LoadError:      lastLoadError,
+		Upload:         getUploadDebugInfo(),
 	}
 }
 
