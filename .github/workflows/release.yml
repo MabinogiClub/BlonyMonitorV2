@@ -65,17 +65,30 @@ jobs:
         env:
           CGO_ENABLED: 0
           BLONY_UPLOAD_SECRET: ${{ secrets.BLONY_UPLOAD_SECRET }}
-          BLONY_UPLOAD_ENDPOINT: ${{ vars.BLONY_UPLOAD_ENDPOINT }}
+          BLONY_UPLOAD_ENDPOINT: ${{ secrets.BLONY_UPLOAD_ENDPOINT }}
+          BLONY_UPLOAD_ENDPOINT_VAR: ${{ vars.BLONY_UPLOAD_ENDPOINT }}
           BLONY_UPLOAD_DUNGEON_KEYWORD: ${{ vars.BLONY_UPLOAD_DUNGEON_KEYWORD }}
           BLONY_UPLOAD_ENABLED: ${{ vars.BLONY_UPLOAD_ENABLED }}
         run: |
+          $endpoint = ($env:BLONY_UPLOAD_ENDPOINT).Trim()
+          if (-not $endpoint) {
+            $endpoint = ($env:BLONY_UPLOAD_ENDPOINT_VAR).Trim()
+          }
+
+          $hasSecret = -not [string]::IsNullOrWhiteSpace($env:BLONY_UPLOAD_SECRET)
+          $hasEndpoint = -not [string]::IsNullOrWhiteSpace($endpoint)
+          Write-Host "Upload inject check: secret=$hasSecret endpoint=$hasEndpoint"
+          if (-not $hasEndpoint) {
+            Write-Warning "BLONY_UPLOAD_ENDPOINT is empty. Add it under Settings > Secrets and variables > Actions > Secrets."
+          }
+
           $ldflags = @('-s', '-w')
-          if ($env:BLONY_UPLOAD_SECRET) {
+          if ($hasSecret) {
             $secretB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($env:BLONY_UPLOAD_SECRET))
             $ldflags += "-X blonymonitorv2/internal/config.uploadSecretInjectB64=$secretB64"
           }
-          if ($env:BLONY_UPLOAD_ENDPOINT) {
-            $endpointB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($env:BLONY_UPLOAD_ENDPOINT))
+          if ($hasEndpoint) {
+            $endpointB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($endpoint))
             $ldflags += "-X blonymonitorv2/internal/config.uploadEndpointInjectB64=$endpointB64"
           }
           if ($env:BLONY_UPLOAD_DUNGEON_KEYWORD) {

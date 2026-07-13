@@ -6,7 +6,7 @@ BlonyMonitorV2 客户端在本地保存战斗历史后，会按条件自动将�
 
 | 项目 | 值 |
 |------|-----|
-| Endpoint | 由 `.env`、环境变量或 GitHub Variables 配置 |
+| Endpoint | 由 `.env`、环境变量或 GitHub **Secrets** 配置 |
 | HTTP 方法 | `POST` |
 | Content-Type | `multipart/form-data` |
 | 鉴权 | `HMAC-SHA256` 请求签名（必填） |
@@ -22,8 +22,8 @@ BlonyMonitorV2 客户端在本地保存战斗历史后，会按条件自动将�
 
 | 配置项 | 说明 |
 |--------|------|
-| `UploadEndpoint` | 上传地址 |
 | `UploadSecret` | HMAC 密钥（敏感，走 GitHub **Secret**） |
+| `UploadEndpoint` | 上传地址（敏感，推荐走 GitHub **Secret**） |
 | `UploadDungeonKeyword` | 副本名关键字过滤 |
 | `MinUploadTargetMaxHP` | 最低 Boss 血量过滤（仅代码配置） |
 
@@ -36,27 +36,29 @@ BlonyMonitorV2 客户端在本地保存战斗历史后，会按条件自动将�
 | 名称 | 必填 | 说明 |
 |------|------|------|
 | `BLONY_UPLOAD_SECRET` | 是 | HMAC 签名密钥，与服务端一致，建议 ≥32 位随机字符串 |
+| `BLONY_UPLOAD_ENDPOINT` | 是 | 推送地址（推荐放 Secrets，避免在仓库 Variables 中明文可见） |
 
 添加步骤：
 
 1. 打开 GitHub 仓库 → **Settings**
 2. 左侧 **Secrets and variables** → **Actions**
 3. 切到 **Secrets** 标签 → **New repository secret**
-4. Name 填 `BLONY_UPLOAD_SECRET`，Value 填你的密钥 → **Add secret**
+4. 分别添加 `BLONY_UPLOAD_SECRET` 与 `BLONY_UPLOAD_ENDPOINT`
 
 #### Variables（非敏感，可公开在仓库内）
 
 | 名称 | 必填 | 说明 |
 |------|------|------|
-| `BLONY_UPLOAD_ENDPOINT` | 是 | 推送地址 |
-| `BLONY_UPLOAD_DUNGEON_KEYWORD` | 否 | 副本关键字，默认 `布里列赫` |
+| `BLONY_UPLOAD_DUNGEON_KEYWORD` | 否 | 副本关键字，默认 `布里列赫,佩斯皮亚德` |
 | `BLONY_UPLOAD_ENABLED` | 否 | `true` / `false`，默认 `true` |
+
+> 若将 `BLONY_UPLOAD_ENDPOINT` 放在 **Variables** 而非 Secrets，CI 也会识别（作为 Secrets 未配置时的回退）。
 
 添加步骤：
 
 1. 同上进入 **Secrets and variables → Actions**
 2. 切到 **Variables** 标签 → **New repository variable**
-3. 按需添加 `BLONY_UPLOAD_ENDPOINT` 等
+3. 按需添加 `BLONY_UPLOAD_DUNGEON_KEYWORD` 等
 
 #### CI 如何注入
 
