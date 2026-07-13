@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/base64"
 	"testing"
 
 	"blonymonitorv2/internal/config"
@@ -16,7 +17,7 @@ func TestFilterSaveDataForUpload(t *testing.T) {
 		},
 	}
 
-	filtered := filterSaveDataForUpload(data)
+	filtered := filterSaveDataForUpload(data, "布里列赫")
 	if len(filtered.Targets) != 2 {
 		t.Fatalf("expected 2 targets, got %d", len(filtered.Targets))
 	}
@@ -38,7 +39,7 @@ func TestShouldUploadBattle(t *testing.T) {
 	}()
 
 	config.UploadEndpoint = "http://example.com/upload"
-	config.UploadDungeonKeyword = "布里列赫"
+	config.UploadDungeonKeyword = "布里列赫,佩斯皮亚德"
 	config.UploadSecret = "test-secret"
 	config.UploadEnabled = true
 
@@ -50,6 +51,12 @@ func TestShouldUploadBattle(t *testing.T) {
 	}
 	if !shouldUploadBattle("2026-07-12_15-04-05_布里列赫") {
 		t.Fatal("expected upload when save name contains keyword")
+	}
+	if !shouldUploadBattle("2026-07-13_22-21-48_佩斯皮亚德") {
+		t.Fatal("expected upload when save name contains secondary keyword")
+	}
+	if !shouldUploadBattle("佩斯皮亚德") {
+		t.Fatal("expected upload for comma-separated keyword list")
 	}
 
 	config.UploadEndpoint = ""
@@ -87,5 +94,20 @@ func TestSignBattleUpload(t *testing.T) {
 	}
 	if verifyBattleUploadSignature("wrong-secret", 1700000000, "nonce-1", "12345", data, sig) {
 		t.Fatal("signature verification should fail for wrong secret")
+	}
+}
+
+func TestUploadSecretKeyBase64(t *testing.T) {
+	raw := make([]byte, 32)
+	for i := range raw {
+		raw[i] = byte(i)
+	}
+	encoded := base64.StdEncoding.EncodeToString(raw)
+
+	if got := uploadSecretKey(encoded); string(got) != string(raw) {
+		t.Fatalf("expected decoded key bytes, got len %d", len(got))
+	}
+	if got := uploadSecretKey("plain-text-secret"); string(got) != "plain-text-secret" {
+		t.Fatalf("expected plain secret bytes, got %q", got)
 	}
 }

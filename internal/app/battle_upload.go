@@ -2,10 +2,13 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,6 +17,9 @@ import (
 	"blonymonitorv2/internal/config"
 )
 
+// uploadLog 始终输出到控制台，便于 wails dev 调试上传。
+var uploadLog = log.New(os.Stdout, "[Upload] ", log.LstdFlags)
+
 const battleUploadTimeout = 15 * time.Second
 
 func shouldUploadBattle(saveName string) bool {
@@ -21,13 +27,30 @@ func shouldUploadBattle(saveName string) bool {
 	if !enabled || endpoint == "" || keyword == "" || !isUploadSecretConfigured() {
 		return false
 	}
-	return strings.Contains(saveName, keyword)
+	return saveNameMatchesUploadKeyword(saveName, keyword)
 }
 
-func filterSaveDataForUpload(data SaveFileData) SaveFileData {
+func saveNameMatchesUploadKeyword(saveName, keyword string) bool {
+	for _, part := range strings.Split(keyword, ",") {
+		if kw := strings.TrimSpace(part); kw != "" && strings.Contains(saveName, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func minUploadTargetMaxHP(saveName string) int64 {
+	if strings.Contains(saveName, "佩斯皮亚德") {
+		return config.MinUploadTargetMaxHPPeisiaad
+	}
+	return config.MinUploadTargetMaxHP
+}
+
+func filterSaveDataForUpload(data SaveFileData, saveName string) SaveFileData {
+	minHP := minUploadTargetMaxHP(saveName)
 	filtered := make([]targetExport, 0, len(data.Targets))
 	for _, target := range data.Targets {
-		if target.BossHP == nil || target.BossHP.MaxHP < config.MinUploadTargetMaxHP {
+		if target.BossHP == nil || target.BossHP.MaxHP < float64(minHP) {
 			continue
 		}
 		filtered = append(filtered, target)
@@ -35,45 +58,51 @@ func filterSaveDataForUpload(data SaveFileData) SaveFileData {
 	return SaveFileData{Targets: filtered}
 }
 
+// scheduleBattleUpload 在战斗记录保存后异步上传。调用方必须已持有 a.mu。
 func (a *App) scheduleBattleUpload(saveData SaveFileData, filePath, saveName string) {
 	if !shouldUploadBattle(saveName) {
 		return
 	}
 
-	a.mu.RLock()
 	playerID := a.selfId
 	playerName := a.selfName
-	a.mu.RUnlock()
 
 	if playerID == "" {
-		logger.Printf("[Upload] 跳过上传：未识别到玩家 ID\n")
+		uploadLog.Printf("跳过上传：未识别到玩家 ID (dungeon=%s file=%s)\n", saveName, filepath.Base(filePath))
 		return
 	}
 
-	uploadData := filterSaveDataForUpload(saveData)
+	uploadData := filterSaveDataForUpload(saveData, saveName)
 	if len(uploadData.Targets) == 0 {
-		logger.Printf("[Upload] 跳过上传：无符合血量条件的目标\n")
+		uploadLog.Printf("跳过上传：无符合血量条件的目标 (dungeon=%s file=%s)\n", saveName, filepath.Base(filePath))
 		return
 	}
 
 	gzData, err := marshalSaveJSON(uploadData)
 	if err != nil {
-		logger.Printf("[Upload] 序列化失败: %v\n", err)
+		uploadLog.Printf("序列化失败 (dungeon=%s file=%s): %v\n", saveName, filepath.Base(filePath), err)
 		return
 	}
 
 	endpoint := strings.TrimSpace(config.UploadEndpoint)
 	fileName := filepath.Base(filePath)
 	dungeonName := saveName
+	targetCount := len(uploadData.Targets)
+	payloadBytes := len(gzData)
+
+	uploadLog.Printf(
+		"开始上传: dungeon=%s file=%s player=%s(%s) targets=%d payload=%d bytes endpoint=%s\n",
+		dungeonName, fileName, playerName, playerID, targetCount, payloadBytes, endpoint,
+	)
 
 	go func() {
-		if err := postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName, gzData); err != nil {
-			logger.Printf("[Upload] 上传失败: %v\n", err)
+		if err := postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName, gzData, targetCount); err != nil {
+			uploadLog.Printf("上传失败: dungeon=%s file=%s err=%v\n", dungeonName, fileName, err)
 		}
 	}()
 }
 
-func postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName string, gzData []byte) error {
+func postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName string, gzData []byte, targetCount int) error {
 	secret := strings.TrimSpace(config.UploadSecret)
 	if secret == "" {
 		return fmt.Errorf("upload secret not configured")
@@ -124,10 +153,98 @@ func postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName stri
 		return err
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		logger.Printf("[Upload] 服务端返回非成功状态: %s\n", resp.Status)
+		bodyText := strings.TrimSpace(string(respBody))
+		if bodyText == "" {
+			return fmt.Errorf("server returned %s", resp.Status)
+		}
+		return fmt.Errorf("server returned %s: %s", resp.Status, bodyText)
 	}
+
+	uploadLog.Printf(
+		"上传成功: dungeon=%s file=%s status=%d targets=%d payload=%d bytes\n",
+		dungeonName, fileName, resp.StatusCode, targetCount, len(gzData),
+	)
 	return nil
+}
+
+func saveNameFromFileName(fileName string) string {
+	stem := strings.TrimSuffix(fileName, saveFileExtension)
+	parts := strings.SplitN(stem, "_", 3)
+	if len(parts) == 3 {
+		return parts[2]
+	}
+	return stem
+}
+
+func pickUploaderFromSaveData(data SaveFileData) (string, string) {
+	type playerDamage struct {
+		id   string
+		name string
+		dmg  float64
+	}
+	best := playerDamage{}
+	for _, target := range data.Targets {
+		for _, attacker := range target.Attackers {
+			if !attacker.IsPC || attacker.ID == "" {
+				continue
+			}
+			if attacker.TotalDamage > best.dmg {
+				best = playerDamage{id: attacker.ID, name: attacker.Name, dmg: attacker.TotalDamage}
+			}
+		}
+	}
+	return best.id, best.name
+}
+
+// UploadSaveFile uploads one saved battle file using current upload config.
+func UploadSaveFile(filePath, playerID, playerName string) error {
+	if !isUploadSecretConfigured() {
+		return fmt.Errorf("upload secret not configured")
+	}
+	endpoint := strings.TrimSpace(config.UploadEndpoint)
+	if endpoint == "" {
+		return fmt.Errorf("upload endpoint not configured")
+	}
+	if !config.UploadEnabled {
+		return fmt.Errorf("upload is disabled")
+	}
+
+	raw, err := readSaveFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	var saveData SaveFileData
+	if err := json.Unmarshal(raw, &saveData); err != nil {
+		return fmt.Errorf("parse save file: %w", err)
+	}
+
+	fileName := filepath.Base(filePath)
+	saveName := saveNameFromFileName(fileName)
+	if !shouldUploadBattle(saveName) {
+		return fmt.Errorf("save name %q does not match upload keyword", saveName)
+	}
+
+	if playerID == "" {
+		playerID, playerName = pickUploaderFromSaveData(saveData)
+	}
+	if playerID == "" {
+		return fmt.Errorf("player id not found in save file")
+	}
+
+	uploadData := filterSaveDataForUpload(saveData, saveName)
+	if len(uploadData.Targets) == 0 {
+		return fmt.Errorf("no upload-eligible targets in %q", saveName)
+	}
+
+	gzData, err := marshalSaveJSON(uploadData)
+	if err != nil {
+		return err
+	}
+
+	uploadLog.Printf("CLI 上传: file=%s targets=%d payload=%d bytes\n", fileName, len(uploadData.Targets), len(gzData))
+	return postBattleUpload(endpoint, playerID, playerName, saveName, fileName, gzData, len(uploadData.Targets))
 }
