@@ -11,13 +11,10 @@ var UploadEndpoint = ""
 var UploadEnabled = true
 
 // UploadDungeonKeyword 仅上传文件名/副本名包含任一关键字的战斗记录（逗号分隔）。
-var UploadDungeonKeyword = "布里列赫,佩斯皮亚德"
+var UploadDungeonKeyword = "布里列赫"
 
 // MinUploadTargetMaxHP 上传时仅保留 Boss 最大血量不低于该值的目标（单位：点）。
 const MinUploadTargetMaxHP = 200_000_000
-
-// MinUploadTargetMaxHPPeisiaad 佩斯皮亚德上传阈值（简单模式主塔约 262,500）。
-const MinUploadTargetMaxHPPeisiaad = 200_000
 
 // ClientVersion 客户端版本号，上传时附带。
 const ClientVersion = "2.2.2"

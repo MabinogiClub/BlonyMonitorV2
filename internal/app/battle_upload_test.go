@@ -17,7 +17,7 @@ func TestFilterSaveDataForUpload(t *testing.T) {
 		},
 	}
 
-	filtered := filterSaveDataForUpload(data, "布里列赫")
+	filtered := filterSaveDataForUpload(data)
 	if len(filtered.Targets) != 2 {
 		t.Fatalf("expected 2 targets, got %d", len(filtered.Targets))
 	}
@@ -39,7 +39,7 @@ func TestShouldUploadBattle(t *testing.T) {
 	}()
 
 	config.UploadEndpoint = "http://example.com/upload"
-	config.UploadDungeonKeyword = "布里列赫,佩斯皮亚德"
+	config.UploadDungeonKeyword = "布里列赫"
 	config.UploadSecret = "test-secret"
 	config.UploadEnabled = true
 
@@ -52,11 +52,11 @@ func TestShouldUploadBattle(t *testing.T) {
 	if !shouldUploadBattle("2026-07-12_15-04-05_布里列赫") {
 		t.Fatal("expected upload when save name contains keyword")
 	}
-	if !shouldUploadBattle("2026-07-13_22-21-48_佩斯皮亚德") {
-		t.Fatal("expected upload when save name contains secondary keyword")
+	if shouldUploadBattle("2026-07-13_22-21-48_佩斯皮亚德") {
+		t.Fatal("expected skip for blocked dungeon")
 	}
-	if !shouldUploadBattle("佩斯皮亚德") {
-		t.Fatal("expected upload for comma-separated keyword list")
+	if shouldUploadBattle("佩斯皮亚德") {
+		t.Fatal("expected skip for blocked dungeon")
 	}
 
 	config.UploadEndpoint = ""
@@ -110,19 +110,22 @@ func TestUploadBlockReason(t *testing.T) {
 	}()
 
 	config.UploadEndpoint = "http://example.com/upload"
-	config.UploadDungeonKeyword = "佩斯皮亚德"
+	config.UploadDungeonKeyword = "布里列赫"
 	config.UploadSecret = "test-secret"
 	config.UploadEnabled = true
 
 	if reason := uploadBlockReason("战斗记录"); reason == "" {
 		t.Fatal("expected block reason for generic save name")
 	}
-	if reason := uploadBlockReason("佩斯皮亚德"); reason != "" {
+	if reason := uploadBlockReason("佩斯皮亚德"); reason == "" {
+		t.Fatal("expected block reason for blocked dungeon")
+	}
+	if reason := uploadBlockReason("布里列赫"); reason != "" {
 		t.Fatalf("expected no block reason, got %q", reason)
 	}
 
 	config.UploadEndpoint = ""
-	if reason := uploadBlockReason("佩斯皮亚德"); reason != "未配置上传地址" {
+	if reason := uploadBlockReason("布里列赫"); reason != "未配置上传地址" {
 		t.Fatalf("unexpected reason: %q", reason)
 	}
 }

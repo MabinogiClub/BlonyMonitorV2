@@ -49,7 +49,7 @@ BlonyMonitorV2 客户端在本地保存战斗历史后，会按条件自动将�
 
 | 名称 | 必填 | 说明 |
 |------|------|------|
-| `BLONY_UPLOAD_DUNGEON_KEYWORD` | 否 | 副本关键字，默认 `布里列赫,佩斯皮亚德` |
+| `BLONY_UPLOAD_DUNGEON_KEYWORD` | 否 | 副本关键字，默认 `布里列赫` |
 | `BLONY_UPLOAD_ENABLED` | 否 | `true` / `false`，默认 `true` |
 
 > 若将 `BLONY_UPLOAD_ENDPOINT` 放在 **Variables** 而非 Secrets，CI 也会识别（作为 Secrets 未配置时的回退）。

@@ -55,15 +55,8 @@ func saveNameMatchesUploadKeyword(saveName, keyword string) bool {
 	return false
 }
 
-func minUploadTargetMaxHP(saveName string) int64 {
-	if strings.Contains(saveName, "佩斯皮亚德") {
-		return config.MinUploadTargetMaxHPPeisiaad
-	}
-	return config.MinUploadTargetMaxHP
-}
-
-func filterSaveDataForUpload(data SaveFileData, saveName string) SaveFileData {
-	minHP := minUploadTargetMaxHP(saveName)
+func filterSaveDataForUpload(data SaveFileData) SaveFileData {
+	minHP := config.MinUploadTargetMaxHP
 	filtered := make([]targetExport, 0, len(data.Targets))
 	for _, target := range data.Targets {
 		if target.BossHP == nil || target.BossHP.MaxHP < float64(minHP) {
@@ -93,7 +86,7 @@ func (a *App) scheduleBattleUpload(saveData SaveFileData, filePath, saveName str
 		return
 	}
 
-	uploadData := filterSaveDataForUpload(saveData, saveName)
+	uploadData := filterSaveDataForUpload(saveData)
 	if len(uploadData.Targets) == 0 {
 		uploadLog.Printf("跳过上传：无符合血量条件的目标 (dungeon=%s file=%s)\n", saveName, fileName)
 		recordUploadSkipped(saveName, fileName, "无符合血量条件的目标")
@@ -267,7 +260,7 @@ func UploadSaveFile(filePath, playerID, playerName string) error {
 		return fmt.Errorf("player id not found in save file")
 	}
 
-	uploadData := filterSaveDataForUpload(saveData, saveName)
+	uploadData := filterSaveDataForUpload(saveData)
 	if len(uploadData.Targets) == 0 {
 		return fmt.Errorf("no upload-eligible targets in %q", saveName)
 	}
