@@ -105,6 +105,25 @@ const uploadUpdatedAt = computed(() => {
   return uploadInfo.value?.updatedAt || '-'
 })
 
+const uploadConfigText = computed(() => {
+  const info = uploadInfo.value
+  if (!info) return '-'
+  const enabled = info.configEnabled ? '开' : '关'
+  const secret = info.configSecretReady ? '已配置' : '未配置'
+  const endpoint = info.configHasEndpoint ? '已配置' : '未配置'
+  const keyword = info.configKeyword || '-'
+  return `推送${enabled} | 密钥${secret} | 地址${endpoint} | 关键字${keyword}`
+})
+
+const lastBattleSaveText = computed(() => {
+  const info = uploadInfo.value
+  if (!info?.lastSaveFile && !info?.lastSaveName) return '尚未保存战斗记录'
+  const when = info.lastSaveAt || '-'
+  const name = info.lastSaveName || '-'
+  const file = info.lastSaveFile || '-'
+  return `${when} ${name} / ${file}`
+})
+
 /**
  * 更新调试信息
  */
@@ -216,6 +235,14 @@ onUnmounted(() => {
         </span>
       </div>
       <div class="debug-divider"></div>
+      <div class="debug-item">
+        <span class="debug-label">上传配置:</span>
+        <span class="debug-value debug-wrap">{{ uploadConfigText }}</span>
+      </div>
+      <div class="debug-item">
+        <span class="debug-label">最近保存:</span>
+        <span class="debug-value debug-wrap">{{ lastBattleSaveText }}</span>
+      </div>
       <div class="debug-item">
         <span class="debug-label">上传状态:</span>
         <span :class="uploadStatusClass">{{ uploadStatusText }} ({{ uploadUpdatedAt }})</span>

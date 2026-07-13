@@ -17,12 +17,13 @@ func TestApplyBuildInjectOverrides(t *testing.T) {
 		UploadEnabled = origEnabled
 		uploadSecretInjectB64 = ""
 		uploadEndpointInject = ""
+		uploadEndpointInjectB64 = ""
 		uploadDungeonKeywordInject = ""
 		uploadEnabledInject = ""
 	}()
 
 	uploadSecretInjectB64 = base64.StdEncoding.EncodeToString([]byte("injected-secret"))
-	uploadEndpointInject = "http://inject.example/push"
+	uploadEndpointInjectB64 = base64.StdEncoding.EncodeToString([]byte("http://inject.example/push"))
 	uploadDungeonKeywordInject = "测试副本"
 	uploadEnabledInject = "false"
 

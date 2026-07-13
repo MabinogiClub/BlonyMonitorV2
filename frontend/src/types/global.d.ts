@@ -137,6 +137,13 @@ interface UploadDebugInfo {
   response: string
   message: string
   updatedAt: string
+  lastSaveName?: string
+  lastSaveFile?: string
+  lastSaveAt?: string
+  configEnabled?: boolean
+  configSecretReady?: boolean
+  configHasEndpoint?: boolean
+  configKeyword?: string
 }
 
 interface DebugInfo {

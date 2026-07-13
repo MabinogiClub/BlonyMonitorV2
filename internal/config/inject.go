@@ -7,10 +7,11 @@ import (
 
 // 以下变量仅供 CI 通过 -ldflags 注入，勿在源码中填写真实密钥。
 var (
-	uploadSecretInjectB64     = ""
-	uploadEndpointInject      = ""
+	uploadSecretInjectB64      = ""
+	uploadEndpointInject       = ""
+	uploadEndpointInjectB64    = ""
 	uploadDungeonKeywordInject = ""
-	uploadEnabledInject       = ""
+	uploadEnabledInject        = ""
 )
 
 func applyBuildInjectOverrides() {
@@ -22,7 +23,14 @@ func applyBuildInjectOverrides() {
 			}
 		}
 	}
-	if endpoint := strings.TrimSpace(uploadEndpointInject); endpoint != "" {
+	if uploadEndpointInjectB64 != "" {
+		decoded, err := base64.StdEncoding.DecodeString(uploadEndpointInjectB64)
+		if err == nil {
+			if endpoint := strings.TrimSpace(string(decoded)); endpoint != "" {
+				UploadEndpoint = endpoint
+			}
+		}
+	} else if endpoint := strings.TrimSpace(uploadEndpointInject); endpoint != "" {
 		UploadEndpoint = endpoint
 	}
 	if keyword := strings.TrimSpace(uploadDungeonKeywordInject); keyword != "" {

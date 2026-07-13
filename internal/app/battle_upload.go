@@ -23,11 +23,27 @@ var uploadLog = log.New(os.Stdout, "[Upload] ", log.LstdFlags)
 const battleUploadTimeout = 15 * time.Second
 
 func shouldUploadBattle(saveName string) bool {
+	return uploadBlockReason(saveName) == ""
+}
+
+func uploadBlockReason(saveName string) string {
 	enabled, endpoint, keyword := getUploadFilterConfig()
-	if !enabled || endpoint == "" || keyword == "" || !isUploadSecretConfigured() {
-		return false
+	if !enabled {
+		return "推送已关闭"
 	}
-	return saveNameMatchesUploadKeyword(saveName, keyword)
+	if strings.TrimSpace(endpoint) == "" {
+		return "未配置上传地址"
+	}
+	if !isUploadSecretConfigured() {
+		return "未配置上传密钥"
+	}
+	if strings.TrimSpace(keyword) == "" {
+		return "未配置副本关键字"
+	}
+	if !saveNameMatchesUploadKeyword(saveName, keyword) {
+		return fmt.Sprintf("副本名 %q 不匹配关键字 %q", saveName, keyword)
+	}
+	return ""
 }
 
 func saveNameMatchesUploadKeyword(saveName, keyword string) bool {
@@ -60,14 +76,16 @@ func filterSaveDataForUpload(data SaveFileData, saveName string) SaveFileData {
 
 // scheduleBattleUpload 在战斗记录保存后异步上传。调用方必须已持有 a.mu。
 func (a *App) scheduleBattleUpload(saveData SaveFileData, filePath, saveName string) {
-	if !shouldUploadBattle(saveName) {
+	fileName := filepath.Base(filePath)
+
+	if reason := uploadBlockReason(saveName); reason != "" {
+		uploadLog.Printf("跳过上传：%s (dungeon=%s file=%s)\n", reason, saveName, fileName)
+		recordUploadSkipped(saveName, fileName, reason)
 		return
 	}
 
 	playerID := a.selfId
 	playerName := a.selfName
-
-	fileName := filepath.Base(filePath)
 
 	if playerID == "" {
 		uploadLog.Printf("跳过上传：未识别到玩家 ID (dungeon=%s file=%s)\n", saveName, fileName)

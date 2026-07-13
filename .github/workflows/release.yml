@@ -75,7 +75,8 @@ jobs:
             $ldflags += "-X blonymonitorv2/internal/config.uploadSecretInjectB64=$secretB64"
           }
           if ($env:BLONY_UPLOAD_ENDPOINT) {
-            $ldflags += "-X blonymonitorv2/internal/config.uploadEndpointInject=$($env:BLONY_UPLOAD_ENDPOINT)"
+            $endpointB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($env:BLONY_UPLOAD_ENDPOINT))
+            $ldflags += "-X blonymonitorv2/internal/config.uploadEndpointInjectB64=$endpointB64"
           }
           if ($env:BLONY_UPLOAD_DUNGEON_KEYWORD) {
             $ldflags += "-X blonymonitorv2/internal/config.uploadDungeonKeywordInject=$($env:BLONY_UPLOAD_DUNGEON_KEYWORD)"

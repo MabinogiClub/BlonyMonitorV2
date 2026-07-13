@@ -9,13 +9,20 @@ import (
 
 // UploadDebugInfo 最近一次战斗上传状态（供调试面板展示）。
 type UploadDebugInfo struct {
-	Status     string `json:"status"`
-	Dungeon    string `json:"dungeon"`
-	FileName   string `json:"fileName"`
-	HTTPStatus int    `json:"httpStatus"`
-	Response   string `json:"response"`
-	Message    string `json:"message"`
-	UpdatedAt  string `json:"updatedAt"`
+	Status            string `json:"status"`
+	Dungeon           string `json:"dungeon"`
+	FileName          string `json:"fileName"`
+	HTTPStatus        int    `json:"httpStatus"`
+	Response          string `json:"response"`
+	Message           string `json:"message"`
+	UpdatedAt         string `json:"updatedAt"`
+	LastSaveName      string `json:"lastSaveName"`
+	LastSaveFile      string `json:"lastSaveFile"`
+	LastSaveAt        string `json:"lastSaveAt"`
+	ConfigEnabled     bool   `json:"configEnabled"`
+	ConfigSecretReady bool   `json:"configSecretReady"`
+	ConfigHasEndpoint bool   `json:"configHasEndpoint"`
+	ConfigKeyword     string `json:"configKeyword"`
 }
 
 var (
@@ -24,12 +31,25 @@ var (
 		Status:  "idle",
 		Message: "暂无上传记录",
 	}
+	lastBattleSaveName string
+	lastBattleSaveFile string
+	lastBattleSaveAt   string
 )
 
 func getUploadDebugInfo() UploadDebugInfo {
 	uploadDebugMu.RLock()
-	defer uploadDebugMu.RUnlock()
-	return uploadDebug
+	info := uploadDebug
+	info.LastSaveName = lastBattleSaveName
+	info.LastSaveFile = lastBattleSaveFile
+	info.LastSaveAt = lastBattleSaveAt
+	uploadDebugMu.RUnlock()
+
+	enabled, endpoint, keyword := getUploadFilterConfig()
+	info.ConfigEnabled = enabled
+	info.ConfigSecretReady = isUploadSecretConfigured()
+	info.ConfigHasEndpoint = strings.TrimSpace(endpoint) != ""
+	info.ConfigKeyword = keyword
+	return info
 }
 
 func setUploadDebug(info UploadDebugInfo) {
@@ -75,6 +95,14 @@ func recordUploadError(dungeon, fileName string, statusCode int, response string
 		Response:   truncateUploadDebugText(response, 512),
 		Message:    msg,
 	})
+}
+
+func recordLastBattleSave(saveName, fileName string) {
+	uploadDebugMu.Lock()
+	lastBattleSaveName = saveName
+	lastBattleSaveFile = fileName
+	lastBattleSaveAt = time.Now().Format("15:04:05")
+	uploadDebugMu.Unlock()
 }
 
 func recordUploadSkipped(dungeon, fileName, reason string) {
