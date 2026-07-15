@@ -270,7 +270,7 @@ curl -X POST "https://your-server.example/dpsPusher" \
 | `targetName` | string | 目标显示名 |
 | `totalDamage` | number | 有效总伤害 |
 | `dps` | number | 秒伤 |
-| `duration` | number | 战斗时长（秒） |
+| `duration` | number | 战斗时长（整数秒，至少 1 秒） |
 | `cleanedAt` | int64 | 保存时间（厘秒） |
 | `appearedAt` | int64 | 首次受击时间（厘秒） |
 | `deathTime` | int64 | 死亡时间（厘秒，可选） |
@@ -287,6 +287,8 @@ curl -X POST "https://your-server.example/dpsPusher" \
 | `dps` | number | 秒伤 |
 | `percent` | number | 占目标总伤百分比 |
 | `isPC` | boolean | 是否为玩家角色 |
+| `lastHit` | int64 | 最后命中时间（厘秒） |
+| `appearedAt` | int64 | 首次命中时间（厘秒） |
 | `skills` | array | 技能聚合统计 |
 | `skillsDetail` | array | 技能明细（含 `hitRecords`） |
 
@@ -349,3 +351,4 @@ curl -X POST "https://your-server.example/dpsPusher" \
 |------|------|------|
 | 1.0 | 2026-07-12 | 初始版本：multipart 上传 gzip 战斗快照 |
 | 1.1 | 2026-07-12 | 增加 HMAC 签名、contentSha256、服务端防护清单 |
+| 1.2 | 2026-07-15 | 存档字段与 EMA 对齐：攻击者时间、显式 isPC、整数时长与暴击区间语义 |

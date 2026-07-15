@@ -29,8 +29,16 @@ type skillExport struct {
 }
 
 type attackerExport struct {
-	AttackerWithSkills
-	SkillsDetail []skillExport `json:"skillsDetail,omitempty"`
+	ID           string             `json:"id"`
+	Name         string             `json:"name"`
+	TotalDamage  float64            `json:"totalDamage"`
+	DPS          float64            `json:"dps"`
+	Percent      float64            `json:"percent"`
+	IsPC         bool               `json:"isPC"`
+	LastHit      int64              `json:"lastHit"`
+	AppearedAt   int64              `json:"appearedAt"`
+	Skills       []SkillDamageStats `json:"skills"`
+	SkillsDetail []skillExport      `json:"skillsDetail,omitempty"`
 }
 
 type targetExport struct {
@@ -91,6 +99,17 @@ func cloneSortedBossHPRecords(records []BossHPRecord) []BossHPRecord {
 	return result
 }
 
+func exportDurationSeconds(start, end int64) int64 {
+	if end <= start {
+		return 1
+	}
+	duration := (end - start) / timePrecisionScale
+	if duration < 1 {
+		return 1
+	}
+	return duration
+}
+
 func filterHitRecordsSince(records []SkillHitRecord, sinceSeq int64) []SkillHitRecord {
 	if sinceSeq <= 0 {
 		return cloneSortedSkillHitRecords(records)
@@ -105,19 +124,13 @@ func filterHitRecordsSince(records []SkillHitRecord, sinceSeq int64) []SkillHitR
 }
 
 func aggregateHitRecords(records []SkillHitRecord) (total float64, hits, crits int, min, max, critMin, critMax float64, firstHit, lastHit int64) {
+	normalHits := 0
 	for i, r := range records {
 		total += r.Damage
 		hits++
 		if i == 0 {
-			min, max = r.Damage, r.Damage
 			firstHit, lastHit = r.Timestamp, r.Timestamp
 		} else {
-			if r.Damage < min {
-				min = r.Damage
-			}
-			if r.Damage > max {
-				max = r.Damage
-			}
 			if r.Timestamp < firstHit {
 				firstHit = r.Timestamp
 			}
@@ -132,6 +145,14 @@ func aggregateHitRecords(records []SkillHitRecord) (total float64, hits, crits i
 			}
 			if r.Damage > critMax {
 				critMax = r.Damage
+			}
+		} else {
+			normalHits++
+			if normalHits == 1 || r.Damage < min {
+				min = r.Damage
+			}
+			if r.Damage > max {
+				max = r.Damage
 			}
 		}
 	}
@@ -259,13 +280,13 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 			}
 
 			attackers = append(attackers, attackerExport{
-				AttackerWithSkills: AttackerWithSkills{
-					ID:          attackerID,
-					Name:        formatDisplayName(attackerID, attackerStat.name, attackerStat.raceId, attackerStat.isPC),
-					TotalDamage: attackerTotal,
-					IsPC:        attackerStat.isPC,
-					Skills:      skillStatsOnly,
-				},
+				ID:           attackerID,
+				Name:         formatDisplayName(attackerID, attackerStat.name, attackerStat.raceId, attackerStat.isPC),
+				TotalDamage:  attackerTotal,
+				IsPC:         attackerStat.isPC,
+				LastHit:      attackerLastHit,
+				AppearedAt:   attackerFirstHit,
+				Skills:       skillStatsOnly,
 				SkillsDetail: skills,
 			})
 		}
@@ -295,10 +316,10 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 			endTime = stat.deathTime
 			deathTime = stat.deathTime
 		}
-		duration := durationSeconds(targetFirstHit, endTime)
-		targetDps := targetTotal / duration
+		duration := exportDurationSeconds(targetFirstHit, endTime)
+		targetDps := targetTotal / float64(duration)
 		for i := range attackers {
-			attackers[i].DPS = attackers[i].TotalDamage / duration
+			attackers[i].DPS = attackers[i].TotalDamage / float64(duration)
 		}
 
 		var targetBossHP *BossHPExport
@@ -330,7 +351,7 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 			TargetName:  formatDisplayName(id, stat.name, stat.raceId, stat.isPC),
 			TotalDamage: targetTotal,
 			DPS:         targetDps,
-			Duration:    duration,
+			Duration:    float64(duration),
 			Attackers:   attackers,
 			CleanedAt:   now,
 			AppearedAt:  targetFirstHit,
@@ -369,8 +390,8 @@ func (a *App) buildTargetExport() []targetExport {
 			if stat.deathTime > 0 {
 				endTime = stat.deathTime
 			}
-			duration := durationSeconds(stat.firstHit, endTime)
-			dps := attackerStat.total / duration
+			duration := exportDurationSeconds(stat.firstHit, endTime)
+			dps := attackerStat.total / float64(duration)
 
 			skills := make([]skillExport, 0)
 			for skillID, skillStat := range attackerStat.skills {
@@ -414,15 +435,15 @@ func (a *App) buildTargetExport() []targetExport {
 			}
 
 			attackers = append(attackers, attackerExport{
-				AttackerWithSkills: AttackerWithSkills{
-					ID:          attackerID,
-					Name:        formatDisplayName(attackerID, attackerStat.name, attackerStat.raceId, attackerStat.isPC),
-					TotalDamage: attackerStat.total,
-					DPS:         dps,
-					Percent:     percent,
-					IsPC:        attackerStat.isPC,
-					Skills:      skillStatsOnly,
-				},
+				ID:           attackerID,
+				Name:         formatDisplayName(attackerID, attackerStat.name, attackerStat.raceId, attackerStat.isPC),
+				TotalDamage:  attackerStat.total,
+				DPS:          dps,
+				Percent:      percent,
+				IsPC:         attackerStat.isPC,
+				LastHit:      attackerStat.lastHit,
+				AppearedAt:   attackerStat.firstHit,
+				Skills:       skillStatsOnly,
 				SkillsDetail: skills,
 			})
 		}
@@ -438,8 +459,8 @@ func (a *App) buildTargetExport() []targetExport {
 		if stat.deathTime > 0 {
 			endTime = stat.deathTime
 		}
-		duration := durationSeconds(stat.firstHit, endTime)
-		targetDps := stat.total / duration
+		duration := exportDurationSeconds(stat.firstHit, endTime)
+		targetDps := stat.total / float64(duration)
 
 		var targetBossHP *BossHPExport
 		if records, ok := a.bossHPHistory[id]; ok && len(records) > 0 {
@@ -468,7 +489,7 @@ func (a *App) buildTargetExport() []targetExport {
 			TargetName:  formatDisplayName(id, stat.name, stat.raceId, stat.isPC),
 			TotalDamage: stat.total,
 			DPS:         targetDps,
-			Duration:    duration,
+			Duration:    float64(duration),
 			Attackers:   attackers,
 			CleanedAt:   now,
 			AppearedAt:  stat.firstHit,

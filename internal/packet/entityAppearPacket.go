@@ -60,6 +60,17 @@ type EntityCharacterCondition struct {
 }
 
 func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
+	entity, err := parseEntityAppearPacketDetailed(msg)
+	if err == nil {
+		return entity, nil
+	}
+	if entity := parseShiftedSummonEntity(msg); entity != nil {
+		return entity, nil
+	}
+	return nil, err
+}
+
+func parseEntityAppearPacketDetailed(msg Message) (*EntityInfo, error) {
 	origMsg := msg
 
 	curPos := func() int {
@@ -554,24 +565,53 @@ func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {
 	v.GuildName = msg[1].Data().(string)
 	msg = msg[19:]
 
-	// 宠物相关
-	if len(msg) < 2 {
-		err := fmt.Errorf("entity appear data is too short %v", curPos())
-		logger.Println(err)
-		return nil, err
-	}
-
-	if msg[1].Type() != MessageElemTypeLong {
-		err := fmt.Errorf("ownerId has unexpected type %v", msg[1].Type())
-		logger.Println(err)
-		return nil, err
-	}
-
-	v.OwnerId = msg[1].Data().(uint64)
-	msg = msg[2:]
+	// 新人偶的 ownerId 不再位于旧版固定尾部，按稳定字段特征定位。
+	v.OwnerId, _ = parseEntityOwnerID(origMsg)
 
 	// logger.Printf("[EntityAppear] Entity: %s (ID: %d) 解析完成 - HP: %.0f/%.0f, MP: %.0f/%.0f, Stamina: %.0f/%.0f\n", v.Name, v.Id, v.HP, v.MaxHP, v.MP, v.MaxMP, v.Stamina, v.MaxStamina)
 	return v, nil
+}
+
+func parseEntityOwnerID(msg Message) (uint64, bool) {
+	const signatureLength = 11
+	for i := 0; i+signatureLength <= len(msg); i++ {
+		window := msg[i : i+signatureLength]
+		if window[0].Type() != MessageElemTypeByte || window[0].Data().(uint8) != 1 ||
+			window[1].Type() != MessageElemTypeByte || window[1].Data().(uint8) != 1 ||
+			window[2].Type() != MessageElemTypeFloat ||
+			window[3].Type() != MessageElemTypeByte || window[3].Data().(uint8) != 1 ||
+			window[4].Type() != MessageElemTypeLong ||
+			window[5].Type() != MessageElemTypeFloat ||
+			window[6].Type() != MessageElemTypeInt ||
+			window[7].Type() != MessageElemTypeLong ||
+			window[8].Type() != MessageElemTypeByte || window[8].Data().(uint8) != 11 ||
+			window[9].Type() != MessageElemTypeByte || window[9].Data().(uint8) != 0 ||
+			window[10].Type() != MessageElemTypeFloat {
+			continue
+		}
+		return window[7].Data().(uint64), true
+	}
+	return 0, false
+}
+
+func parseShiftedSummonEntity(msg Message) *EntityInfo {
+	ownerID, ok := parseEntityOwnerID(msg)
+	if !ok || len(msg) < 6 ||
+		msg[0].Type() != MessageElemTypeLong ||
+		msg[1].Type() != MessageElemTypeByte || msg[1].Data().(uint8) != 5 ||
+		msg[2].Type() != MessageElemTypeString ||
+		msg[5].Type() != MessageElemTypeInt {
+		return nil
+	}
+
+	return &EntityInfo{
+		Id:                    msg[0].Data().(uint64),
+		Name:                  msg[2].Data().(string),
+		RaceId:                msg[5].Data().(uint32),
+		OwnerId:               ownerID,
+		EquipItemMap:          make(map[uint32]*EntityItem),
+		CharacterConditionMap: make(map[uint32]*EntityCharacterCondition),
+	}
 }
 
 func ParseEntitiesAppearPacket(p *GamePacket) ([]*EntityInfo, error) {

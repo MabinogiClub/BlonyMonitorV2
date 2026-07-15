@@ -83,20 +83,14 @@ func effectiveRecordDamage(r SkillHitRecord, exportDamage map[int64]float64) flo
 }
 
 func aggregateHitRecordsFast(records []SkillHitRecord, exportDamage map[int64]float64) (total float64, hits, crits int, min, max, critMin, critMax float64, firstHit, lastHit int64) {
+	normalHits := 0
 	for i, r := range records {
 		dmg := effectiveRecordDamage(r, exportDamage)
 		total += dmg
 		hits++
 		if i == 0 {
-			min, max = dmg, dmg
 			firstHit, lastHit = r.Timestamp, r.Timestamp
 		} else {
-			if dmg < min {
-				min = dmg
-			}
-			if dmg > max {
-				max = dmg
-			}
 			if r.Timestamp < firstHit {
 				firstHit = r.Timestamp
 			}
@@ -111,6 +105,14 @@ func aggregateHitRecordsFast(records []SkillHitRecord, exportDamage map[int64]fl
 			}
 			if dmg > critMax {
 				critMax = dmg
+			}
+		} else {
+			normalHits++
+			if normalHits == 1 || dmg < min {
+				min = dmg
+			}
+			if dmg > max {
+				max = dmg
 			}
 		}
 	}

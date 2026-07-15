@@ -24,8 +24,12 @@ func (a *App) addEntity(entity *packet.EntityInfo) {
 	a.creatureLib[idStr] = entity.Name
 	raceIdCache[idStr] = raceId
 
-	_, exists := a.entities[idStr]
+	existingEntity, exists := a.entities[idStr]
 	isPc := isPC(raceId)
+	ownerID := entity.OwnerId
+	if ownerID == 0 && existingEntity != nil {
+		ownerID = existingEntity.OwnerID
+	}
 
 	a.entities[idStr] = &EntityInfo{
 		ID:              idStr,
@@ -48,7 +52,7 @@ func (a *App) addEntity(entity *packet.EntityInfo) {
 		StyleTitleID:    entity.StyleTitleId,
 		StyleSubTitleID: entity.StyleSubTitleId,
 		GuildName:       entity.GuildName,
-		OwnerID:         entity.OwnerId,
+		OwnerID:         ownerID,
 		HP:              entity.HP,
 		MaxHP:           entity.MaxHP,
 		MP:              entity.MP,
@@ -98,6 +102,9 @@ func (a *App) getEntityNameUnsafe(id string) string {
 	}
 	if name, ok := a.creatureLib[id]; ok {
 		return name
+	}
+	if id == a.selfId && a.selfName != "" {
+		return a.selfName
 	}
 	if len(id) > 6 {
 		return id[len(id)-6:]

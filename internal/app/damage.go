@@ -12,7 +12,7 @@ import (
 // addDamage 添加伤害记录
 func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage float32, isCritical bool) {
 	now := nowCentiseconds()
-	attackerIdStr := strconv.FormatUint(attackerId, 10)
+	sourceAttackerIdStr := strconv.FormatUint(attackerId, 10)
 	targetIdStr := strconv.FormatUint(targetId, 10)
 	damageFloat := float64(damage)
 
@@ -25,7 +25,7 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 	// 在锁内完成所有数据更新
 	a.mu.Lock()
 
-	attackerName := a.getEntityNameUnsafe(attackerIdStr)
+	attackerIdStr, attackerName := a.resolveDamageAttackerUnsafe(sourceAttackerIdStr)
 	targetName := a.getEntityNameUnsafe(targetIdStr)
 	effectiveDamage, overflowDamage, adjusted := a.adjustDamageAfterKnownDeathUnsafe(targetIdStr, damageFloat)
 	a.damageSeq++
@@ -80,7 +80,7 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 		}
 		skillStat := a.skillStats[attackerIdStr][int(skillId)]
 		if skillStat == nil {
-			skillStat = &skillAggStats{min: damageFloat, max: damageFloat}
+			skillStat = &skillAggStats{}
 			a.skillStats[attackerIdStr][int(skillId)] = skillStat
 		}
 		skillStat.total += effectiveDamage
@@ -93,12 +93,14 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 			if effectiveDamage > skillStat.critMax {
 				skillStat.critMax = effectiveDamage
 			}
-		}
-		if effectiveDamage < skillStat.min {
-			skillStat.min = effectiveDamage
-		}
-		if effectiveDamage > skillStat.max {
-			skillStat.max = effectiveDamage
+		} else {
+			normalHits := skillStat.hits - skillStat.crits
+			if normalHits == 1 || effectiveDamage < skillStat.min {
+				skillStat.min = effectiveDamage
+			}
+			if effectiveDamage > skillStat.max {
+				skillStat.max = effectiveDamage
+			}
 		}
 
 		// 更新总伤害
@@ -106,7 +108,6 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 
 		// 更新图表聚合数据（每30秒一个桶，保留2小时）
 		// 使用角色名称作为 key，这样同一玩家的不同实体ID会被合并
-		attackerName := a.getEntityNameUnsafe(attackerIdStr)
 		chartTimestamp := now / timePrecisionScale
 		a.updateChartAggData(attackerName, chartTimestamp, effectiveDamage)
 
@@ -122,7 +123,6 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 	if attackerRaceID >= 0 && !attackerIsPC {
 		attackerRaceName = a.getRaceNameUnsafe(attackerRaceID)
 	}
-	attackerName = a.getEntityNameUnsafe(attackerIdStr)
 
 	targetRaceID := a.getEntityRaceIDUnsafe(targetIdStr)
 	targetIsPC := targetRaceID >= 0 && isPC(targetRaceID)
@@ -168,7 +168,7 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 	// 更新技能统计
 	takenSkillStat := attackerTakenStat.skills[int(skillId)]
 	if takenSkillStat == nil {
-		takenSkillStat = &takenSkillAggStats{min: damageFloat, max: damageFloat}
+		takenSkillStat = &takenSkillAggStats{}
 		attackerTakenStat.skills[int(skillId)] = takenSkillStat
 	}
 	takenSkillStat.total += effectiveDamage
@@ -181,12 +181,14 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 		if effectiveDamage > takenSkillStat.critMax {
 			takenSkillStat.critMax = effectiveDamage
 		}
-	}
-	if effectiveDamage < takenSkillStat.min {
-		takenSkillStat.min = effectiveDamage
-	}
-	if effectiveDamage > takenSkillStat.max {
-		takenSkillStat.max = effectiveDamage
+	} else {
+		normalHits := takenSkillStat.hits - takenSkillStat.crits
+		if normalHits == 1 || effectiveDamage < takenSkillStat.min {
+			takenSkillStat.min = effectiveDamage
+		}
+		if effectiveDamage > takenSkillStat.max {
+			takenSkillStat.max = effectiveDamage
+		}
 	}
 	takenSkillStat.records = append(takenSkillStat.records, SkillHitRecord{
 		Seq:            record.Seq,
@@ -235,18 +237,49 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 	a.mu.Unlock()
 
 	// 锁外操作：触发计时器和发送事件
-	if shouldTriggerAttackerTimer {
+	if shouldTriggerAttackerTimer && a.attackerTimerMgr != nil {
 		a.attackerTimerMgr.OnAttack(attackerIdStr)
 	}
-	if shouldTriggerTargetTimer {
+	if shouldTriggerTargetTimer && a.targetTimerMgr != nil {
 		a.targetTimerMgr.OnHit(targetIdStr)
 	}
 
 	// 发送事件通知前端更新（移到锁外）
-	runtime.EventsEmit(a.ctx, "damage", record)
-	for _, adjustedRecord := range pendingAdjusted {
-		runtime.EventsEmit(a.ctx, "damage", adjustedRecord)
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "damage", record)
+		for _, adjustedRecord := range pendingAdjusted {
+			runtime.EventsEmit(a.ctx, "damage", adjustedRecord)
+		}
 	}
+}
+
+// resolveDamageAttackerUnsafe applies EMA's summon attribution rules.
+// The caller must hold a.mu for reading.
+func (a *App) resolveDamageAttackerUnsafe(sourceAttackerID string) (string, string) {
+	sourceEntity := a.entities[sourceAttackerID]
+	creditedAttackerID := sourceAttackerID
+
+	if sourceEntity != nil && sourceEntity.OwnerID != 0 {
+		ownerID := strconv.FormatUint(sourceEntity.OwnerID, 10)
+		ownerIsLocal := a.selfId != "" && ownerID == a.selfId
+		ownerEntity := a.entities[ownerID]
+		ownerIsPC := ownerEntity != nil && ownerEntity.IsPC
+		if ownerIsLocal || ownerIsPC {
+			creditedAttackerID = ownerID
+		}
+	}
+
+	creditedToOwner := creditedAttackerID != sourceAttackerID
+	if entity := a.entities[creditedAttackerID]; entity != nil && entity.Name != "" {
+		return creditedAttackerID, entity.Name
+	}
+	if creditedToOwner && creditedAttackerID == a.selfId && a.selfName != "" {
+		return creditedAttackerID, a.selfName
+	}
+	if !creditedToOwner {
+		return creditedAttackerID, a.getEntityNameUnsafe(sourceAttackerID)
+	}
+	return creditedAttackerID, ""
 }
 
 // GetDamageByAttacker 获取按攻击者分组的伤害统计
