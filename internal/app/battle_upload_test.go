@@ -2,6 +2,8 @@ package app
 
 import (
 	"encoding/base64"
+	"net/http"
+	"strings"
 	"testing"
 
 	"blonymonitorv2/internal/config"
@@ -142,5 +144,40 @@ func TestUploadSecretKeyBase64(t *testing.T) {
 	}
 	if got := uploadSecretKey("plain-text-secret"); string(got) != "plain-text-secret" {
 		t.Fatalf("expected plain secret bytes, got %q", got)
+	}
+}
+
+func TestMaskUploadEndpoint(t *testing.T) {
+	got := maskUploadEndpoint("__UPLOAD_ENDPOINT__")
+	want := "[server]"
+	if got != want {
+		t.Fatalf("unexpected masked endpoint: %q", got)
+	}
+}
+
+func TestMaskUploadText(t *testing.T) {
+	endpoint := "__UPLOAD_ENDPOINT__"
+	msg := `Post "__UPLOAD_ENDPOINT__": context deadline exceeded`
+	got := maskUploadText(msg, endpoint)
+	if got == msg {
+		t.Fatalf("expected message to be masked, got %q", got)
+	}
+	if want := "[server]"; !strings.Contains(got, want) {
+		t.Fatalf("expected masked endpoint in message, got %q", got)
+	}
+	if strings.Contains(got, endpoint) {
+		t.Fatalf("raw endpoint should not appear, got %q", got)
+	}
+}
+
+func TestShouldRetryUpload(t *testing.T) {
+	if !shouldRetryUpload(&uploadHTTPStatusError{statusCode: http.StatusInternalServerError, message: "server returned 500"}) {
+		t.Fatal("expected retry for 500")
+	}
+	if !shouldRetryUpload(&uploadHTTPStatusError{statusCode: http.StatusTooManyRequests, message: "server returned 429"}) {
+		t.Fatal("expected retry for 429")
+	}
+	if shouldRetryUpload(&uploadHTTPStatusError{statusCode: http.StatusBadRequest, message: "server returned 400"}) {
+		t.Fatal("expected no retry for 400")
 	}
 }

@@ -3,10 +3,12 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,6 +23,17 @@ import (
 var uploadLog = log.New(os.Stdout, "[Upload] ", log.LstdFlags)
 
 const battleUploadTimeout = 15 * time.Second
+const uploadMaxAttempts = 3
+const uploadRetryBaseDelay = 2 * time.Second
+
+type uploadHTTPStatusError struct {
+	statusCode int
+	message    string
+}
+
+func (e *uploadHTTPStatusError) Error() string {
+	return e.message
+}
 
 func shouldUploadBattle(saveName string) bool {
 	return uploadBlockReason(saveName) == ""
@@ -101,6 +114,7 @@ func (a *App) scheduleBattleUpload(saveData SaveFileData, filePath, saveName str
 	}
 
 	endpoint := strings.TrimSpace(config.UploadEndpoint)
+	maskedEndpoint := maskUploadEndpoint(endpoint)
 	dungeonName := saveName
 	targetCount := len(uploadData.Targets)
 	payloadBytes := len(gzData)
@@ -108,17 +122,37 @@ func (a *App) scheduleBattleUpload(saveData SaveFileData, filePath, saveName str
 	recordUploadUploading(dungeonName, fileName)
 	uploadLog.Printf(
 		"开始上传: dungeon=%s file=%s player=%s(%s) targets=%d payload=%d bytes endpoint=%s\n",
-		dungeonName, fileName, playerName, playerID, targetCount, payloadBytes, endpoint,
+		dungeonName, fileName, playerName, playerID, targetCount, payloadBytes, maskedEndpoint,
 	)
 
 	go func() {
-		if err := postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName, gzData, targetCount); err != nil {
+		if err := postBattleUploadWithRetry(endpoint, playerID, playerName, dungeonName, fileName, gzData, targetCount); err != nil {
 			uploadLog.Printf("上传失败: dungeon=%s file=%s err=%v\n", dungeonName, fileName, err)
 		}
 	}()
 }
 
-func postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName string, gzData []byte, targetCount int) error {
+func postBattleUploadWithRetry(endpoint, playerID, playerName, dungeonName, fileName string, gzData []byte, targetCount int) error {
+	for attempt := 1; attempt <= uploadMaxAttempts; attempt++ {
+		err := postBattleUploadOnce(endpoint, playerID, playerName, dungeonName, fileName, gzData, targetCount)
+		if err == nil {
+			return nil
+		}
+		if attempt == uploadMaxAttempts || !shouldRetryUpload(err) {
+			return err
+		}
+
+		delay := time.Duration(attempt) * uploadRetryBaseDelay
+		uploadLog.Printf(
+			"上传重试: dungeon=%s file=%s next_attempt=%d/%d wait=%s err=%v\n",
+			dungeonName, fileName, attempt+1, uploadMaxAttempts, delay, err,
+		)
+		time.Sleep(delay)
+	}
+	return fmt.Errorf("unexpected upload retry state")
+}
+
+func postBattleUploadOnce(endpoint, playerID, playerName, dungeonName, fileName string, gzData []byte, targetCount int) error {
 	secret := strings.TrimSpace(config.UploadSecret)
 	if secret == "" {
 		return fmt.Errorf("upload secret not configured")
@@ -160,8 +194,9 @@ func postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName stri
 
 	req, err := http.NewRequest(http.MethodPost, endpoint, &body)
 	if err != nil {
-		recordUploadError(dungeonName, fileName, 0, "", err)
-		return err
+		sanitizedErr := sanitizeUploadError(err, endpoint)
+		recordUploadError(dungeonName, fileName, 0, "", sanitizedErr)
+		return sanitizedErr
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Authorization", "HMAC-SHA256 "+signature)
@@ -171,8 +206,9 @@ func postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName stri
 	client := &http.Client{Timeout: battleUploadTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		recordUploadError(dungeonName, fileName, 0, "", err)
-		return err
+		sanitizedErr := sanitizeUploadError(err, endpoint)
+		recordUploadError(dungeonName, fileName, 0, "", sanitizedErr)
+		return sanitizedErr
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
@@ -183,8 +219,9 @@ func postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName stri
 		if bodyText != "" {
 			uploadErr = fmt.Errorf("server returned %s: %s", resp.Status, bodyText)
 		}
-		recordUploadError(dungeonName, fileName, resp.StatusCode, bodyText, uploadErr)
-		return uploadErr
+		statusErr := &uploadHTTPStatusError{statusCode: resp.StatusCode, message: uploadErr.Error()}
+		recordUploadError(dungeonName, fileName, resp.StatusCode, bodyText, statusErr)
+		return statusErr
 	}
 
 	recordUploadSuccess(dungeonName, fileName, resp.StatusCode, bodyText)
@@ -193,6 +230,46 @@ func postBattleUpload(endpoint, playerID, playerName, dungeonName, fileName stri
 		dungeonName, fileName, resp.StatusCode, targetCount, len(gzData), bodyText,
 	)
 	return nil
+}
+
+func shouldRetryUpload(err error) bool {
+	var statusErr *uploadHTTPStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.statusCode == http.StatusTooManyRequests || statusErr.statusCode >= 500
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	return false
+}
+
+func sanitizeUploadError(err error, endpoint string) error {
+	if err == nil {
+		return nil
+	}
+	return errors.New(maskUploadText(err.Error(), endpoint))
+}
+
+func maskUploadText(text, endpoint string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return text
+	}
+	maskedEndpoint := maskUploadEndpoint(endpoint)
+	if endpoint != "" {
+		text = strings.ReplaceAll(text, endpoint, maskedEndpoint)
+	}
+	return text
+}
+
+func maskUploadEndpoint(endpoint string) string {
+	// 为了避免任何环境下把服务器地址泄露到日志/调试面板，
+	// 直接用统一占位符替代。
+	if strings.TrimSpace(endpoint) == "" {
+		return "-"
+	}
+	return "[server]"
 }
 
 func saveNameFromFileName(fileName string) string {
@@ -271,5 +348,5 @@ func UploadSaveFile(filePath, playerID, playerName string) error {
 	}
 
 	uploadLog.Printf("CLI 上传: file=%s targets=%d payload=%d bytes\n", fileName, len(uploadData.Targets), len(gzData))
-	return postBattleUpload(endpoint, playerID, playerName, saveName, fileName, gzData, len(uploadData.Targets))
+	return postBattleUploadWithRetry(endpoint, playerID, playerName, saveName, fileName, gzData, len(uploadData.Targets))
 }
