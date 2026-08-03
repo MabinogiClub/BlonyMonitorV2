@@ -238,6 +238,7 @@ func (a *App) GetDebugInfo() DebugInfo {
 		}
 	}
 
+	announcementDebug, rankingDebug := getServerInteractionDebug()
 	return DebugInfo{
 		SkillCount:     len(skillNameMap),
 		RaceCount:      len(raceNameMap),
@@ -254,6 +255,8 @@ func (a *App) GetDebugInfo() DebugInfo {
 		ParsedStrings:  parsedStringCount,
 		LoadError:      lastLoadError,
 		Upload:         getUploadDebugInfo(),
+		Announcement:   announcementDebug,
+		Ranking:        rankingDebug,
 	}
 }
 

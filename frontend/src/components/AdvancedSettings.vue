@@ -5,13 +5,14 @@
  * 使用 Vant 组件库
  */
 
-import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
-import { GetAllNics, GetManualNic, SetManualNic, GetAccelerators, GetSelectedAccelerator, SetAccelerator, GetUploadSettings, SetUploadSettings } from '../../wailsjs/go/app/App'
+import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { GetAllNics, GetManualNic, SetManualNic, GetAccelerators, GetSelectedAccelerator, SetAccelerator, GetUploadSettings, SetUploadSettings, GetRankingParticipation, SetRankingParticipation } from '../../wailsjs/go/app/App'
 import { useAppStore } from '../stores/app'
 
 // 定义 props
 const props = defineProps<{
   visible: boolean
+  initialSection?: 'general' | 'ranking'
 }>()
 
 // 定义 emits
@@ -47,6 +48,57 @@ const acceleratorDropdownVisible = ref(false)
 // 战斗数据推送
 const uploadEnabled = ref(false)
 const uploadSecretReady = ref(false)
+const rankingMode = ref<RankingMode>('none')
+const confirmedRankingMode = ref<RankingMode>('none')
+const rankingAvailable = ref(false)
+const rankingPlayerReady = ref(false)
+const rankingPlayerName = ref('')
+const rankingLoading = ref(false)
+const rankingSaving = ref(false)
+const rankingSyncFailed = ref(false)
+let rankingRequestVersion = 0
+const rankingSectionRef = ref<HTMLElement | null>(null)
+
+const rankingModeOptions: Array<{ value: RankingMode; label: string }> = [
+  { value: 'none', label: '不参与排行' },
+  { value: 'anonymous', label: '匿名排行' },
+  { value: 'public', label: '公开排行' },
+]
+
+function normalizeRankingMode(value: string, participating: boolean): RankingMode {
+  if (value === 'anonymous' || value === 'public') return value
+  if (value === 'none') return 'none'
+  return participating ? 'public' : 'none'
+}
+
+const rankingStatusText = computed(() => {
+  if (rankingLoading.value) return '同步中'
+  if (rankingSaving.value) return '保存中'
+  if (rankingSyncFailed.value) return '同步失败'
+  if (!rankingAvailable.value) return '服务未配置'
+  if (!rankingPlayerReady.value) return '未识别角色'
+  return rankingModeOptions.find(option => option.value === rankingMode.value)?.label || '不参与排行'
+})
+
+const rankingUnavailableReason = computed(() => {
+  if (rankingLoading.value || rankingSaving.value) return ''
+  if (rankingSyncFailed.value) return '无法从排行服务器读取当前状态，请重新同步后再修改。'
+  if (!rankingAvailable.value) return '排行服务尚未配置，当前版本无法修改此设置。'
+  if (!rankingPlayerReady.value) return '尚未识别当前游戏角色。进入游戏并识别角色后，可重新检测并修改此设置。'
+  return ''
+})
+
+const rankingRetryVisible = computed(() => (
+  rankingSyncFailed.value || (rankingAvailable.value && !rankingPlayerReady.value)
+))
+
+const rankingCanToggle = computed(() => (
+  rankingAvailable.value &&
+  rankingPlayerReady.value &&
+  !rankingLoading.value &&
+  !rankingSaving.value &&
+  !rankingSyncFailed.value
+))
 
 /**
  * 加载网卡列表
@@ -102,11 +154,59 @@ async function saveUploadSettings() {
     await SetUploadSettings({
       enabled: uploadEnabled.value,
       endpoint: '',
+      endpointReady: false,
       dungeonKeyword: '',
       secretReady: uploadSecretReady.value,
     })
   } catch (err) {
     console.error('保存推送设置失败:', err)
+  }
+}
+
+async function loadRankingParticipation() {
+  const requestVersion = ++rankingRequestVersion
+  rankingLoading.value = true
+  rankingSaving.value = false
+  rankingSyncFailed.value = false
+  try {
+    const state = await GetRankingParticipation()
+    if (requestVersion !== rankingRequestVersion) return
+    rankingAvailable.value = state.available
+    rankingPlayerReady.value = state.playerReady
+    rankingPlayerName.value = state.playerName || ''
+    rankingMode.value = normalizeRankingMode(state.mode, state.participating)
+    confirmedRankingMode.value = rankingMode.value
+  } catch (err) {
+    if (requestVersion !== rankingRequestVersion) return
+    rankingSyncFailed.value = true
+    console.error('同步排行参与状态失败:', err)
+  } finally {
+    if (requestVersion === rankingRequestVersion) {
+      rankingLoading.value = false
+    }
+  }
+}
+
+async function handleRankingParticipationChange(mode: RankingMode) {
+  if (!rankingCanToggle.value) return
+  const requestVersion = ++rankingRequestVersion
+  const previousMode = confirmedRankingMode.value
+  rankingSaving.value = true
+  try {
+    const state = await SetRankingParticipation(mode)
+    if (requestVersion !== rankingRequestVersion) return
+    rankingMode.value = normalizeRankingMode(state.mode, state.participating)
+    confirmedRankingMode.value = rankingMode.value
+    rankingPlayerName.value = state.playerName || rankingPlayerName.value
+  } catch (err) {
+    if (requestVersion !== rankingRequestVersion) return
+    rankingMode.value = previousMode
+    rankingSyncFailed.value = true
+    console.error('保存排行参与状态失败:', err)
+  } finally {
+    if (requestVersion === rankingRequestVersion) {
+      rankingSaving.value = false
+    }
   }
 }
 
@@ -312,6 +412,10 @@ watch(() => props.visible, (newVal) => {
     loadOpacity()
     loadChannelSettings()
     loadUploadSettings()
+    loadRankingParticipation()
+    if (props.initialSection === 'ranking') {
+      void nextTick(() => rankingSectionRef.value?.scrollIntoView({ block: 'center' }))
+    }
     if (acceleratorMode.value) {
       loadAccelerators()
     }
@@ -319,6 +423,12 @@ watch(() => props.visible, (newVal) => {
     // 关闭下拉菜单
     closeChannelDropdown()
     closeAcceleratorDropdown()
+  }
+})
+
+watch(() => appStore.selfInfo?.id, (newID, oldID) => {
+  if (props.visible && newID && newID !== oldID) {
+    loadRankingParticipation()
   }
 })
 </script>
@@ -453,6 +563,7 @@ watch(() => props.visible, (newVal) => {
               </div>
             </div>
           </div>
+
         </div>
 
         <!-- 分割线 -->
@@ -476,6 +587,54 @@ watch(() => props.visible, (newVal) => {
               >
               <span>启用推送</span>
             </label>
+          </div>
+
+          <div ref="rankingSectionRef" class="ranking-control">
+            <div class="ranking-control-row">
+              <div class="ranking-control-copy">
+                <span class="ranking-control-title">
+                  参与公开排行
+                  <template v-if="rankingPlayerName"> · {{ rankingPlayerName }}</template>
+                </span>
+                <span class="ranking-control-status">{{ rankingStatusText }}</span>
+              </div>
+              <select
+                v-model="rankingMode"
+                :disabled="!rankingCanToggle"
+                :title="rankingUnavailableReason || '选择当前角色的排行参与方式'"
+                aria-label="参与公开排行"
+                class="ranking-mode-select"
+                @change="handleRankingParticipationChange(rankingMode)"
+              >
+                <option
+                  v-for="option in rankingModeOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <p class="ranking-consent-note">
+              不参与不会进入排行；匿名排行会隐藏角色名；公开排行会展示角色名。队友上传同场数据时，服务器仍会按你的选择过滤。此设置按角色生效，不影响本地统计和战斗数据推送。
+            </p>
+            <p
+              v-if="rankingUnavailableReason"
+              class="ranking-unavailable-reason"
+              role="status"
+            >
+              {{ rankingUnavailableReason }}
+            </p>
+            <button
+              v-if="rankingRetryVisible"
+              type="button"
+              class="ranking-retry-button"
+              :title="rankingSyncFailed ? '重新同步排行状态' : '重新检测当前角色'"
+              @click="loadRankingParticipation"
+            >
+              <van-icon name="replay" aria-hidden="true" />
+              <span>{{ rankingSyncFailed ? '重新同步' : '重新检测角色' }}</span>
+            </button>
           </div>
         </div>
 
@@ -825,6 +984,91 @@ watch(() => props.visible, (newVal) => {
 
   &:hover {
     color: #42a5f5;
+  }
+}
+
+.ranking-control {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ranking-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+}
+
+.ranking-control-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ranking-control-title {
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ranking-control-status {
+  color: #999;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.ranking-mode-select {
+  width: 126px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  outline: none;
+  background: rgba(50, 50, 50, 0.9);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+.ranking-consent-note {
+  margin: 8px 0 0;
+  color: #aaa;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.ranking-unavailable-reason {
+  margin: 8px 0 0;
+  color: #ffb74d;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.ranking-retry-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border: 1px solid rgba(66, 165, 245, 0.5);
+  border-radius: 4px;
+  background: transparent;
+  color: #64b5f6;
+  font-size: 11px;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(66, 165, 245, 0.1);
   }
 }
 

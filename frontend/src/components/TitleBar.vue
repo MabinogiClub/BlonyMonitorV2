@@ -13,15 +13,14 @@ import { showLoadingToast, showSuccessToast, showFailToast } from 'vant'
 
 const appStore = useAppStore()
 
-const advancedSettingsVisible = ref(false)
 const closeDialogVisible = ref(false)
 
 function openAdvancedSettings() {
-  advancedSettingsVisible.value = true
+  appStore.requestAdvancedSettings('general')
 }
 
 function closeAdvancedSettings() {
-  advancedSettingsVisible.value = false
+  appStore.closeAdvancedSettings()
 }
 
 function showCloseDialog() {
@@ -131,7 +130,8 @@ const debugIcon = computed(() => {
   </div>
 
   <AdvancedSettings
-    :visible="advancedSettingsVisible"
+    :visible="appStore.advancedSettingsVisible"
+    :initial-section="appStore.advancedSettingsSection"
     @close="closeAdvancedSettings"
   />
 

@@ -193,21 +193,23 @@ type EventLog struct {
 
 // DebugInfo 调试信息结构
 type DebugInfo struct {
-	SkillCount     int      `json:"skillCount"`
-	RaceCount      int      `json:"raceCount"`
-	ConditionCount int      `json:"conditionCount"`
-	EntityCount    int      `json:"entityCount"`
-	DamageCount    int      `json:"damageCount"`
-	Region         string   `json:"region"`
-	ResourceURL    string   `json:"resourceURL"`
-	Connected      bool     `json:"connected"`
-	StatusMsg      string   `json:"statusMsg"`
-	SampleSkills   []string `json:"sampleSkills"`
-	ChartDataLen   int      `json:"chartDataLen"`
-	ParsedSkills   int      `json:"parsedSkills"`  // 解析到的技能数
-	ParsedStrings  int      `json:"parsedStrings"` // 解析到的字符串数
-	LoadError      string   `json:"loadError"`     // 加载错误
-	Upload         UploadDebugInfo `json:"upload"`
+	SkillCount     int                     `json:"skillCount"`
+	RaceCount      int                     `json:"raceCount"`
+	ConditionCount int                     `json:"conditionCount"`
+	EntityCount    int                     `json:"entityCount"`
+	DamageCount    int                     `json:"damageCount"`
+	Region         string                  `json:"region"`
+	ResourceURL    string                  `json:"resourceURL"`
+	Connected      bool                    `json:"connected"`
+	StatusMsg      string                  `json:"statusMsg"`
+	SampleSkills   []string                `json:"sampleSkills"`
+	ChartDataLen   int                     `json:"chartDataLen"`
+	ParsedSkills   int                     `json:"parsedSkills"`  // 解析到的技能数
+	ParsedStrings  int                     `json:"parsedStrings"` // 解析到的字符串数
+	LoadError      string                  `json:"loadError"`     // 加载错误
+	Upload         UploadDebugInfo         `json:"upload"`
+	Announcement   ServiceInteractionDebug `json:"announcement"`
+	Ranking        ServiceInteractionDebug `json:"ranking"`
 }
 
 // PCEntityInfo PC实体信息（用于角色列表）

@@ -10,7 +10,8 @@ import (
 // UploadSettings 战斗数据推送配置（供前端展示与修改）。
 type UploadSettings struct {
 	Enabled        bool   `json:"enabled"`
-	Endpoint       string `json:"endpoint"`
+	Endpoint       string `json:"endpoint"` // 始终留空，保留字段仅用于兼容旧前端。
+	EndpointReady  bool   `json:"endpointReady"`
 	DungeonKeyword string `json:"dungeonKeyword"`
 	SecretReady    bool   `json:"secretReady"`
 }
@@ -24,7 +25,7 @@ func (a *App) GetUploadSettings() UploadSettings {
 
 	return UploadSettings{
 		Enabled:        config.UploadEnabled,
-		Endpoint:       config.UploadEndpoint,
+		EndpointReady:  strings.TrimSpace(config.UploadEndpoint) != "",
 		DungeonKeyword: config.UploadDungeonKeyword,
 		SecretReady:    isUploadSecretConfigured(),
 	}

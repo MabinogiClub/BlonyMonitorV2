@@ -64,6 +64,12 @@ func applyUploadEnvMap(values map[string]string) {
 	if endpoint := strings.TrimSpace(values["BLONY_UPLOAD_ENDPOINT"]); endpoint != "" {
 		UploadEndpoint = endpoint
 	}
+	if endpoint := strings.TrimSpace(values["BLONY_RANKING_CONSENT_ENDPOINT"]); endpoint != "" {
+		RankingConsentEndpoint = endpoint
+	}
+	if endpoint := strings.TrimSpace(values["BLONY_ANNOUNCEMENT_ENDPOINT"]); endpoint != "" {
+		AnnouncementEndpoint = endpoint
+	}
 	if enabled := strings.TrimSpace(values["BLONY_UPLOAD_ENABLED"]); enabled != "" {
 		UploadEnabled = enabled == "1" || strings.EqualFold(enabled, "true")
 	}
@@ -143,6 +149,12 @@ func applyUploadEnvOverrides() {
 	}
 	if endpoint := strings.TrimSpace(os.Getenv("BLONY_UPLOAD_ENDPOINT")); endpoint != "" {
 		UploadEndpoint = endpoint
+	}
+	if endpoint := strings.TrimSpace(os.Getenv("BLONY_RANKING_CONSENT_ENDPOINT")); endpoint != "" {
+		RankingConsentEndpoint = endpoint
+	}
+	if endpoint := strings.TrimSpace(os.Getenv("BLONY_ANNOUNCEMENT_ENDPOINT")); endpoint != "" {
+		AnnouncementEndpoint = endpoint
 	}
 	if enabled := strings.TrimSpace(os.Getenv("BLONY_UPLOAD_ENABLED")); enabled != "" {
 		UploadEnabled = enabled == "1" || strings.EqualFold(enabled, "true")

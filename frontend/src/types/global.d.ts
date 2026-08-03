@@ -94,6 +94,9 @@ interface GoApp {
   RecheckNpcap(): Promise<NpcapStatus>
   GetUploadSettings(): Promise<UploadSettings>
   SetUploadSettings(settings: UploadSettings): Promise<void>
+  GetRankingParticipation(): Promise<RankingParticipation>
+  SetRankingParticipation(mode: string): Promise<RankingParticipation>
+  GetLatestAnnouncement(): Promise<ServerAnnouncement>
 }
 
 /**
@@ -161,6 +164,14 @@ interface DebugInfo {
   sampleSkills?: string[]
   loadError?: string
   upload?: UploadDebugInfo
+  announcement?: ServiceInteractionDebug
+  ranking?: ServiceInteractionDebug
+}
+
+interface ServiceInteractionDebug {
+  status: string
+  message: string
+  updatedAt: string
 }
 
 /**
@@ -507,8 +518,28 @@ interface BattleUploadSummary {
 interface UploadSettings {
   enabled: boolean
   endpoint: string
+  endpointReady: boolean
   dungeonKeyword: string
   secretReady: boolean
+}
+
+interface RankingParticipation {
+  available: boolean
+  playerReady: boolean
+  playerName: string
+  mode: RankingMode
+  participating: boolean
+  updatedAt: string
+}
+
+type RankingMode = 'none' | 'anonymous' | 'public'
+
+interface ServerAnnouncement {
+  available: boolean
+  found: boolean
+  timestamp: number
+  title: string
+  html: string
 }
 
 interface BattleReportPayload {

@@ -48,6 +48,8 @@ export const useAppStore = defineStore('app', () => {
   const opacity = ref(100)
   const npcapDialogVisible = ref(false)
   const npcapMessage = ref('')
+  const advancedSettingsSection = ref<'general' | 'ranking'>('general')
+  const advancedSettingsVisible = ref(false)
 
   const chartData = ref<ChartSeries[]>([])
   const historyChartData = ref<ChartSeries[]>([])
@@ -211,6 +213,15 @@ export const useAppStore = defineStore('app', () => {
     npcapDialogVisible.value = true
   }
 
+  function requestAdvancedSettings(section: 'general' | 'ranking' = 'general') {
+    advancedSettingsSection.value = section
+    advancedSettingsVisible.value = true
+  }
+
+  function closeAdvancedSettings() {
+    advancedSettingsVisible.value = false
+  }
+
   async function checkNpcapOnStartup() {
     try {
       const status = await api.getNpcapStatus()
@@ -296,7 +307,6 @@ export const useAppStore = defineStore('app', () => {
       }
     }, 3000)
 
-    await checkNpcapOnStartup()
   }
 
   async function loadChannelsConfig() {
@@ -444,6 +454,8 @@ export const useAppStore = defineStore('app', () => {
     opacity,
     npcapDialogVisible,
     npcapMessage,
+    advancedSettingsSection,
+    advancedSettingsVisible,
     updateConfig,
     toggleExpanded,
     isExpanded,
@@ -478,6 +490,8 @@ export const useAppStore = defineStore('app', () => {
     toggleChartVisible,
     dismissNpcapDialog,
     showNpcapDialog,
+    requestAdvancedSettings,
+    closeAdvancedSettings,
     checkNpcapOnStartup,
   }
 })

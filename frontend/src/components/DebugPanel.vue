@@ -105,6 +105,24 @@ const uploadUpdatedAt = computed(() => {
   return uploadInfo.value?.updatedAt || '-'
 })
 
+function formatServiceInteraction(info?: ServiceInteractionDebug) {
+  if (!info) return '-'
+  const statusMap: Record<string, string> = {
+    idle: '未检查',
+    checking: '检查中',
+    saving: '保存中',
+    success: '成功',
+    error: '失败',
+    disabled: '未启用',
+  }
+  const status = statusMap[info.status] || info.status || '-'
+  const time = info.updatedAt || '-'
+  return `${status} | ${info.message || '-'} | ${time}`
+}
+
+const announcementServiceText = computed(() => formatServiceInteraction(debugInfo.value?.announcement))
+const rankingServiceText = computed(() => formatServiceInteraction(debugInfo.value?.ranking))
+
 const uploadConfigText = computed(() => {
   const info = uploadInfo.value
   if (!info) return '-'
@@ -233,6 +251,14 @@ onUnmounted(() => {
         <span :class="appStore.lastError !== '无' ? 'debug-error' : 'debug-value'">
           {{ appStore.lastError }}
         </span>
+      </div>
+      <div class="debug-item">
+        <span class="debug-label">服务端公告:</span>
+        <span class="debug-value debug-wrap">{{ announcementServiceText }}</span>
+      </div>
+      <div class="debug-item">
+        <span class="debug-label">排行同步:</span>
+        <span class="debug-value debug-wrap">{{ rankingServiceText }}</span>
       </div>
       <div class="debug-divider"></div>
       <div class="debug-item">

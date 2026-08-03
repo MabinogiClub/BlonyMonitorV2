@@ -12,6 +12,8 @@ func TestParseEnvFile(t *testing.T) {
 BLONY_UPLOAD_SECRET=local-secret
 export BLONY_UPLOAD_ENDPOINT="http://example.com/push"
 BLONY_UPLOAD_ENABLED=true
+BLONY_RANKING_CONSENT_ENDPOINT=http://example.com/ranking-consent
+BLONY_ANNOUNCEMENT_ENDPOINT=http://example.com/announcement
 `
 	path := filepath.Join(t.TempDir(), ".env")
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -31,14 +33,24 @@ BLONY_UPLOAD_ENABLED=true
 	if values["BLONY_UPLOAD_ENDPOINT"] != "http://example.com/push" {
 		t.Fatalf("unexpected endpoint: %q", values["BLONY_UPLOAD_ENDPOINT"])
 	}
+	if values["BLONY_RANKING_CONSENT_ENDPOINT"] != "http://example.com/ranking-consent" {
+		t.Fatalf("unexpected ranking consent endpoint: %q", values["BLONY_RANKING_CONSENT_ENDPOINT"])
+	}
+	if values["BLONY_ANNOUNCEMENT_ENDPOINT"] != "http://example.com/announcement" {
+		t.Fatalf("unexpected announcement endpoint: %q", values["BLONY_ANNOUNCEMENT_ENDPOINT"])
+	}
 }
 
 func TestLoadLocalEnvFile(t *testing.T) {
 	origSecret := UploadSecret
 	origEndpoint := UploadEndpoint
+	origRankingConsentEndpoint := RankingConsentEndpoint
+	origAnnouncementEndpoint := AnnouncementEndpoint
 	defer func() {
 		UploadSecret = origSecret
 		UploadEndpoint = origEndpoint
+		RankingConsentEndpoint = origRankingConsentEndpoint
+		AnnouncementEndpoint = origAnnouncementEndpoint
 	}()
 
 	dir := t.TempDir()
@@ -71,6 +83,8 @@ func TestApplyUploadEnvOverrides(t *testing.T) {
 		_ = os.Unsetenv("BLONY_UPLOAD_SECRET")
 		_ = os.Unsetenv("BLONY_UPLOAD_ENDPOINT")
 		_ = os.Unsetenv("BLONY_UPLOAD_ENABLED")
+		_ = os.Unsetenv("BLONY_RANKING_CONSENT_ENDPOINT")
+		_ = os.Unsetenv("BLONY_ANNOUNCEMENT_ENDPOINT")
 		_ = os.Unsetenv("BLONY_UPLOAD_DUNGEON_KEYWORD")
 	}()
 
@@ -78,6 +92,8 @@ func TestApplyUploadEnvOverrides(t *testing.T) {
 	_ = os.Setenv("BLONY_UPLOAD_SECRET", "env-secret")
 	_ = os.Setenv("BLONY_UPLOAD_ENDPOINT", "http://example.com/push")
 	_ = os.Setenv("BLONY_UPLOAD_ENABLED", "false")
+	_ = os.Setenv("BLONY_RANKING_CONSENT_ENDPOINT", "http://example.com/ranking-consent")
+	_ = os.Setenv("BLONY_ANNOUNCEMENT_ENDPOINT", "http://example.com/announcement")
 	_ = os.Setenv("BLONY_UPLOAD_DUNGEON_KEYWORD", "测试副本")
 	applyUploadEnvOverrides()
 
@@ -92,6 +108,12 @@ func TestApplyUploadEnvOverrides(t *testing.T) {
 	}
 	if UploadDungeonKeyword != "测试副本" {
 		t.Fatalf("unexpected keyword: %q", UploadDungeonKeyword)
+	}
+	if RankingConsentEndpoint != "http://example.com/ranking-consent" {
+		t.Fatalf("unexpected ranking consent endpoint: %q", RankingConsentEndpoint)
+	}
+	if AnnouncementEndpoint != "http://example.com/announcement" {
+		t.Fatalf("unexpected announcement endpoint: %q", AnnouncementEndpoint)
 	}
 }
 

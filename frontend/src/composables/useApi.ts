@@ -113,6 +113,13 @@ export async function getNpcapStatus(): Promise<NpcapStatus> {
   return window.go.app.App.GetNpcapStatus()
 }
 
+export async function getLatestAnnouncement(): Promise<ServerAnnouncement> {
+  if (!isWailsReady()) {
+    return { available: false, found: false, timestamp: 0, title: '', html: '' }
+  }
+  return window.go.app.App.GetLatestAnnouncement()
+}
+
 /**
  * 打开 Npcap 下载页
  */

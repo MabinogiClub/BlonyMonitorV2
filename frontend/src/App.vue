@@ -3,7 +3,7 @@
  * 主应用组件
  */
 
-import { onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAppStore } from './stores/app'
 import * as api from './composables/useApi'
 import TitleBar from './components/TitleBar.vue'
@@ -14,11 +14,19 @@ import DpsChartPanel from './components/DpsChartPanel.vue'
 import HistoryChartPanel from './components/HistoryChartPanel.vue'
 import TabsPanel from './components/TabsPanel.vue'
 import NpcapGuideDialog from './components/NpcapGuideDialog.vue'
+import StartupNoticeDialog from './components/StartupNoticeDialog.vue'
 
 const appStore = useAppStore()
 
 let updateInterval: number | null = null
 let isHistoryMode = false
+const startupNoticeVisible = ref(false)
+const startupNoticeKind = ref<'announcement' | 'ranking'>('announcement')
+const startupAnnouncement = ref<ServerAnnouncement | null>(null)
+const checkNpcapAfterSettings = ref(false)
+
+const announcementAcknowledgedKey = 'blony-monitor:last-announcement-timestamp'
+const rankingPromptAcknowledgedKey = 'blony-monitor:ranking-prompt-acknowledged'
 
 const HISTORY_WIDTH_EXTRA = 420
 const HISTORY_HEIGHT_EXTRA = 200
@@ -48,6 +56,82 @@ async function restoreNormalWindowSize() {
   await api.setWindowSize(base.width, base.height)
 }
 
+function readStoredNumber(key: string): number {
+  try {
+    const value = Number(window.localStorage.getItem(key) || 0)
+    return Number.isFinite(value) && value >= 0 ? value : 0
+  } catch {
+    return 0
+  }
+}
+
+function writeStoredValue(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    // A restricted WebView may disable local storage; the prompt can show again.
+  }
+}
+
+function showRankingPromptIfNeeded() {
+  if (readStoredNumber(rankingPromptAcknowledgedKey) === 1) {
+    startupNoticeVisible.value = false
+    startupAnnouncement.value = null
+    finishStartupNotices()
+    return
+  }
+  startupNoticeKind.value = 'ranking'
+  startupAnnouncement.value = null
+  startupNoticeVisible.value = true
+}
+
+function finishStartupNotices() {
+  void appStore.checkNpcapOnStartup()
+}
+
+async function loadStartupNotices() {
+  let latest: ServerAnnouncement | null = null
+  try {
+    const announcement = await api.getLatestAnnouncement()
+    if (announcement.available && announcement.found) {
+      latest = announcement
+    }
+  } catch (error) {
+    console.error('加载服务端公告失败:', error)
+  }
+
+  if (latest && latest.timestamp > readStoredNumber(announcementAcknowledgedKey)) {
+    startupNoticeKind.value = 'announcement'
+    startupAnnouncement.value = latest
+    startupNoticeVisible.value = true
+    return
+  }
+  showRankingPromptIfNeeded()
+}
+
+function confirmStartupNotice() {
+  if (startupNoticeKind.value === 'announcement') {
+    const timestamp = startupAnnouncement.value?.timestamp || 0
+    if (timestamp > 0) {
+      writeStoredValue(announcementAcknowledgedKey, String(timestamp))
+    }
+    showRankingPromptIfNeeded()
+    return
+  }
+
+  writeStoredValue(rankingPromptAcknowledgedKey, '1')
+  startupNoticeVisible.value = false
+  checkNpcapAfterSettings.value = true
+  appStore.requestAdvancedSettings('ranking')
+}
+
+watch(() => appStore.advancedSettingsVisible, (visible, wasVisible) => {
+  if (!visible && wasVisible && checkNpcapAfterSettings.value) {
+    checkNpcapAfterSettings.value = false
+    finishStartupNotices()
+  }
+})
+
 watch(() => appStore.activeTab, async (newTab, oldTab) => {
   if (newTab === 'history') {
     if (!isHistoryMode) {
@@ -68,6 +152,7 @@ watch(() => appStore.activeTab, async (newTab, oldTab) => {
 onMounted(async () => {
   await appStore.initialize()
   appStore.registerEvents()
+  void loadStartupNotices()
 
   updateInterval = window.setInterval(() => {
     appStore.updateAllViews()
@@ -106,6 +191,13 @@ onUnmounted(() => {
       :visible="appStore.npcapDialogVisible"
       :message="appStore.npcapMessage"
       @ready="appStore.dismissNpcapDialog"
+    />
+
+    <StartupNoticeDialog
+      :visible="startupNoticeVisible"
+      :kind="startupNoticeKind"
+      :announcement="startupAnnouncement"
+      @confirm="confirmStartupNotice"
     />
   </div>
 </template>

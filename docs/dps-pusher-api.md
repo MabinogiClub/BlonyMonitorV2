@@ -24,6 +24,8 @@ BlonyMonitorV2 客户端在本地保存战斗历史后，会按条件自动将�
 |--------|------|
 | `UploadSecret` | HMAC 密钥（敏感，走 GitHub **Secret**） |
 | `UploadEndpoint` | 上传地址（敏感，推荐走 GitHub **Secret**） |
+| `RankingConsentEndpoint` | 排行参与状态地址（敏感，走 GitHub **Secret**） |
+| `AnnouncementEndpoint` | 服务端公告地址（敏感，走 GitHub **Secret**） |
 | `UploadDungeonKeyword` | 副本名关键字过滤 |
 | `MinUploadTargetMaxHP` | 最低 Boss 血量过滤（仅代码配置） |
 
@@ -37,13 +39,15 @@ BlonyMonitorV2 客户端在本地保存战斗历史后，会按条件自动将�
 |------|------|------|
 | `BLONY_UPLOAD_SECRET` | 是 | HMAC 签名密钥，与服务端一致，建议 ≥32 位随机字符串 |
 | `BLONY_UPLOAD_ENDPOINT` | 是 | 推送地址（推荐放 Secrets，避免在仓库 Variables 中明文可见） |
+| `BLONY_RANKING_CONSENT_ENDPOINT` | 是 | 排行参与状态地址，只放 Secrets，不在仓库中公开路径 |
+| `BLONY_ANNOUNCEMENT_ENDPOINT` | 是 | 服务端公告地址，只放 Secrets，不在仓库中公开路径 |
 
 添加步骤：
 
 1. 打开 GitHub 仓库 → **Settings**
 2. 左侧 **Secrets and variables** → **Actions**
 3. 切到 **Secrets** 标签 → **New repository secret**
-4. 分别添加 `BLONY_UPLOAD_SECRET` 与 `BLONY_UPLOAD_ENDPOINT`
+4. 分别添加 `BLONY_UPLOAD_SECRET`、`BLONY_UPLOAD_ENDPOINT`、`BLONY_RANKING_CONSENT_ENDPOINT` 与 `BLONY_ANNOUNCEMENT_ENDPOINT`
 
 #### Variables（非敏感，可公开在仓库内）
 
@@ -80,6 +84,8 @@ zip 内容示例：
 ```env
 BLONY_UPLOAD_SECRET=你的密钥
 BLONY_UPLOAD_ENDPOINT=你的推送地址
+BLONY_RANKING_CONSENT_ENDPOINT=你的排行参与状态地址
+BLONY_ANNOUNCEMENT_ENDPOINT=你的公告地址
 ```
 
 加载优先级：
@@ -88,7 +94,9 @@ BLONY_UPLOAD_ENDPOINT=你的推送地址
 config.go 默认值 < CI ldflags 注入 < .env < 系统环境变量
 ```
 
-> **注意**：密钥编译进 exe 后，熟练用户仍可能通过逆向提取。相比附带 `.env` 文件，这种方式不会让用户解压即见明文密钥，但无法做到绝对保密。若需更强防护，应改为用户注册 + 每用户独立 Token。
+> **注意**：密钥和服务地址编译进 exe 后，熟练用户仍可能通过逆向提取。相比附带 `.env` 文件，这种方式不会让用户解压即见明文配置，但无法做到绝对保密。若需更强防护，应改为用户注册 + 每用户独立 Token。
+
+客户端不会通过 Wails 接口、调试面板或日志返回服务地址；错误信息中的地址统一显示为 `[server]`。
 
 ## 上传触发条件
 
@@ -191,6 +199,113 @@ curl -X POST "https://your-server.example/dpsPusher" \
   -F "contentSha256=<sha256-hex>" \
   -F "file=@battle.json.gz;type=application/gzip"
 ```
+
+---
+
+## 公开排行参与状态
+
+“启用推送”和“参与公开排行”是两个不同的设置。排行有三种状态：
+
+| 选择 | 公开榜单表现 |
+|------|--------------|
+| `none` 不参与排行 | 不进入任何公开排行 |
+| `anonymous` 匿名排行 | 参与统计，但不展示角色名；服务端应使用不可逆的匿名标识 |
+| `public` 公开排行 | 参与统计并展示角色名 |
+
+本机推送开关只控制当前客户端是否发送战斗文件；队友上传同场数据时，服务端仍必须按每个角色自己的排行状态过滤。
+
+排行状态按 `playerId`（角色）保存，不按电脑保存。切换角色后客户端会重新查询。关闭排行不能阻止队友客户端发送整场战斗文件，但服务端必须在入榜和查询时排除该角色。
+
+### 隐私默认值与历史数据
+
+- 服务端对不存在状态记录的 `playerId` 必须按 `mode=none` 处理，即明确选择后才进入排行。
+- `PUT mode=none` 成功后，服务端必须立即让该角色从所有公开榜单消失，包括以前已产生的排行记录。
+- 推荐在查询排行时实时关联当前同意状态，或在更新状态的同一事务中修改历史排行可见性。不能只在下一次上传时生效。
+- 上传者的同意状态不能代替队友的状态；服务端必须逐个检查 `targets[].attackers[]` 中 `isPC=true` 的角色 ID。
+- 原始战斗归档如需长期保留，应另设保留期和访问控制。退出排行不等同于删除原始战斗文件。
+
+### 排行状态接口
+
+Endpoint 由 `BLONY_RANKING_CONSENT_ENDPOINT` 注入，同一路径支持以下方法：
+
+| 方法 | 请求体 | 语义 |
+|------|--------|------|
+| `GET` | 无 | 查询 `X-Player-ID` 对应状态；不存在时返回 `none` |
+| `PUT` | JSON | 覆盖保存当前角色状态，操作必须幂等 |
+
+共同请求头：
+
+| Header | 说明 |
+|--------|------|
+| `Authorization` | `HMAC-SHA256 <hex_signature>` |
+| `X-Timestamp` | Unix 秒级时间戳 |
+| `X-Nonce` | 每次请求唯一的 16 字节随机数 hex |
+| `X-Player-ID` | 当前客户端识别到的自身角色 ID |
+| `X-Player-Name` | 当前角色名，可选，仅用于显示/审计 |
+
+`PUT` 请求体：
+
+```json
+{
+  "mode": "anonymous",
+  "playerName": "测试角色",
+  "clientVersion": "2.2.2"
+}
+```
+
+`GET` 与 `PUT` 均返回：
+
+```json
+{
+  "mode": "none",
+  "updatedAt": "2026-07-21T12:00:00Z"
+}
+```
+
+签名原文：
+
+```text
+bodyHash = hex(SHA256(原始请求体字节))
+payload  = timestamp + "\n" + nonce + "\n" + UPPER(method) + "\n" + playerId + "\n" + bodyHash
+signature = hex(HMAC-SHA256(secret, payload))
+```
+
+服务端必须校验时间窗口、nonce 防重放、请求头中的 `playerId` 与签名原文一致，并对 `PUT` 做审计与限流。当前共享 HMAC 只能防止普通伪造，不能严格证明游戏角色所有权；若面向对抗环境，应升级为账号登录后签发的每用户 Token 或游戏内一次性验证流程。
+
+### 服务端入榜流程
+
+```text
+接收并验证战斗上传
+  -> 解压并校验战斗数据
+  -> 收集所有 isPC=true 的 attacker.id
+  -> 批量查询 ranking_consent（缺失视为 none）
+  -> none 不入榜，anonymous 匿名入榜，public 公开入榜
+  -> 原始文件按独立的保留策略处理
+```
+
+建议状态表至少包含 `player_id`（唯一键）、`mode`、`updated_at`、`player_name`、`client_version` 与审计字段。任何排行缓存也必须在切换状态时失效。
+
+## 服务端公告接口
+
+Endpoint 由 `BLONY_ANNOUNCEMENT_ENDPOINT` 注入。客户端每次启动时发起带 HMAC 的 `GET`，服务端可以返回单个公告、公告数组，或 `{ "announcements": [...] }`。`timestamp` 使用 Unix 秒级整数，客户端只选择该值最大的公告。
+
+公告格式：
+
+```json
+{
+  "announcements": [
+    {
+      "timestamp": 1722500000,
+      "title": "排行规则更新",
+      "html": "<p>公告正文，可使用<strong>基础 HTML</strong>。</p>"
+    }
+  ]
+}
+```
+
+公告正文会在客户端经过 HTML 白名单清洗，只允许常用排版、列表、表格、代码和 HTTP(S) 链接。客户端确认后保存最大时间戳；下次启动只展示 `timestamp` 大于本地已确认时间戳的公告。服务端删除旧公告不会让已确认公告重复出现。
+
+公告请求使用与排行接口相同的时间戳、nonce 和 HMAC 机制，签名中的 `playerId` 固定为 `announcement`，请求体为空。服务端仍应限流，并返回 2xx JSON；没有新公告时返回空数组即可。
 
 ---
 
@@ -352,3 +467,5 @@ curl -X POST "https://your-server.example/dpsPusher" \
 | 1.0 | 2026-07-12 | 初始版本：multipart 上传 gzip 战斗快照 |
 | 1.1 | 2026-07-12 | 增加 HMAC 签名、contentSha256、服务端防护清单 |
 | 1.2 | 2026-07-15 | 存档字段与 EMA 对齐：攻击者时间、显式 isPC、整数时长与暴击区间语义 |
+| 1.3 | 2026-07-21 | 增加按角色保存的公开排行参与状态、服务端过滤规则与私有 Endpoint 注入 |
+| 1.4 | 2026-08-03 | 排行扩展为不参与/匿名/公开三态，增加按时间戳确认的 HTML 服务端公告 |

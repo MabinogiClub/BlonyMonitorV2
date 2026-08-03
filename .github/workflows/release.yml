@@ -60,15 +60,49 @@ jobs:
           New-Item -ItemType Directory -Force -Path .ci-assets | Out-Null
           Copy-Item "build/bin/mabidata.db" ".ci-assets/mabidata.db"
 
+      - name: Resolve build version
+        id: version
+        shell: pwsh
+        env:
+          BUILD_REF_TYPE: ${{ github.ref_type }}
+          BUILD_REF_NAME: ${{ github.ref_name }}
+          BUILD_SHA: ${{ github.sha }}
+        run: |
+          if ($env:BUILD_REF_TYPE -eq "tag") {
+            $tag = $env:BUILD_REF_NAME
+            if ($tag -notmatch '^v(\d+)\.(\d+)\.(\d+)$') {
+              throw "Release tag must use the vMAJOR.MINOR.PATCH format: $tag"
+            }
+            $clientVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+            $productVersion = $clientVersion
+          } else {
+            $shortSha = $env:BUILD_SHA.Substring(0, 7)
+            $clientVersion = "dev-$shortSha"
+            $productVersion = "0.0.0"
+          }
+
+          # Wails reads this value when generating the Windows version resource.
+          # This edit only exists in the CI workspace and is never committed.
+          $wailsConfig = Get-Content "wails.json" -Raw | ConvertFrom-Json
+          $wailsConfig.info.productVersion = $productVersion
+          $wailsConfig | ConvertTo-Json -Depth 10 | Set-Content "wails.json" -Encoding utf8
+
+          "client_version=$clientVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "product_version=$productVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Resolved client version: $clientVersion (Windows product version: $productVersion)"
+
       - name: Build application
         shell: pwsh
         env:
           CGO_ENABLED: 0
           BLONY_UPLOAD_SECRET: ${{ secrets.BLONY_UPLOAD_SECRET }}
           BLONY_UPLOAD_ENDPOINT: ${{ secrets.BLONY_UPLOAD_ENDPOINT }}
+          BLONY_RANKING_CONSENT_ENDPOINT: ${{ secrets.BLONY_RANKING_CONSENT_ENDPOINT }}
+          BLONY_ANNOUNCEMENT_ENDPOINT: ${{ secrets.BLONY_ANNOUNCEMENT_ENDPOINT }}
           BLONY_UPLOAD_ENDPOINT_VAR: ${{ vars.BLONY_UPLOAD_ENDPOINT }}
           BLONY_UPLOAD_DUNGEON_KEYWORD: ${{ vars.BLONY_UPLOAD_DUNGEON_KEYWORD }}
           BLONY_UPLOAD_ENABLED: ${{ vars.BLONY_UPLOAD_ENABLED }}
+          CLIENT_VERSION: ${{ steps.version.outputs.client_version }}
         run: |
           $endpoint = ($env:BLONY_UPLOAD_ENDPOINT).Trim()
           if (-not $endpoint) {
@@ -77,12 +111,25 @@ jobs:
 
           $hasSecret = -not [string]::IsNullOrWhiteSpace($env:BLONY_UPLOAD_SECRET)
           $hasEndpoint = -not [string]::IsNullOrWhiteSpace($endpoint)
-          Write-Host "Upload inject check: secret=$hasSecret endpoint=$hasEndpoint"
+          $hasRankingConsentEndpoint = -not [string]::IsNullOrWhiteSpace($env:BLONY_RANKING_CONSENT_ENDPOINT)
+          $hasAnnouncementEndpoint = -not [string]::IsNullOrWhiteSpace($env:BLONY_ANNOUNCEMENT_ENDPOINT)
+          Write-Host "Private service inject check: secret=$hasSecret uploadEndpoint=$hasEndpoint rankingConsentEndpoint=$hasRankingConsentEndpoint announcementEndpoint=$hasAnnouncementEndpoint"
           if (-not $hasEndpoint) {
             Write-Warning "BLONY_UPLOAD_ENDPOINT is empty. Add it under Settings > Secrets and variables > Actions > Secrets."
           }
+          if (-not $hasRankingConsentEndpoint) {
+            Write-Warning "BLONY_RANKING_CONSENT_ENDPOINT is empty. Ranking participation controls will be unavailable."
+          }
+          if (-not $hasAnnouncementEndpoint) {
+            Write-Warning "BLONY_ANNOUNCEMENT_ENDPOINT is empty. Server announcements will be unavailable."
+          }
 
-          $ldflags = @('-s', '-w')
+          $clientVersion = $env:CLIENT_VERSION
+          if ([string]::IsNullOrWhiteSpace($clientVersion)) {
+            throw "Resolved client version is empty"
+          }
+
+          $ldflags = @('-s', '-w', "-X blonymonitorv2/internal/config.ClientVersion=$clientVersion")
           if ($hasSecret) {
             $secretB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($env:BLONY_UPLOAD_SECRET))
             $ldflags += "-X blonymonitorv2/internal/config.uploadSecretInjectB64=$secretB64"
@@ -90,6 +137,14 @@ jobs:
           if ($hasEndpoint) {
             $endpointB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($endpoint))
             $ldflags += "-X blonymonitorv2/internal/config.uploadEndpointInjectB64=$endpointB64"
+          }
+          if ($hasRankingConsentEndpoint) {
+            $rankingConsentEndpointB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($env:BLONY_RANKING_CONSENT_ENDPOINT.Trim()))
+            $ldflags += "-X blonymonitorv2/internal/config.rankingConsentEndpointInjectB64=$rankingConsentEndpointB64"
+          }
+          if ($hasAnnouncementEndpoint) {
+            $announcementEndpointB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($env:BLONY_ANNOUNCEMENT_ENDPOINT.Trim()))
+            $ldflags += "-X blonymonitorv2/internal/config.announcementEndpointInjectB64=$announcementEndpointB64"
           }
           if ($env:BLONY_UPLOAD_DUNGEON_KEYWORD) {
             $ldflags += "-X blonymonitorv2/internal/config.uploadDungeonKeywordInject=$($env:BLONY_UPLOAD_DUNGEON_KEYWORD)"
@@ -102,8 +157,10 @@ jobs:
       - name: Package release
         id: package
         shell: pwsh
+        env:
+          CLIENT_VERSION: ${{ steps.version.outputs.client_version }}
         run: |
-          $version = (Get-Content wails.json -Raw | ConvertFrom-Json).info.productVersion
+          $version = $env:CLIENT_VERSION
           $packageDir = "release-package"
           New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
           Copy-Item "build/bin/BlonyMonitorV2.exe" $packageDir/

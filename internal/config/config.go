@@ -7,6 +7,12 @@ var EnableFileLog = false
 // UploadEndpoint 战斗历史上传服务器地址，通过 .env、环境变量或 CI 注入。
 var UploadEndpoint = ""
 
+// RankingConsentEndpoint 公开排行参与状态服务地址，通过 .env、环境变量或 CI 注入。
+var RankingConsentEndpoint = ""
+
+// AnnouncementEndpoint 服务端公告地址，通过 .env、环境变量或 CI 注入。
+var AnnouncementEndpoint = ""
+
 // UploadEnabled 是否启用战斗数据推送。
 var UploadEnabled = true
 
@@ -16,8 +22,9 @@ var UploadDungeonKeyword = "布里列赫"
 // MinUploadTargetMaxHP 上传时仅保留 Boss 最大血量不低于该值的目标（单位：点）。
 const MinUploadTargetMaxHP = 200_000_000
 
-// ClientVersion 客户端版本号，上传时附带。
-const ClientVersion = "2.2.2"
+// ClientVersion is injected from the release tag by CI. Local builds keep the
+// development value so they do not need release-only build flags.
+var ClientVersion = "dev"
 
 // UploadSecret 上传 HMAC 签名密钥，从 .env 或环境变量 BLONY_UPLOAD_SECRET 加载。
 // 留空时不发起上传。

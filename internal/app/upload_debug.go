@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"blonymonitorv2/internal/config"
 )
 
 // UploadDebugInfo 最近一次战斗上传状态（供调试面板展示）。
@@ -69,6 +71,7 @@ func recordUploadUploading(dungeon, fileName string) {
 }
 
 func recordUploadSuccess(dungeon, fileName string, statusCode int, response string) {
+	response = maskUploadText(response, strings.TrimSpace(config.UploadEndpoint))
 	setUploadDebug(UploadDebugInfo{
 		Status:     "success",
 		Dungeon:    dungeon,
@@ -80,9 +83,10 @@ func recordUploadSuccess(dungeon, fileName string, statusCode int, response stri
 }
 
 func recordUploadError(dungeon, fileName string, statusCode int, response string, err error) {
+	response = maskUploadText(response, strings.TrimSpace(config.UploadEndpoint))
 	msg := ""
 	if err != nil {
-		msg = err.Error()
+		msg = maskUploadText(err.Error(), strings.TrimSpace(config.UploadEndpoint))
 	}
 	if statusCode > 0 && msg == "" {
 		msg = fmt.Sprintf("HTTP %d", statusCode)

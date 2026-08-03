@@ -212,7 +212,7 @@ func postBattleUploadOnce(endpoint, playerID, playerName, dungeonName, fileName 
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	bodyText := strings.TrimSpace(string(respBody))
+	bodyText := maskUploadText(strings.TrimSpace(string(respBody)), endpoint)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		uploadErr := fmt.Errorf("server returned %s", resp.Status)
