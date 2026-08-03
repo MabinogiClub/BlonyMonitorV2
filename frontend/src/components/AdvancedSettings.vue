@@ -593,7 +593,7 @@ watch(() => appStore.selfInfo?.id, (newID, oldID) => {
             <div class="ranking-control-row">
               <div class="ranking-control-copy">
                 <span class="ranking-control-title">
-                  参与公开排行
+                  公开排行状态
                   <template v-if="rankingPlayerName"> · {{ rankingPlayerName }}</template>
                 </span>
                 <span class="ranking-control-status">{{ rankingStatusText }}</span>
@@ -602,7 +602,7 @@ watch(() => appStore.selfInfo?.id, (newID, oldID) => {
                 v-model="rankingMode"
                 :disabled="!rankingCanToggle"
                 :title="rankingUnavailableReason || '选择当前角色的排行参与方式'"
-                aria-label="参与公开排行"
+                aria-label="公开排行状态"
                 class="ranking-mode-select"
                 @change="handleRankingParticipationChange(rankingMode)"
               >

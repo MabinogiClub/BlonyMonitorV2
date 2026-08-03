@@ -59,7 +59,7 @@ function handleAnnouncementClick(event: MouseEvent) {
       <div v-else class="ranking-intro">
         <p>部分玩家希望战斗表现保持低调，因此排行参与方式改为由每位玩家自主选择。</p>
         <p>你可以选择不参与、匿名排行或公开排行。匿名排行不会展示角色名，公开排行会展示角色名。</p>
-        <p>网页端的排行查询功能将于近日开放，现在可以先完成偏好设置。</p>
+        <p>百百机器人的排行查询功能将于近日开放，现在可以先完成偏好设置。</p>
       </div>
 
       <footer class="startup-notice-actions">
