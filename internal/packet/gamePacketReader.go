@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
+	"blonymonitorv2/internal/constants"
+	"blonymonitorv2/internal/util"
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
 	"github.com/gopacket/gopacket/pcap"
 	"github.com/gopacket/gopacket/pcapgo"
-	"blonymonitorv2/internal/constants"
-	"blonymonitorv2/internal/util"
 )
 
 type GameServerPacketReader struct {
@@ -63,8 +63,9 @@ type pendingTcpLayer struct {
 
 const (
 	pcapQueueSize   = 1000 // 增加pcap队列大小，减少丢包
+	pcapSnapLen     = 65_535
 	pcapBufferSize  = 32 * 1024 * 1024
-	pcapPromisc     = true
+	pcapPromisc     = false
 	packetQueueSize = 2000 // 增加数据包队列大小，应对高频战斗场景
 )
 
@@ -462,16 +463,42 @@ func (t *GameServerPacketReader) packetLoop(payloadCh <-chan gamePacketPayload) 
 }
 
 func (t *GameServerPacketReader) openNic(nic string, filter string) (<-chan gamePacketPayload, error) {
-	handle, err := pcap.OpenLive(nic, pcapBufferSize, pcapPromisc, pcap.BlockForever)
+	inactive, err := pcap.NewInactiveHandle(nic)
 	if err != nil {
 		logger.Println(err)
 		return nil, err
 	}
-	t.handle = handle
+	activated := false
+	defer func() {
+		if !activated {
+			inactive.CleanUp()
+		}
+	}()
+
+	if err := inactive.SetSnapLen(pcapSnapLen); err != nil {
+		return nil, fmt.Errorf("set pcap snapshot length: %w", err)
+	}
+	if err := inactive.SetPromisc(pcapPromisc); err != nil {
+		return nil, fmt.Errorf("set pcap promiscuous mode: %w", err)
+	}
+	if err := inactive.SetTimeout(pcap.BlockForever); err != nil {
+		return nil, fmt.Errorf("set pcap timeout: %w", err)
+	}
+	if err := inactive.SetBufferSize(pcapBufferSize); err != nil {
+		return nil, fmt.Errorf("set pcap buffer size: %w", err)
+	}
+
+	handle, err := inactive.Activate()
+	if err != nil {
+		return nil, fmt.Errorf("activate pcap handle: %w", err)
+	}
+	activated = true
 
 	if err := handle.SetBPFFilter(filter); err != nil { // optional
+		handle.Close()
 		return nil, err
 	}
+	t.handle = handle
 
 	ch := make(chan gamePacketPayload, pcapQueueSize)
 	// ps := gopacket.NewPacketSource(handle, handle.LinkType())
