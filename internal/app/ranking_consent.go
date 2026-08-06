@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"blonymonitorv2/internal/config"
+	"blonymonitorv2/internal/constants"
 )
 
 const rankingConsentTimeout = 10 * time.Second
@@ -29,6 +30,7 @@ type RankingParticipation struct {
 	Available   bool   `json:"available"`
 	PlayerReady bool   `json:"playerReady"`
 	PlayerName  string `json:"playerName"`
+	ServerID    string `json:"serverId"`
 	Mode        string `json:"mode"`
 	// Participating 保留给旧前端；匿名和公开排行都会返回 true。
 	Participating bool   `json:"participating"`
@@ -38,13 +40,29 @@ type RankingParticipation struct {
 type rankingConsentUpdate struct {
 	Mode          string `json:"mode"`
 	PlayerName    string `json:"playerName,omitempty"`
+	ServerID      string `json:"serverId,omitempty"`
 	ClientVersion string `json:"clientVersion"`
 }
 
 type rankingConsentResponse struct {
-	Mode          string `json:"mode"`
-	Participating *bool  `json:"participating,omitempty"`
-	UpdatedAt     string `json:"updatedAt"`
+	Mode          string          `json:"mode"`
+	ServerID      json.RawMessage `json:"serverId"`
+	Participating *bool           `json:"participating,omitempty"`
+	UpdatedAt     string          `json:"updatedAt"`
+}
+
+func rankingResponseServerID(response rankingConsentResponse) (string, bool) {
+	if len(response.ServerID) == 0 {
+		return "", false // legacy server: field is not supported
+	}
+	if string(bytes.TrimSpace(response.ServerID)) == "null" {
+		return "", true
+	}
+	var value string
+	if err := json.Unmarshal(response.ServerID, &value); err != nil {
+		return "", true
+	}
+	return strings.TrimSpace(value), true
 }
 
 func normalizeRankingMode(mode string, legacyParticipating *bool) string {
@@ -81,6 +99,18 @@ func (a *App) currentPlayerIdentity() (string, string) {
 	return a.selfId, a.selfName
 }
 
+func (a *App) currentServerID() string {
+	a.mu.RLock()
+	channelName := a.channelName
+	selectedChannel := a.selectedChannel
+	a.mu.RUnlock()
+
+	if serverID := constants.GetServerIDByChannelName(channelName); serverID != "" {
+		return serverID
+	}
+	return constants.GetServerIDByChannel(selectedChannel)
+}
+
 // GetRankingParticipation 从服务器读取当前角色的排行参与状态。
 func (a *App) GetRankingParticipation() (RankingParticipation, error) {
 	playerID, playerName := a.currentPlayerIdentity()
@@ -105,9 +135,40 @@ func (a *App) GetRankingParticipation() (RankingParticipation, error) {
 		setServerInteraction("ranking", "error", "同步失败")
 		return state, err
 	}
+	serverID := a.currentServerID()
 	state.Mode = normalizeRankingMode(response.Mode, response.Participating)
 	state.Participating = state.Mode != RankingModeNone
+	responseServerID, serverFieldPresent := rankingResponseServerID(response)
+	if serverFieldPresent {
+		state.ServerID = responseServerID
+	} else {
+		state.ServerID = serverID
+	}
 	state.UpdatedAt = response.UpdatedAt
+
+	// GET is read-only. If an older row has no server (or the character moved
+	// to another configured server), refresh it with the current mode.
+	if serverFieldPresent && serverID != "" && responseServerID != serverID {
+		body, marshalErr := json.Marshal(rankingConsentUpdate{
+			Mode:          state.Mode,
+			PlayerName:    playerName,
+			ServerID:      serverID,
+			ClientVersion: config.ClientVersion,
+		})
+		if marshalErr == nil {
+			if saved, putErr := requestRankingConsent(http.MethodPut, playerID, playerName, body); putErr == nil {
+				savedServerID, savedServerFieldPresent := rankingResponseServerID(saved)
+				if savedServerFieldPresent {
+					state.ServerID = savedServerID
+				} else {
+					state.ServerID = serverID
+				}
+				state.UpdatedAt = saved.UpdatedAt
+			} else {
+				logger.Printf("[Ranking] 补全服务器失败: %v", putErr)
+			}
+		}
+	}
 	setServerInteraction("ranking", "success", "同步成功")
 	return state, nil
 }
@@ -116,6 +177,7 @@ func (a *App) GetRankingParticipation() (RankingParticipation, error) {
 func (a *App) SetRankingParticipation(mode string) (RankingParticipation, error) {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	playerID, playerName := a.currentPlayerIdentity()
+	serverID := a.currentServerID()
 	state := RankingParticipation{
 		Available:     rankingConsentConfigured(),
 		PlayerReady:   playerID != "",
@@ -140,6 +202,7 @@ func (a *App) SetRankingParticipation(mode string) (RankingParticipation, error)
 	body, err := json.Marshal(rankingConsentUpdate{
 		Mode:          mode,
 		PlayerName:    playerName,
+		ServerID:      serverID,
 		ClientVersion: config.ClientVersion,
 	})
 	if err != nil {
@@ -153,6 +216,12 @@ func (a *App) SetRankingParticipation(mode string) (RankingParticipation, error)
 	}
 	state.Mode = normalizeRankingMode(response.Mode, response.Participating)
 	state.Participating = state.Mode != RankingModeNone
+	responseServerID, responseServerFieldPresent := rankingResponseServerID(response)
+	if responseServerFieldPresent {
+		state.ServerID = responseServerID
+	} else {
+		state.ServerID = serverID
+	}
 	state.UpdatedAt = response.UpdatedAt
 	setServerInteraction("ranking", "success", "保存成功")
 	return state, nil

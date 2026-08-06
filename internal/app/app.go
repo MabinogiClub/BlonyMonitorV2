@@ -102,6 +102,7 @@ type App struct {
 	lastMapChangeAt             int64
 	selfId                      string
 	selfName                    string
+	rankingConsentSyncKey       string
 	buffTimerMgr                *BuffTimerManager
 	onHide                      func()
 }
@@ -298,6 +299,31 @@ func (a *App) setSelfInfo(id, name string) {
 	}
 
 	runtime.EventsEmit(a.ctx, "selfInfo", &SelfInfo{ID: id, Name: name})
+	a.scheduleRankingConsentSync()
+}
+
+func (a *App) scheduleRankingConsentSync() {
+	if !rankingConsentConfigured() {
+		return
+	}
+	playerID, _ := a.currentPlayerIdentity()
+	serverID := a.currentServerID()
+	if playerID == "" || serverID == "" {
+		return
+	}
+	key := playerID + "|" + serverID
+	a.mu.Lock()
+	if a.rankingConsentSyncKey == key {
+		a.mu.Unlock()
+		return
+	}
+	a.rankingConsentSyncKey = key
+	a.mu.Unlock()
+	go func() {
+		if _, err := a.GetRankingParticipation(); err != nil {
+			logger.Printf("[Ranking] 角色识别后同步失败: %v", err)
+		}
+	}()
 }
 
 // GetActiveBuffTimers 获取当前活跃的buff定时器

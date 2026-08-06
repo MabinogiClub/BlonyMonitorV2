@@ -171,6 +171,32 @@ func GetChannelName(ip string, port uint16) string {
 	return ""
 }
 
+// GetServerIDByChannel 根据频道号获取服务器稳定 ID。
+func GetServerIDByChannel(channel int) string {
+	for _, server := range config.Servers {
+		for _, ch := range server.Channels {
+			if ch.ID == channel {
+				return server.ID
+			}
+		}
+	}
+	return ""
+}
+
+// GetServerIDByChannelName 根据已展示的频道名称获取服务器稳定 ID。
+func GetServerIDByChannelName(channelName string) string {
+	value := strings.TrimSpace(channelName)
+	if value == "" {
+		return ""
+	}
+	for _, server := range config.Servers {
+		if strings.Contains(value, server.Name) {
+			return server.ID
+		}
+	}
+	return ""
+}
+
 // GetChannelNumber 根据服务器IP和端口获取频道号
 func GetChannelNumber(ip string, port uint16) int {
 	for _, server := range config.Servers {

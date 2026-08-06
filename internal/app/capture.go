@@ -86,6 +86,7 @@ func (a *App) startCapture() {
 			a.mu.Lock()
 			a.channelName = channelName
 			a.mu.Unlock()
+			a.scheduleRankingConsentSync()
 			if channelName != "" {
 				logger.Printf("【数据接收】检测到频道: %s (IP: %s, Port: %d)\n", channelName, ip, port)
 				logger.Printf("【数据接收】当前使用网卡: %s\n", nicName)
@@ -244,6 +245,7 @@ func (a *App) startCaptureForChannel(channel int) {
 			a.mu.Lock()
 			a.channelName = channelName
 			a.mu.Unlock()
+			a.scheduleRankingConsentSync()
 			if channelName != "" {
 				logger.Printf("【数据接收】检测到频道: %s (IP: %s, Port: %d)\n", channelName, ip, port)
 				logger.Printf("【数据接收】当前使用网卡: %s\n", nicName)

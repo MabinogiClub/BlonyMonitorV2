@@ -527,6 +527,7 @@ interface RankingParticipation {
   available: boolean
   playerReady: boolean
   playerName: string
+  serverId: string
   mode: RankingMode
   participating: boolean
   updatedAt: string
