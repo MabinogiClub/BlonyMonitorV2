@@ -479,6 +479,7 @@ func (a *App) GetDamageTaken() []TargetDamageStats {
 				TotalDamage: attackerTotal,
 				DPS:         attackerDps,
 				Percent:     percent,
+				IsPC:        stats.isPC,
 				Skills:      skills,
 				Status:      attackerStatus,
 			})
@@ -519,15 +520,29 @@ func (a *App) GetDamageTaken() []TargetDamageStats {
 
 		duration := durationSeconds(targetStat.firstHit, endTime)
 		dps := targetTotal / duration
+		participants := make(map[string]buffParticipant)
+		for attackerID, attackerStats := range targetStat.attackers {
+			if !attackerStats.isPC {
+				continue
+			}
+			participants[attackerID] = buffParticipant{
+				name:   formatDisplayName(attackerID, attackerStats.name, attackerStats.raceId, true),
+				isSelf: attackerID == a.selfId,
+			}
+		}
+		buffCoverage := a.buildBuffCoverageUnsafe(targetStat.firstHit, endTime, participants)
 
 		result = append(result, TargetDamageStats{
-			ID:          targetId,
-			Name:        formatDisplayName(targetId, targetStat.name, targetStat.raceId, targetStat.isPC),
-			TotalDamage: targetTotal,
-			DPS:         dps,
-			Duration:    duration,
-			Attackers:   attackers,
-			Status:      status,
+			ID:           targetId,
+			Name:         formatDisplayName(targetId, targetStat.name, targetStat.raceId, targetStat.isPC),
+			TotalDamage:  targetTotal,
+			DPS:          dps,
+			Duration:     duration,
+			Attackers:    attackers,
+			Status:       status,
+			AppearedAt:   targetStat.firstHit,
+			EndedAt:      endTime,
+			BuffCoverage: buffCoverage,
 		})
 	}
 

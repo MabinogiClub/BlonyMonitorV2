@@ -20,6 +20,12 @@ func (a *App) addEntity(entity *packet.EntityInfo) {
 	idStr := strconv.FormatUint(entity.Id, 10)
 	raceId := int(entity.RaceId)
 	now := time.Now().UnixMilli()
+	eventAt := nowCentiseconds()
+	conditions := make([]uint32, 0, len(entity.CharacterConditionMap))
+	for conditionID := range entity.CharacterConditionMap {
+		conditions = append(conditions, conditionID)
+	}
+	sort.Slice(conditions, func(i, j int) bool { return conditions[i] < conditions[j] })
 
 	a.creatureLib[idStr] = entity.Name
 	raceIdCache[idStr] = raceId
@@ -36,7 +42,7 @@ func (a *App) addEntity(entity *packet.EntityInfo) {
 		Name:            entity.Name,
 		RaceID:          raceId,
 		IsPC:            isPc,
-		Conditions:      make([]uint32, 0),
+		Conditions:      conditions,
 		SkinColor:       entity.SkinColor,
 		EyeType:         entity.EyeType,
 		LeftEyeColor:    entity.LeftEyeColor,
@@ -61,11 +67,20 @@ func (a *App) addEntity(entity *packet.EntityInfo) {
 		MaxStamina:      entity.MaxStamina,
 		AddedAt:         now,
 	}
+	for key, active := range a.activeStatusIntervals {
+		if key.entityID == idStr {
+			active.EntityName = entity.Name
+			active.IsPC = active.IsPC || isPc || idStr == a.selfId
+		}
+	}
+	for _, conditionID := range conditions {
+		a.ensureAppearedStatusUnsafe(entity, conditionID, eventAt)
+	}
 
 	if !exists {
 		a.eventLogs = append(a.eventLogs, EventLog{
 			Type:       "appear",
-			At:         nowCentiseconds(),
+			At:         eventAt,
 			EntityID:   idStr,
 			EntityName: entity.Name,
 			RaceID:     raceId,

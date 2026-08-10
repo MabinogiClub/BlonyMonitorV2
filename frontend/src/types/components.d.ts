@@ -9,6 +9,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AdvancedSettings: typeof import('./../components/AdvancedSettings.vue')['default']
+    BuffCoveragePanel: typeof import('./../components/BuffCoveragePanel.vue')['default']
     ChannelSelector: typeof import('./../components/ChannelSelector.vue')['default']
     ChartPanel: typeof import('./../components/ChartPanel.vue')['default']
     DamageItem: typeof import('./../components/DamageItem.vue')['default']

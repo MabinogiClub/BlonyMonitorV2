@@ -9,6 +9,7 @@ import * as api from '../composables/useApi'
 import { formatNumber, formatDuration, getDisplayName, BAR_CLASSES } from '../composables/useUtils'
 import { useHistoryChart } from '../composables/useHistoryChart'
 import SkillDetailItem from '../components/SkillDetailItem.vue'
+import BuffCoveragePanel from '../components/BuffCoveragePanel.vue'
 
 const appStore = useAppStore()
 
@@ -192,6 +193,10 @@ function isExpanded(attackerId: string): boolean {
   return expandedAttackers.value.has(attackerId)
 }
 
+function getPlayerBuffCoverage(attackerId: string): PlayerBuffCoverage | undefined {
+  return selectedTarget.value?.buffCoverage?.find(player => player.playerId === attackerId)
+}
+
 function getBarClass(index: number): string {
   return BAR_CLASSES[index % BAR_CLASSES.length]
 }
@@ -311,6 +316,7 @@ onUnmounted(() => {
             class="sub-items"
             v-show="isExpanded(attacker.id)"
           >
+            <BuffCoveragePanel :player="getPlayerBuffCoverage(attacker.id)" />
             <SkillDetailItem
               v-for="(skill, skillIndex) in attacker.skills"
               :key="skill.skillId"

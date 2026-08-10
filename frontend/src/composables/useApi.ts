@@ -61,6 +61,37 @@ const previewAttackers: AttackerStats[] = [
   }
 ]
 
+const previewBuffCoverage: PlayerBuffCoverage[] = [
+  {
+    playerId: '100001',
+    playerName: 'Mirai',
+    isSelf: true,
+    battleSeconds: 54,
+    buffs: [
+      { conditionId: 515, conditionName: '状态支援', activeSeconds: 32.4, coveragePercent: 60, segments: [] },
+      {
+        conditionId: 680,
+        conditionName: '战争序曲',
+        activeSeconds: 46.8,
+        coveragePercent: 86.7,
+        strengthField: 'MCMBAMAX',
+        averageStrength: 50.531799,
+        minStrength: 48.2,
+        maxStrength: 53.1,
+        segments: [
+          { startedAt: 100, endedAt: 2780, startOffset: 0, endOffset: 26.8, activeSeconds: 26.8, strength: 48.2 },
+          { startedAt: 2780, endedAt: 4780, startOffset: 26.8, endOffset: 46.8, activeSeconds: 20, strength: 53.1 },
+        ],
+      },
+      { conditionId: 192, conditionName: '活跃进行曲', activeSeconds: 7.2, coveragePercent: 13.3, strengthField: 'LSMA', averageStrength: 48.718998, segments: [] },
+      { conditionId: 193, conditionName: '行进曲', activeSeconds: 0, coveragePercent: 0, strengthField: 'SPDPC', segments: [] },
+      { conditionId: 681, conditionName: '忍耐之歌', activeSeconds: 0, coveragePercent: 0, segments: [] },
+      { conditionId: 194, conditionName: '丰收之歌', activeSeconds: 0, coveragePercent: 0, segments: [] },
+      { conditionId: 1225, conditionName: '超燃咚咚', activeSeconds: 18.5, coveragePercent: 34.3, segments: [] },
+    ],
+  },
+]
+
 const previewTargets: TakenStats[] = [
   {
     id: '900001',
@@ -69,6 +100,7 @@ const previewTargets: TakenStats[] = [
     dps: 88703,
     duration: 54,
     status: 'dead',
+    buffCoverage: previewBuffCoverage,
     attackers: [
       { ...previewAttackers[0], totalDamage: 1980000, dps: 36666, percent: 41.3 },
       { ...previewAttackers[1], totalDamage: 1660000, dps: 30740, percent: 34.7 },

@@ -8,6 +8,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '../stores/app'
 import * as api from '../composables/useApi'
 import { formatNumber, formatDuration, getDisplayName, getSkillName, getSkillIconUrl, BAR_CLASSES, throttle, getDisplayDamageRange } from '../composables/useUtils'
+import BuffCoveragePanel from '../components/BuffCoveragePanel.vue'
 
 // 获取应用状态
 const appStore = useAppStore()
@@ -63,6 +64,10 @@ function toggleExpand(attackerId: string) {
  */
 function isExpanded(attackerId: string): boolean {
   return appStore.isExpanded('taken-' + attackerId)
+}
+
+function getPlayerBuffCoverage(attackerId: string): PlayerBuffCoverage | undefined {
+  return targetDetail.value?.buffCoverage?.find(player => player.playerId === attackerId)
 }
 
 /**
@@ -166,7 +171,7 @@ onUnmounted(() => {
       <div style="margin: 8px 0; padding: 6px 8px; background: rgba(40, 40, 40, 0.8); border-radius: 4px; font-size: 11px; color: #aaa;">
         对 {{ getDisplayName(targetDetail.id, targetDetail.name) }} 造成伤害的所有来源：
       </div>
-      
+
       <!-- 攻击者列表 -->
       <template v-for="(attacker, index) in targetDetail.attackers" :key="attacker.id">
         <div
@@ -210,8 +215,9 @@ onUnmounted(() => {
           class="sub-items"
           v-show="isExpanded(attacker.id)"
         >
-          <div 
-            v-for="(skill, skillIndex) in attacker.skills" 
+          <BuffCoveragePanel :player="getPlayerBuffCoverage(attacker.id)" />
+          <div
+            v-for="(skill, skillIndex) in attacker.skills"
             :key="skill.skillId"
             class="sub-item"
           >

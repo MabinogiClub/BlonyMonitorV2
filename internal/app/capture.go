@@ -366,6 +366,7 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 
 	case opcodeEntityRemove:
 		a.clearBossHP(strconv.FormatUint(pkt.Id, 10))
+		a.endStatusIntervalsForEntity(pkt.Id, nowCentiseconds())
 
 	case opcodeCombatAction:
 		pack, err := packet.ParseCombatActionPackPacket(pkt)
@@ -453,7 +454,7 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 		if err != nil {
 			return
 		}
-		a.addConditionEvent(cond.Id, cond.CCId, cond.IsEnable, cond.AttackerId, cond.DisableAt, cond.Duration)
+		a.addConditionEvent(cond.Id, cond.CCId, cond.IsEnable, cond.AttackerId, cond.DisableAt, cond.Duration, cond.DetailRaw, cond.Details)
 
 	case opcodeSetFinisher:
 		if len(pkt.Msg) < 1 || pkt.Msg[0].Type() != packet.MessageElemTypeLong {

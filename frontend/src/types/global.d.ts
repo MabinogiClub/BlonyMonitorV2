@@ -212,6 +212,45 @@ interface TakenStats {
   duration: number   // 存活时间（秒）
   attackers: AttackerDetail[]
   status?: string    // 状态: active(战斗中), idle(空闲), dead(死亡)
+  appearedAt?: number
+  endedAt?: number
+  buffCoverage?: PlayerBuffCoverage[]
+}
+
+interface BuffDetailValue {
+  type: string
+  value: string
+}
+
+interface BuffCoverageSegment {
+  startedAt: number
+  endedAt: number
+  startOffset: number
+  endOffset: number
+  activeSeconds: number
+  strength?: number
+  rawDetail?: string
+  details?: Record<string, BuffDetailValue>
+}
+
+interface BuffCoverage {
+  conditionId: number
+  conditionName: string
+  activeSeconds: number
+  coveragePercent: number
+  strengthField?: string
+  averageStrength?: number
+  minStrength?: number
+  maxStrength?: number
+  segments?: BuffCoverageSegment[]
+}
+
+interface PlayerBuffCoverage {
+  playerId: string
+  playerName: string
+  isSelf: boolean
+  battleSeconds?: number
+  buffs: BuffCoverage[]
 }
 
 interface SkillHitRecord {
@@ -459,7 +498,6 @@ interface BuffInfo {
 interface BuffDisplayInfo {
   ccId: number
   buffName: string
-  iconData: string
   soundEnabled: boolean
   isActive: boolean
   entityId: number

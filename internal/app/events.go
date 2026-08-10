@@ -1,9 +1,13 @@
 package app
 
-import "strconv"
+import (
+	"strconv"
+
+	"blonymonitorv2/internal/packet"
+)
 
 // addConditionEvent ????????
-func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bool, attackerId uint64, disableAt int64, duration int64) {
+func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bool, attackerId uint64, disableAt int64, duration int64, rawDetail string, details map[string]packet.ConditionDetailValue) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -13,6 +17,7 @@ func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bo
 	if attackerId != 0 {
 		attackerIdStr = strconv.FormatUint(attackerId, 10)
 	}
+	a.recordStatusConditionUnsafe(entityId, conditionId, isEnable, rawDetail, details, now)
 
 	if entity, ok := a.entities[entityIdStr]; ok {
 		if isEnable {
@@ -27,7 +32,7 @@ func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bo
 				entity.Conditions = append(entity.Conditions, conditionId)
 			}
 
-			if a.buffTimerMgr != nil && duration > 0 {
+			if a.buffTimerMgr != nil {
 				a.buffTimerMgr.StartTimer(conditionId, entityId, entity.Name, duration)
 			}
 		} else {
@@ -91,6 +96,9 @@ func (a *App) addFinishEvent(targetId uint64, attackerId uint64) {
 
 	targetRaceID := a.getEntityRaceIDUnsafe(targetIdStr)
 	targetIsPC := targetRaceID >= 0 && isPC(targetRaceID)
+	if targetIsPC {
+		a.endStatusIntervalsForEntityUnsafe(targetIdStr, now)
+	}
 	targetRaceName := ""
 	if targetRaceID >= 0 && !targetIsPC {
 		targetRaceName = a.getRaceNameUnsafe(targetRaceID)

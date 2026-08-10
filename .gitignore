@@ -15,6 +15,7 @@ dev_logs/
 internal/config/.env
 *.log
 *.pcapng
+.gocache/
 .idea/
 .DS_Store
 

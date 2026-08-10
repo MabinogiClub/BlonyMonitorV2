@@ -42,16 +42,17 @@ type attackerExport struct {
 }
 
 type targetExport struct {
-	TargetID    string           `json:"targetId"`
-	TargetName  string           `json:"targetName"`
-	TotalDamage float64          `json:"totalDamage"`
-	DPS         float64          `json:"dps"`
-	Duration    float64          `json:"duration"`
-	Attackers   []attackerExport `json:"attackers"`
-	CleanedAt   int64            `json:"cleanedAt"`
-	AppearedAt  int64            `json:"appearedAt"`
-	DeathTime   int64            `json:"deathTime,omitempty"`
-	BossHP      *BossHPExport    `json:"bossHP,omitempty"`
+	TargetID     string               `json:"targetId"`
+	TargetName   string               `json:"targetName"`
+	TotalDamage  float64              `json:"totalDamage"`
+	DPS          float64              `json:"dps"`
+	Duration     float64              `json:"duration"`
+	Attackers    []attackerExport     `json:"attackers"`
+	CleanedAt    int64                `json:"cleanedAt"`
+	AppearedAt   int64                `json:"appearedAt"`
+	DeathTime    int64                `json:"deathTime,omitempty"`
+	BossHP       *BossHPExport        `json:"bossHP,omitempty"`
+	BuffCoverage []PlayerBuffCoverage `json:"buffCoverage,omitempty"`
 }
 
 // BossHPExport Boss HP 时间线导出。
@@ -321,6 +322,13 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 		for i := range attackers {
 			attackers[i].DPS = attackers[i].TotalDamage / float64(duration)
 		}
+		participants := make(map[string]buffParticipant)
+		for _, attacker := range attackers {
+			if attacker.IsPC {
+				participants[attacker.ID] = buffParticipant{name: attacker.Name, isSelf: attacker.ID == a.selfId}
+			}
+		}
+		buffCoverage := a.buildBuffCoverageUnsafe(targetFirstHit, endTime, participants)
 
 		var targetBossHP *BossHPExport
 		if records, ok := a.bossHPHistory[id]; ok && len(records) > 0 {
@@ -347,16 +355,17 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 		}
 
 		result = append(result, targetExport{
-			TargetID:    id,
-			TargetName:  formatDisplayName(id, stat.name, stat.raceId, stat.isPC),
-			TotalDamage: targetTotal,
-			DPS:         targetDps,
-			Duration:    float64(duration),
-			Attackers:   attackers,
-			CleanedAt:   now,
-			AppearedAt:  targetFirstHit,
-			DeathTime:   deathTime,
-			BossHP:      targetBossHP,
+			TargetID:     id,
+			TargetName:   formatDisplayName(id, stat.name, stat.raceId, stat.isPC),
+			TotalDamage:  targetTotal,
+			DPS:          targetDps,
+			Duration:     float64(duration),
+			Attackers:    attackers,
+			CleanedAt:    now,
+			AppearedAt:   targetFirstHit,
+			DeathTime:    deathTime,
+			BossHP:       targetBossHP,
+			BuffCoverage: buffCoverage,
 		})
 	}
 
@@ -461,6 +470,13 @@ func (a *App) buildTargetExport() []targetExport {
 		}
 		duration := exportDurationSeconds(stat.firstHit, endTime)
 		targetDps := stat.total / float64(duration)
+		participants := make(map[string]buffParticipant)
+		for _, attacker := range attackers {
+			if attacker.IsPC {
+				participants[attacker.ID] = buffParticipant{name: attacker.Name, isSelf: attacker.ID == a.selfId}
+			}
+		}
+		buffCoverage := a.buildBuffCoverageUnsafe(stat.firstHit, endTime, participants)
 
 		var targetBossHP *BossHPExport
 		if records, ok := a.bossHPHistory[id]; ok && len(records) > 0 {
@@ -485,16 +501,17 @@ func (a *App) buildTargetExport() []targetExport {
 		}
 
 		result = append(result, targetExport{
-			TargetID:    id,
-			TargetName:  formatDisplayName(id, stat.name, stat.raceId, stat.isPC),
-			TotalDamage: stat.total,
-			DPS:         targetDps,
-			Duration:    float64(duration),
-			Attackers:   attackers,
-			CleanedAt:   now,
-			AppearedAt:  stat.firstHit,
-			DeathTime:   stat.deathTime,
-			BossHP:      targetBossHP,
+			TargetID:     id,
+			TargetName:   formatDisplayName(id, stat.name, stat.raceId, stat.isPC),
+			TotalDamage:  stat.total,
+			DPS:          targetDps,
+			Duration:     float64(duration),
+			Attackers:    attackers,
+			CleanedAt:    now,
+			AppearedAt:   stat.firstHit,
+			DeathTime:    stat.deathTime,
+			BossHP:       targetBossHP,
+			BuffCoverage: buffCoverage,
 		})
 	}
 
@@ -685,6 +702,7 @@ func (a *App) clearDamageStateUnsafe() {
 	a.damageSeqAtLastAutoSave = 0
 	a.clearAllBossHPUnsafe()
 	a.invalidateExportDamageCache()
+	a.resetStatusHistoryUnsafe(nowCentiseconds())
 }
 
 // cleanupAndSaveTakenStats 场景/副本切换时保存本场新增的战斗记录，保留实时统计供造成伤害/受到伤害页面展示。

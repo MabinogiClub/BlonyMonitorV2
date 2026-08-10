@@ -6,6 +6,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { GetBuffDisplayList, SetBuffSoundEnabled, SetBuffOrder } from '../../wailsjs/go/app/App'
 import { app } from '../../wailsjs/go/models'
+import { getBuffIconUrl } from '../utils/buffIcons'
 
 type BuffDisplayInfo = app.BuffDisplayInfo
 
@@ -42,13 +43,6 @@ async function toggleSound(buff: BuffDisplayInfo, enabled: boolean) {
     console.error('设置声音开关失败:', error)
     await loadBuffList()
   }
-}
-
-function getIconUrl(buff: BuffDisplayInfo): string {
-  if (buff.iconData) {
-    return `data:image/png;base64,${buff.iconData}`
-  }
-  return ''
 }
 
 function formatTime(seconds: number): string {
@@ -195,9 +189,9 @@ onUnmounted(() => {
       >
         <div class="buff-icon-wrap">
           <img
-            v-if="getIconUrl(buff)"
+            v-if="getBuffIconUrl(buff.ccId)"
             class="buff-icon"
-            :src="getIconUrl(buff)"
+            :src="getBuffIconUrl(buff.ccId)"
             :alt="buff.buffName"
           >
           <span v-else class="buff-icon-fallback">🎵</span>

@@ -11,15 +11,21 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
-
-	"blonymonitorv2/db"
 )
 
-var defaultBuffOrder = []uint32{515, 680, 192, 193, 681, 194}
+var defaultBuffOrder = []uint32{515, 680, 192, 193, 681, 194, 1225}
 
-// buffIconNames 指定 Buff 展示时使用的技能图标名称（默认按状态名匹配）
-var buffIconNames = map[uint32]string{
-	515: "状态支援",
+// buffFallbackDurations 用于状态包未提供可计算时长的 Buff。
+// 当前数据库没有结构化的 Buff 时长字段。
+var buffFallbackDurations = map[uint32]int64{
+	1225: 180,
+}
+
+func resolveBuffDuration(ccID uint32, packetDuration int64) int64 {
+	if packetDuration > 0 {
+		return packetDuration
+	}
+	return buffFallbackDurations[ccID]
 }
 
 // BuffTimer 表示一个buff的定时器
@@ -34,16 +40,16 @@ type BuffTimer struct {
 
 // BuffTimerManager 管理buff倒计时和语音提醒
 type BuffTimerManager struct {
-	timers          map[string]*BuffTimer
-	mu              sync.RWMutex
-	targetBuffs     map[uint32]string
-	buffOrder       []uint32
-	soundEnabled    map[uint32]bool
+	timers           map[string]*BuffTimer
+	mu               sync.RWMutex
+	targetBuffs      map[uint32]string
+	buffOrder        []uint32
+	soundEnabled     map[uint32]bool
 	notifyThresholds map[uint32]int64
-	ctx             context.Context
-	notifyThreshold int64
-	selfId          string
-	soundDir        string
+	ctx              context.Context
+	notifyThreshold  int64
+	selfId           string
+	soundDir         string
 }
 
 // NewBuffTimerManager 创建新的BuffTimerManager
@@ -52,12 +58,13 @@ func NewBuffTimerManager(ctx context.Context, selfId string) *BuffTimerManager {
 	logger.Printf("[BuffTimer] 音效目录: %s", soundDir)
 
 	targetBuffs := map[uint32]string{
-		515: "状态支援（逆转）", // 以逆转(515)代表状态支援五件套
-		192: "活跃进行曲",
-		193: "行进曲",
-		194: "丰收之歌",
-		680: "战争序曲",
-		681: "忍耐之歌",
+		515:  "状态支援（逆转）", // 以逆转(515)代表状态支援五件套
+		192:  "活跃进行曲",
+		193:  "行进曲",
+		194:  "丰收之歌",
+		680:  "战争序曲",
+		681:  "忍耐之歌",
+		1225: "超燃咚咚",
 	}
 	buffOrder := append([]uint32(nil), defaultBuffOrder...)
 	soundEnabled := make(map[uint32]bool, len(buffOrder))
@@ -66,10 +73,10 @@ func NewBuffTimerManager(ctx context.Context, selfId string) *BuffTimerManager {
 	}
 
 	mgr := &BuffTimerManager{
-		timers:          make(map[string]*BuffTimer),
-		targetBuffs:     targetBuffs,
-		buffOrder:       buffOrder,
-		soundEnabled:    soundEnabled,
+		timers:       make(map[string]*BuffTimer),
+		targetBuffs:  targetBuffs,
+		buffOrder:    buffOrder,
+		soundEnabled: soundEnabled,
 		notifyThresholds: map[uint32]int64{
 			515: 10, // 状态支援（逆转）提前 10 秒提醒
 		},
@@ -213,9 +220,13 @@ func (m *BuffTimerManager) StartTimer(ccId uint32, entityId uint64, entityName s
 	if !isTarget {
 		return
 	}
+	duration = resolveBuffDuration(ccId, duration)
 
 	entityIdStr := strconv.FormatUint(entityId, 10)
-	if entityIdStr != m.selfId {
+	m.mu.RLock()
+	selfID := m.selfId
+	m.mu.RUnlock()
+	if entityIdStr != selfID {
 		return
 	}
 
@@ -272,15 +283,6 @@ func (m *BuffTimerManager) getNotifyThreshold(ccId uint32) int64 {
 		return threshold
 	}
 	return m.notifyThreshold
-}
-
-func (m *BuffTimerManager) getBuffIcon(ccId uint32) string {
-	if skillName, ok := buffIconNames[ccId]; ok {
-		if icon := db.GetSkillIconByName(skillName); icon != "" {
-			return icon
-		}
-	}
-	return db.GetConditionIcon(int(ccId))
 }
 
 func (m *BuffTimerManager) monitorBuff(ctx context.Context, timer *BuffTimer, buffName string, totalSec int64, ccId uint32) {
@@ -407,14 +409,13 @@ type BuffInfo struct {
 
 // BuffDisplayInfo 界面展示的buff信息（含定时器与声音设置）
 type BuffDisplayInfo struct {
-	CCId          uint32 `json:"ccId"`
-	BuffName      string `json:"buffName"`
-	IconData      string `json:"iconData"`
-	SoundEnabled  bool   `json:"soundEnabled"`
-	IsActive      bool   `json:"isActive"`
-	EntityId      uint64 `json:"entityId"`
-	EntityName    string `json:"entityName"`
-	RemainingTime int64  `json:"remainingTime"`
+	CCId            uint32 `json:"ccId"`
+	BuffName        string `json:"buffName"`
+	SoundEnabled    bool   `json:"soundEnabled"`
+	IsActive        bool   `json:"isActive"`
+	EntityId        uint64 `json:"entityId"`
+	EntityName      string `json:"entityName"`
+	RemainingTime   int64  `json:"remainingTime"`
 	TotalTime       int64  `json:"totalTime"`
 	NotifyThreshold int64  `json:"notifyThreshold"`
 	WillNotify      bool   `json:"willNotify"`
@@ -462,7 +463,6 @@ func (m *BuffTimerManager) GetBuffDisplayList() []BuffDisplayInfo {
 		info := BuffDisplayInfo{
 			CCId:            ccId,
 			BuffName:        m.targetBuffs[ccId],
-			IconData:        m.getBuffIcon(ccId),
 			SoundEnabled:    m.soundEnabled[ccId],
 			NotifyThreshold: m.getNotifyThreshold(ccId),
 		}

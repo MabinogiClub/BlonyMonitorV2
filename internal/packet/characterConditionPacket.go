@@ -6,6 +6,26 @@ import (
 	"strings"
 )
 
+type ConditionDetailValue struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+func ParseConditionDetails(raw string) map[string]ConditionDetailValue {
+	details := make(map[string]ConditionDetailValue)
+	for _, part := range strings.Split(raw, ";") {
+		if part == "" {
+			continue
+		}
+		fields := strings.SplitN(part, ":", 3)
+		if len(fields) != 3 || fields[0] == "" {
+			continue
+		}
+		details[fields[0]] = ConditionDetailValue{Type: fields[1], Value: fields[2]}
+	}
+	return details
+}
+
 // extractMCAGT 从packet的[3]字段string中提取MCAGT值
 // 格式示例: "...MCAGT:8:63905989472526;..."
 func extractMCAGT(s string) (int64, error) {
@@ -30,8 +50,10 @@ func extractMCAGT(s string) (int64, error) {
 }
 
 type CharacterConditionPacket struct {
-	Id       uint64
-	IsEnable bool
+	Id        uint64
+	IsEnable  bool
+	DetailRaw string
+	Details   map[string]ConditionDetailValue
 	EntityCharacterCondition
 }
 
@@ -79,18 +101,23 @@ func ParseCharacterConditionPacket(p *GamePacket) (*CharacterConditionPacket, er
 	disableAt := int64(disableAtRaw)
 
 	// 尝试从[3]字段提取MCAGT并计算duration
-	var duration int64 = 0
+	var duration int64
+	var detailRaw string
+	var details map[string]ConditionDetailValue
 	if len(p.Msg) > 3 && p.Msg[3].Type() == MessageElemTypeString {
-		detailStr := p.Msg[3].Data().(string)
-		if mcagt, err := extractMCAGT(detailStr); err == nil {
+		detailRaw = p.Msg[3].Data().(string)
+		details = ParseConditionDetails(detailRaw)
+		if mcagt, err := extractMCAGT(detailRaw); err == nil {
 			// 计算duration = (SBT - MCAGT) / 1000（秒）
 			duration = (disableAt - mcagt) / 1000
 		}
 	}
 
 	v := &CharacterConditionPacket{
-		Id:       p.Id,
-		IsEnable: true,
+		Id:        p.Id,
+		IsEnable:  true,
+		DetailRaw: detailRaw,
+		Details:   details,
 		EntityCharacterCondition: EntityCharacterCondition{
 			CCId:       ccId,
 			DisableAt:  disableAt,
