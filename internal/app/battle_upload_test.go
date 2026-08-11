@@ -10,7 +10,7 @@ import (
 	"blonymonitorv2/internal/config"
 )
 
-func TestBuildBattleUploadSidecarWithoutChangingLegacyTargets(t *testing.T) {
+func TestBuildBattleUploadExtensionWithoutChangingLegacyTargets(t *testing.T) {
 	data := SaveFileData{Targets: []targetExport{{
 		TargetID:    "boss-1",
 		TargetName:  "Boss",
@@ -32,14 +32,14 @@ func TestBuildBattleUploadSidecarWithoutChangingLegacyTargets(t *testing.T) {
 		}},
 	}}}
 
-	legacyData := buildLegacyBattleUploadData(data)
-	if len(legacyData.Targets) != 1 || legacyData.Targets[0].TargetID != "boss-1" || legacyData.Targets[0].TotalDamage != 123 {
-		t.Fatalf("legacy target fields changed: %+v", legacyData.Targets)
+	payload := buildBattleUploadPayload(data)
+	if len(payload.Targets) != 1 || payload.Targets[0].TargetID != "boss-1" || payload.Targets[0].TotalDamage != 123 {
+		t.Fatalf("legacy target fields changed: %+v", payload.Targets)
 	}
-	if legacyData.Targets[0].BuffCoverage != nil {
-		t.Fatalf("buff coverage must be isolated from legacy targets: %+v", legacyData.Targets[0].BuffCoverage)
+	if payload.Targets[0].BuffCoverage != nil {
+		t.Fatalf("buff coverage must be isolated from legacy targets: %+v", payload.Targets[0].BuffCoverage)
 	}
-	buffUpload := buildBuffMonitorUpload(data)
+	buffUpload := payload.Extensions.BuffMonitor
 	if buffUpload.SchemaVersion != buffMonitorUploadSchemaVersion {
 		t.Fatalf("schema version = %d", buffUpload.SchemaVersion)
 	}
@@ -54,7 +54,7 @@ func TestBuildBattleUploadSidecarWithoutChangingLegacyTargets(t *testing.T) {
 		t.Fatalf("raw buff detail was not preserved: %+v", segment)
 	}
 
-	encoded, err := json.Marshal(legacyData)
+	encoded, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
