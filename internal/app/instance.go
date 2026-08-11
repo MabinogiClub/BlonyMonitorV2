@@ -18,6 +18,10 @@ func findQMMDGN(params string) int {
 }
 
 func (a *App) handleChineseName(pkt *packet.GamePacket) {
+	if a.handleBattlefieldShockNotice(pkt) {
+		return
+	}
+
 	chineseName, ok := parseDungeonChineseNamePacket(pkt)
 	if !ok {
 		return

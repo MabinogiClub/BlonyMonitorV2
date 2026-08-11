@@ -2,12 +2,75 @@ package app
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
 
 	"blonymonitorv2/internal/config"
 )
+
+func TestBuildBattleUploadSidecarWithoutChangingLegacyTargets(t *testing.T) {
+	data := SaveFileData{Targets: []targetExport{{
+		TargetID:    "boss-1",
+		TargetName:  "Boss",
+		TotalDamage: 123,
+		BuffCoverage: []PlayerBuffCoverage{{
+			PlayerID:      "player-1",
+			PlayerName:    "Player",
+			BattleSeconds: 10,
+			Buffs: []BuffCoverage{{
+				ConditionID:     680,
+				ConditionName:   "战争序曲",
+				CoveragePercent: 80,
+				Segments: []BuffCoverageSegment{{
+					StartOffset: 0,
+					EndOffset:   8,
+					RawDetail:   "MCMBAMAX:f:50;",
+				}},
+			}},
+		}},
+	}}}
+
+	legacyData := buildLegacyBattleUploadData(data)
+	if len(legacyData.Targets) != 1 || legacyData.Targets[0].TargetID != "boss-1" || legacyData.Targets[0].TotalDamage != 123 {
+		t.Fatalf("legacy target fields changed: %+v", legacyData.Targets)
+	}
+	if legacyData.Targets[0].BuffCoverage != nil {
+		t.Fatalf("buff coverage must be isolated from legacy targets: %+v", legacyData.Targets[0].BuffCoverage)
+	}
+	buffUpload := buildBuffMonitorUpload(data)
+	if buffUpload.SchemaVersion != buffMonitorUploadSchemaVersion {
+		t.Fatalf("schema version = %d", buffUpload.SchemaVersion)
+	}
+	if len(buffUpload.Definitions) != len(monitoredStatusOrder) {
+		t.Fatalf("definitions = %d, want %d", len(buffUpload.Definitions), len(monitoredStatusOrder))
+	}
+	if len(buffUpload.Targets) != 1 || len(buffUpload.Targets[0].Players) != 1 {
+		t.Fatalf("buff targets missing: %+v", buffUpload.Targets)
+	}
+	segment := buffUpload.Targets[0].Players[0].Buffs[0].Segments[0]
+	if segment.RawDetail != "MCMBAMAX:f:50;" {
+		t.Fatalf("raw buff detail was not preserved: %+v", segment)
+	}
+
+	encoded, err := json.Marshal(legacyData)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	var legacy struct {
+		Targets []struct {
+			TargetID    string  `json:"targetId"`
+			TotalDamage float64 `json:"totalDamage"`
+		} `json:"targets"`
+	}
+	if err := json.Unmarshal(encoded, &legacy); err != nil {
+		t.Fatalf("legacy decode failed: %v", err)
+	}
+	if len(legacy.Targets) != 1 || legacy.Targets[0].TargetID != "boss-1" || legacy.Targets[0].TotalDamage != 123 {
+		t.Fatalf("legacy decode changed: %+v", legacy.Targets)
+	}
+}
 
 func TestFilterSaveDataForUpload(t *testing.T) {
 	data := SaveFileData{

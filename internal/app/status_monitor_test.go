@@ -11,9 +11,10 @@ import (
 
 func TestBossStatusMonitorIncludesAdditionalBuffs(t *testing.T) {
 	want := map[uint32]string{
-		516: "觉醒",
-		914: "喵咪的恩赐（物理）",
-		915: "喵咪的恩赐（魔法）",
+		516:                      "觉醒",
+		914:                      "喵咪的恩赐（物理）",
+		915:                      "喵咪的恩赐（魔法）",
+		battlefieldShockStatusID: "战场的震慑",
 	}
 	for conditionID, name := range want {
 		if !isMonitoredStatus(conditionID) {
@@ -28,7 +29,7 @@ func TestBossStatusMonitorIncludesAdditionalBuffs(t *testing.T) {
 func TestAdditionalBossStatusesAreNotBuffNotifications(t *testing.T) {
 	t.Setenv("MABI_WORK_DIR", t.TempDir())
 	mgr := NewBuffTimerManager(context.Background(), "")
-	for _, conditionID := range []uint32{516, 914, 915} {
+	for _, conditionID := range []uint32{516, 914, 915, battlefieldShockStatusID} {
 		if _, exists := mgr.targetBuffs[conditionID]; exists {
 			t.Fatalf("condition %d must not be added to buff notifications", conditionID)
 		}

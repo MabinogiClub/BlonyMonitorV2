@@ -7,25 +7,31 @@ import (
 	"blonymonitorv2/internal/packet"
 )
 
-var monitoredStatusOrder = []uint32{515, 516, 914, 915, 680, 192, 193, 681, 194, 1225}
+var monitoredStatusOrder = []uint32{515, 516, 914, 915, 680, 192, 193, 681, 194, 1225, battlefieldShockStatusID}
 
 var monitoredStatusNames = map[uint32]string{
-	515:  "状态支援",
-	516:  "觉醒",
-	914:  "喵咪的恩赐（物理）",
-	915:  "喵咪的恩赐（魔法）",
-	680:  "战争序曲",
-	192:  "活跃进行曲",
-	193:  "行进曲",
-	681:  "忍耐之歌",
-	194:  "丰收之歌",
-	1225: "超燃咚咚",
+	515:                      "状态支援",
+	516:                      "觉醒",
+	914:                      "喵咪的恩赐（物理）",
+	915:                      "喵咪的恩赐（魔法）",
+	680:                      "战争序曲",
+	192:                      "活跃进行曲",
+	193:                      "行进曲",
+	681:                      "忍耐之歌",
+	194:                      "丰收之歌",
+	1225:                     "超燃咚咚",
+	battlefieldShockStatusID: "战场的震慑",
 }
 
 var statusStrengthFields = map[uint32]string{
-	680: "MCMBAMAX",
-	192: "LSMA",
-	193: "SPDPC",
+	680:                      "MCMBAMAX",
+	192:                      "LSMA",
+	193:                      "SPDPC",
+	battlefieldShockStatusID: battlefieldShockStrengthField,
+}
+
+var statusIconIDs = map[uint32]uint32{
+	battlefieldShockStatusID: battlefieldShockIconID,
 }
 
 type BuffDetailValue struct {
@@ -47,6 +53,7 @@ type BuffCoverageSegment struct {
 type BuffCoverage struct {
 	ConditionID     uint32                `json:"conditionId"`
 	ConditionName   string                `json:"conditionName"`
+	IconID          uint32                `json:"iconId,omitempty"`
 	ActiveSeconds   float64               `json:"activeSeconds"`
 	CoveragePercent float64               `json:"coveragePercent"`
 	StrengthField   string                `json:"strengthField,omitempty"`
@@ -215,6 +222,7 @@ func (a *App) endStatusIntervalsForEntityUnsafe(entityID string, at int64) {
 		interval.EndedAt = at
 		delete(a.activeStatusIntervals, key)
 	}
+	delete(a.battlefieldShockStates, entityID)
 }
 
 func (a *App) resetStatusHistoryUnsafe(at int64) {
@@ -318,6 +326,7 @@ func (a *App) buildBuffCoverageUnsafe(start, end int64, participants map[string]
 			coverage := BuffCoverage{
 				ConditionID:   conditionID,
 				ConditionName: monitoredStatusNames[conditionID],
+				IconID:        statusIconIDs[conditionID],
 				StrengthField: statusStrengthFields[conditionID],
 			}
 			if aggregate := aggregates[playerID][conditionID]; aggregate != nil {

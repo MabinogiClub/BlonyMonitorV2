@@ -2,19 +2,21 @@ package app
 
 // 游戏数据包操作码
 const (
-	opcodeEntityAppear    = 0x520c
-	opcodeEntitiesAppear  = 0x5334
-	opcodeEntityProperty  = 0x7532
-	opcodeEntityRemove    = 0x520d
-	opcodeCombatAction    = 0x7926
-	opcodeEffectDamage    = 0x9093
-	opcodeEffectDelayed   = 0x9095 // 原文0x9094修改为0x9095兼容星辰与连击
-	opcodeConditionUpdate = 0xa028
-	opcodeSetFinisher     = 0x7921
-	opcodeDungeonInfo     = 0x9470 // 地下城信息
-	opcodeMapChange       = 0x6599 // 地图切换
-	opcodeChineseName     = 0x526d // 中文名称包
-	opcodeInstanceName    = 0x8ca0 // 副本名称包
+	opcodeEntityAppear     = 0x520c
+	opcodeEntitiesAppear   = 0x5334
+	opcodeEntityProperty   = 0x7532
+	opcodeEntityRemove     = 0x520d
+	opcodeCombatAction     = 0x7926
+	opcodeEffectDamage     = 0x9093
+	opcodeEffectDelayed    = 0x9095 // 原文0x9094修改为0x9095兼容星辰与连击
+	opcodeConditionUpdate  = 0xa028
+	opcodeSetFinisher      = 0x7921
+	opcodeDungeonInfo      = 0x9470 // 地下城信息
+	opcodeMapChange        = 0x6599 // 地图切换
+	opcodeChineseName      = 0x526d // 中文名称包
+	opcodePerformanceStart = 0x52d0 // 演奏开始
+	opcodePerformanceStop  = 0x52d1 // 演奏停止
+	opcodeInstanceName     = 0x8ca0 // 副本名称包
 )
 
 func isRandomInstanceMapID(mapID int) bool {

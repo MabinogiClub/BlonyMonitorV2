@@ -106,32 +106,37 @@ type App struct {
 	buffTimerMgr                *BuffTimerManager
 	statusIntervals             []*statusInterval
 	activeStatusIntervals       map[statusIntervalKey]*statusInterval
+	musicPerformances           map[uint64]*musicPerformance
+	battlefieldShockStates      map[string]*battlefieldShockState
+	battlefieldShockGeneration  uint64
 	onHide                      func()
 }
 
 // NewApp ?????
 func NewApp() *App {
 	return &App{
-		entities:              make(map[string]*EntityInfo),
-		creatureLib:           make(map[string]string),
-		damages:               make([]DamageRecord, 0),
-		eventLogs:             make([]EventLog, 0),
-		statusMsg:             "????...",
-		region:                "cn",
-		attackerStats:         make(map[string]*attackerAggStats),
-		skillStats:            make(map[string]map[int]*skillAggStats),
-		takenStats:            make(map[string]*targetAggStats),
-		targetDamages:         make(map[string][]DamageRecord),
-		bossHP:                make(map[string]*BossHPInfo),
-		bossHPHistory:         make(map[string][]BossHPRecord),
-		bossHPWatch:           make(map[string]*BossHPWatchState),
-		bossHPPending:         make(map[string]*BossHPPendingDamageWindow),
-		chartAggData:          make(map[string]*chartAttackerData),
-		targetChartAggData:    make(map[string]map[string]*chartAttackerData),
-		statusIntervals:       make([]*statusInterval, 0),
-		activeStatusIntervals: make(map[statusIntervalKey]*statusInterval),
-		autoDetect:            true,
-		opacity:               100,
+		entities:               make(map[string]*EntityInfo),
+		creatureLib:            make(map[string]string),
+		damages:                make([]DamageRecord, 0),
+		eventLogs:              make([]EventLog, 0),
+		statusMsg:              "????...",
+		region:                 "cn",
+		attackerStats:          make(map[string]*attackerAggStats),
+		skillStats:             make(map[string]map[int]*skillAggStats),
+		takenStats:             make(map[string]*targetAggStats),
+		targetDamages:          make(map[string][]DamageRecord),
+		bossHP:                 make(map[string]*BossHPInfo),
+		bossHPHistory:          make(map[string][]BossHPRecord),
+		bossHPWatch:            make(map[string]*BossHPWatchState),
+		bossHPPending:          make(map[string]*BossHPPendingDamageWindow),
+		chartAggData:           make(map[string]*chartAttackerData),
+		targetChartAggData:     make(map[string]map[string]*chartAttackerData),
+		statusIntervals:        make([]*statusInterval, 0),
+		activeStatusIntervals:  make(map[statusIntervalKey]*statusInterval),
+		musicPerformances:      make(map[uint64]*musicPerformance),
+		battlefieldShockStates: make(map[string]*battlefieldShockState),
+		autoDetect:             true,
+		opacity:                100,
 	}
 }
 

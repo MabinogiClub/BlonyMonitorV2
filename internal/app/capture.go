@@ -474,6 +474,12 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 	case opcodeChineseName:
 		a.handleChineseName(pkt)
 
+	case opcodePerformanceStart:
+		a.handleMusicPerformanceStart(pkt)
+
+	case opcodePerformanceStop:
+		a.handleMusicPerformanceStop(pkt)
+
 	case opcodeInstanceName:
 		a.handleInstanceName(pkt)
 

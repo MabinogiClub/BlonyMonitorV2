@@ -38,16 +38,16 @@ function formatSeconds(value: number): string {
   return `${value.toFixed(1)}秒`
 }
 
-function formatStrength(conditionId: number, value?: number): string {
+function formatStrength(buff: BuffCoverage, value?: number): string {
   if (value === undefined) return '-'
-  if (conditionId === 680 || conditionId === 192) return `${value.toFixed(2)}%`
-  if (conditionId === 193) return `${((value - 1) * 100).toFixed(2)}%`
+  if (buff.strengthField === 'MCMBAMAX' || buff.strengthField === 'LSMA' || buff.strengthField === 'MAX_DAMAGE_PERCENT') return `${value.toFixed(2)}%`
+  if (buff.strengthField === 'SPDPC') return `${((value - 1) * 100).toFixed(2)}%`
   return value.toFixed(4)
 }
 
 function canMergeSegments(buff: BuffCoverage, previous: BuffCoverageSegment, next: BuffCoverageSegment): boolean {
   if (next.startOffset - previous.endOffset > 1.0) return false
-  if (buff.conditionId !== 680 && buff.conditionId !== 192 && buff.conditionId !== 193) return true
+  if (!buff.strengthField) return true
   return previous.strength !== undefined && next.strength !== undefined && previous.strength === next.strength
 }
 
@@ -140,7 +140,7 @@ function hideTooltip() {
         @focus="showTooltip($event, buff)"
         @blur="hideTooltip"
       >
-        <img :src="getBuffIconUrl(buff.conditionId)" :alt="buff.conditionName" width="16" height="16">
+        <img :src="getBuffIconUrl(buff.iconId || buff.conditionId)" :alt="buff.conditionName" width="16" height="16">
         <span>{{ buff.coveragePercent.toFixed(1) }}%</span>
       </button>
     </div>
@@ -172,18 +172,18 @@ function hideTooltip() {
           <span>覆盖率</span><strong>{{ tooltip.buff.coveragePercent.toFixed(1) }}%</strong>
           <span>持续时间</span><strong>{{ formatSeconds(tooltip.buff.activeSeconds) }}</strong>
           <template v-if="tooltip.buff.averageStrength !== undefined">
-            <span>平均</span><strong>{{ formatStrength(tooltip.buff.conditionId, tooltip.buff.averageStrength) }}</strong>
+            <span>平均</span><strong>{{ formatStrength(tooltip.buff, tooltip.buff.averageStrength) }}</strong>
             <span>范围</span>
             <strong>
-              {{ formatStrength(tooltip.buff.conditionId, tooltip.buff.minStrength) }} -
-              {{ formatStrength(tooltip.buff.conditionId, tooltip.buff.maxStrength) }}
+              {{ formatStrength(tooltip.buff, tooltip.buff.minStrength) }} -
+              {{ formatStrength(tooltip.buff, tooltip.buff.maxStrength) }}
             </strong>
           </template>
         </div>
         <div v-if="getDisplaySegments(tooltip.buff).length > 1" class="tooltip-segments">
           <div v-for="(segment, index) in getDisplaySegments(tooltip.buff)" :key="`${segment.startedAt}-${index}`" class="tooltip-segment">
             <span>{{ segment.startOffset.toFixed(1) }}s - {{ segment.endOffset.toFixed(1) }}s</span>
-            <span>{{ formatStrength(tooltip.buff.conditionId, segment.strength) }}</span>
+            <span>{{ formatStrength(tooltip.buff, segment.strength) }}</span>
           </div>
         </div>
       </div>

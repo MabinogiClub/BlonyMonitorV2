@@ -236,6 +236,7 @@ interface BuffCoverageSegment {
 interface BuffCoverage {
   conditionId: number
   conditionName: string
+  iconId?: number
   activeSeconds: number
   coveragePercent: number
   strengthField?: string

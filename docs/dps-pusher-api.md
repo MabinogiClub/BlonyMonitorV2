@@ -182,6 +182,9 @@ func verifyUpload(secret string, timestamp int64, nonce, playerID string, gzData
 | `clientVersion` | string | 是 | 客户端版本 |
 | `contentSha256` | string | 是 | `file` 的 SHA-256 hex，便于服务端快速校验 |
 | `file` | file | 是 | gzip 压缩的 JSON 战斗数据 |
+| `buffMonitorSchemaVersion` | string | 否 | Buff 监控侧车结构版本；当前为 `1` |
+| `buffMonitorSha256` | string | 否 | `buffMonitorFile` 的 SHA-256 hex |
+| `buffMonitorFile` | file | 否 | gzip 压缩的 Buff 监控侧车；旧服务端可忽略 |
 
 ### 示例（curl，需自行计算签名）
 
@@ -372,13 +375,33 @@ Endpoint 由 `BLONY_ANNOUNCEMENT_ENDPOINT` 注入。客户端每次启动时发�
 
 ---
 
-## 文件内容（gzip 解压后 JSON）
+## 主文件内容（gzip 解压后 JSON）
 
 ```json
 {
-  "targets": [ /* targetExport 数组 */ ]
+  "targets": [ /* targetExport 数组，保持旧服务端结构 */ ]
 }
 ```
+
+主 `file`、`contentSha256` 和 HMAC 签名继续使用旧格式，`targets[]` 中不放置
+`buffCoverage`，因此未升级的服务端解析、去重和验签逻辑均不受影响。
+
+## Buff 监控侧车内容（可选）
+
+`buffMonitorFile` 是独立的 gzip JSON，包含客户端当前全部监控定义，以及各目标、
+各玩家的 Buff 覆盖率、分段、强度和原始详情：
+
+```json
+{
+  "schemaVersion": 1,
+  "definitions": [ /* 客户端当前监控的全部 Buff 定义 */ ],
+  "targets": [ /* 各目标下的玩家 Buff 覆盖率、分段与原始详情 */ ]
+}
+```
+
+旧服务端可忽略三个 `buffMonitor*` multipart 字段；服务端升级后应先使用
+`buffMonitorSha256` 校验侧车原始字节，再 gunzip 并按 `schemaVersion` 解析。侧车不参与
+当前 Authorization 签名，避免改变已有验签协议；完整性由 HTTPS 与独立 SHA-256 校验。
 
 ### 客户端上传前过滤规则
 

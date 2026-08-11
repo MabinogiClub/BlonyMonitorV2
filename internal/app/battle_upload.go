@@ -25,6 +25,25 @@ var uploadLog = log.New(os.Stdout, "[Upload] ", log.LstdFlags)
 const battleUploadTimeout = 15 * time.Second
 const uploadMaxAttempts = 3
 const uploadRetryBaseDelay = 2 * time.Second
+const buffMonitorUploadSchemaVersion = 1
+
+type buffMonitorDefinition struct {
+	ConditionID   uint32 `json:"conditionId"`
+	ConditionName string `json:"conditionName"`
+	IconID        uint32 `json:"iconId,omitempty"`
+	StrengthField string `json:"strengthField,omitempty"`
+}
+
+type targetBuffMonitorUpload struct {
+	TargetID string               `json:"targetId"`
+	Players  []PlayerBuffCoverage `json:"players"`
+}
+
+type buffMonitorUpload struct {
+	SchemaVersion int                       `json:"schemaVersion"`
+	Definitions   []buffMonitorDefinition   `json:"definitions"`
+	Targets       []targetBuffMonitorUpload `json:"targets,omitempty"`
+}
 
 type uploadHTTPStatusError struct {
 	statusCode int
@@ -80,6 +99,53 @@ func filterSaveDataForUpload(data SaveFileData) SaveFileData {
 	return SaveFileData{Targets: filtered}
 }
 
+func buildLegacyBattleUploadData(data SaveFileData) SaveFileData {
+	targets := make([]targetExport, len(data.Targets))
+	copy(targets, data.Targets)
+	for index := range targets {
+		// BuffCoverage was added after the current server contract. Keep it out of
+		// the signed primary file and provide it through the optional sidecar.
+		targets[index].BuffCoverage = nil
+	}
+	return SaveFileData{Targets: targets}
+}
+
+func marshalLegacyBattleUpload(data SaveFileData) ([]byte, error) {
+	return marshalSaveJSON(buildLegacyBattleUploadData(data))
+}
+
+func buildBuffMonitorUpload(data SaveFileData) buffMonitorUpload {
+	buffTargets := make([]targetBuffMonitorUpload, 0, len(data.Targets))
+	for _, target := range data.Targets {
+		if len(target.BuffCoverage) > 0 {
+			buffTargets = append(buffTargets, targetBuffMonitorUpload{
+				TargetID: target.TargetID,
+				Players:  target.BuffCoverage,
+			})
+		}
+	}
+
+	definitions := make([]buffMonitorDefinition, 0, len(monitoredStatusOrder))
+	for _, conditionID := range monitoredStatusOrder {
+		definitions = append(definitions, buffMonitorDefinition{
+			ConditionID:   conditionID,
+			ConditionName: monitoredStatusNames[conditionID],
+			IconID:        statusIconIDs[conditionID],
+			StrengthField: statusStrengthFields[conditionID],
+		})
+	}
+
+	return buffMonitorUpload{
+		SchemaVersion: buffMonitorUploadSchemaVersion,
+		Definitions:   definitions,
+		Targets:       buffTargets,
+	}
+}
+
+func marshalBuffMonitorUpload(data SaveFileData) ([]byte, error) {
+	return marshalSaveJSON(buildBuffMonitorUpload(data))
+}
+
 // scheduleBattleUpload 在战斗记录保存后异步上传。调用方必须已持有 a.mu。
 func (a *App) scheduleBattleUpload(saveData SaveFileData, filePath, saveName string) {
 	fileName := filepath.Base(filePath)
@@ -106,10 +172,17 @@ func (a *App) scheduleBattleUpload(saveData SaveFileData, filePath, saveName str
 		return
 	}
 
-	gzData, err := marshalSaveJSON(uploadData)
+	// 主文件保持原有 SaveFileData 格式；Buff 数据使用可选侧车上传，旧服务端可直接忽略。
+	gzData, err := marshalLegacyBattleUpload(uploadData)
 	if err != nil {
 		uploadLog.Printf("序列化失败 (dungeon=%s file=%s): %v\n", saveName, fileName, err)
 		recordUploadSkipped(saveName, fileName, fmt.Sprintf("序列化失败: %v", err))
+		return
+	}
+	buffMonitorData, err := marshalBuffMonitorUpload(uploadData)
+	if err != nil {
+		uploadLog.Printf("Buff 监控数据序列化失败 (dungeon=%s file=%s): %v\n", saveName, fileName, err)
+		recordUploadSkipped(saveName, fileName, fmt.Sprintf("Buff 监控数据序列化失败: %v", err))
 		return
 	}
 
@@ -126,15 +199,15 @@ func (a *App) scheduleBattleUpload(saveData SaveFileData, filePath, saveName str
 	)
 
 	go func() {
-		if err := postBattleUploadWithRetry(endpoint, playerID, playerName, dungeonName, fileName, gzData, targetCount); err != nil {
+		if err := postBattleUploadWithRetry(endpoint, playerID, playerName, dungeonName, fileName, gzData, buffMonitorData, targetCount); err != nil {
 			uploadLog.Printf("上传失败: dungeon=%s file=%s err=%v\n", dungeonName, fileName, err)
 		}
 	}()
 }
 
-func postBattleUploadWithRetry(endpoint, playerID, playerName, dungeonName, fileName string, gzData []byte, targetCount int) error {
+func postBattleUploadWithRetry(endpoint, playerID, playerName, dungeonName, fileName string, gzData, buffMonitorData []byte, targetCount int) error {
 	for attempt := 1; attempt <= uploadMaxAttempts; attempt++ {
-		err := postBattleUploadOnce(endpoint, playerID, playerName, dungeonName, fileName, gzData, targetCount)
+		err := postBattleUploadOnce(endpoint, playerID, playerName, dungeonName, fileName, gzData, buffMonitorData, targetCount)
 		if err == nil {
 			return nil
 		}
@@ -152,7 +225,7 @@ func postBattleUploadWithRetry(endpoint, playerID, playerName, dungeonName, file
 	return fmt.Errorf("unexpected upload retry state")
 }
 
-func postBattleUploadOnce(endpoint, playerID, playerName, dungeonName, fileName string, gzData []byte, targetCount int) error {
+func postBattleUploadOnce(endpoint, playerID, playerName, dungeonName, fileName string, gzData, buffMonitorData []byte, targetCount int) error {
 	secret := strings.TrimSpace(config.UploadSecret)
 	if secret == "" {
 		return fmt.Errorf("upload secret not configured")
@@ -186,6 +259,19 @@ func postBattleUploadOnce(endpoint, playerID, playerName, dungeonName, fileName 
 	if _, err := io.Copy(part, bytes.NewReader(gzData)); err != nil {
 		recordUploadError(dungeonName, fileName, 0, "", err)
 		return err
+	}
+	if len(buffMonitorData) > 0 {
+		_ = writer.WriteField("buffMonitorSchemaVersion", strconv.Itoa(buffMonitorUploadSchemaVersion))
+		_ = writer.WriteField("buffMonitorSha256", hashUploadPayload(buffMonitorData))
+		buffPart, createErr := writer.CreateFormFile("buffMonitorFile", fileName+".buff-monitor.json.gz")
+		if createErr != nil {
+			recordUploadError(dungeonName, fileName, 0, "", createErr)
+			return createErr
+		}
+		if _, copyErr := io.Copy(buffPart, bytes.NewReader(buffMonitorData)); copyErr != nil {
+			recordUploadError(dungeonName, fileName, 0, "", copyErr)
+			return copyErr
+		}
 	}
 	if err := writer.Close(); err != nil {
 		recordUploadError(dungeonName, fileName, 0, "", err)
@@ -342,11 +428,15 @@ func UploadSaveFile(filePath, playerID, playerName string) error {
 		return fmt.Errorf("no upload-eligible targets in %q", saveName)
 	}
 
-	gzData, err := marshalSaveJSON(uploadData)
+	gzData, err := marshalLegacyBattleUpload(uploadData)
+	if err != nil {
+		return err
+	}
+	buffMonitorData, err := marshalBuffMonitorUpload(uploadData)
 	if err != nil {
 		return err
 	}
 
 	uploadLog.Printf("CLI 上传: file=%s targets=%d payload=%d bytes\n", fileName, len(uploadData.Targets), len(gzData))
-	return postBattleUploadWithRetry(endpoint, playerID, playerName, saveName, fileName, gzData, len(uploadData.Targets))
+	return postBattleUploadWithRetry(endpoint, playerID, playerName, saveName, fileName, gzData, buffMonitorData, len(uploadData.Targets))
 }
