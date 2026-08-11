@@ -49,6 +49,18 @@ func extractMCAGT(s string) (int64, error) {
 	return 0, fmt.Errorf("MCAGT not found in string")
 }
 
+func extractDurationSeconds(details map[string]ConditionDetailValue) int64 {
+	detail, ok := details["DURA"]
+	if !ok {
+		return 0
+	}
+	durationMillis, err := strconv.ParseInt(detail.Value, 10, 64)
+	if err != nil || durationMillis <= 0 {
+		return 0
+	}
+	return (durationMillis + 999) / 1000
+}
+
 type CharacterConditionPacket struct {
 	Id        uint64
 	IsEnable  bool
@@ -110,6 +122,9 @@ func ParseCharacterConditionPacket(p *GamePacket) (*CharacterConditionPacket, er
 		if mcagt, err := extractMCAGT(detailRaw); err == nil {
 			// 计算duration = (SBT - MCAGT) / 1000（秒）
 			duration = (disableAt - mcagt) / 1000
+		}
+		if duration <= 0 {
+			duration = extractDurationSeconds(details)
 		}
 	}
 

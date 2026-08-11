@@ -14,3 +14,10 @@ func TestParseConditionDetails(t *testing.T) {
 		t.Fatalf("unexpected MCMBGA: %+v", got)
 	}
 }
+
+func TestExtractDurationSeconds(t *testing.T) {
+	details := ParseConditionDetails("DURA:4:1800000;")
+	if got := extractDurationSeconds(details); got != 1800 {
+		t.Fatalf("duration = %d, want 1800", got)
+	}
+}

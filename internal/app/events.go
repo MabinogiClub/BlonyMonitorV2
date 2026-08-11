@@ -19,7 +19,8 @@ func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bo
 	}
 	a.recordStatusConditionUnsafe(entityId, conditionId, isEnable, rawDetail, details, now)
 
-	if entity, ok := a.entities[entityIdStr]; ok {
+	entity, entityKnown := a.entities[entityIdStr]
+	if entityKnown {
 		if isEnable {
 			exists := false
 			for _, cid := range entity.Conditions {
@@ -32,9 +33,6 @@ func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bo
 				entity.Conditions = append(entity.Conditions, conditionId)
 			}
 
-			if a.buffTimerMgr != nil {
-				a.buffTimerMgr.StartTimer(conditionId, entityId, entity.Name, duration)
-			}
 		} else {
 			for i, cid := range entity.Conditions {
 				if cid == conditionId {
@@ -43,9 +41,17 @@ func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bo
 				}
 			}
 
-			if a.buffTimerMgr != nil {
-				a.buffTimerMgr.StopTimer(entityId, conditionId)
+		}
+	}
+	if a.buffTimerMgr != nil {
+		if isEnable && entityIdStr == a.selfId {
+			entityName := a.getEntityNameUnsafe(entityIdStr)
+			if entityKnown {
+				entityName = entity.Name
 			}
+			a.buffTimerMgr.StartTimer(conditionId, entityId, entityName, duration)
+		} else if !isEnable {
+			a.buffTimerMgr.StopTimer(entityId, conditionId)
 		}
 	}
 

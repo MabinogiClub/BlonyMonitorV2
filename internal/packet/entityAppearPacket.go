@@ -56,7 +56,7 @@ type EntityCharacterCondition struct {
 	CCId       uint32
 	DisableAt  int64
 	AttackerId uint64
-	Duration   int64 // buff持续时间（秒），从packet中的(SBT-MCAGT)/1000计算得出
+	Duration   int64 // buff持续时间（秒），优先从(SBT-MCAGT)/1000计算，否则读取DURA
 }
 
 func ParseEntityAppearPacket(msg Message) (*EntityInfo, error) {

@@ -18,6 +18,9 @@ var defaultBuffOrder = []uint32{515, 680, 192, 193, 681, 194, 1225, 63, 1121, 11
 // buffFallbackDurations 用于状态包未提供可计算时长的 Buff。
 // 当前数据库没有结构化的 Buff 时长字段。
 var buffFallbackDurations = map[uint32]int64{
+	63:   1800,
+	1121: 1800,
+	1150: 1800,
 	1225: 180,
 }
 
@@ -81,7 +84,10 @@ func NewBuffTimerManager(ctx context.Context, selfId string) *BuffTimerManager {
 		buffOrder:    buffOrder,
 		soundEnabled: soundEnabled,
 		notifyThresholds: map[uint32]int64{
-			515: 10, // 状态支援（逆转）提前 10 秒提醒
+			515:  10, // 状态支援（逆转）提前 10 秒提醒
+			63:   30,
+			1121: 30,
+			1150: 30,
 		},
 		ctx:             ctx,
 		notifyThreshold: 30,
@@ -104,7 +110,13 @@ func resolveSoundDir() string {
 	}
 
 	if cwd, err := os.Getwd(); err == nil && cwd != "" {
-		candidates = append(candidates, filepath.Join(cwd, "sounds"))
+		for current := cwd; current != ""; current = filepath.Dir(current) {
+			candidates = append(candidates, filepath.Join(current, "sounds"))
+			parent := filepath.Dir(current)
+			if parent == current {
+				break
+			}
+		}
 	}
 
 	for _, dir := range candidates {
@@ -365,15 +377,20 @@ func (m *BuffTimerManager) playSound(ccId uint32) {
 }
 
 func (m *BuffTimerManager) resolveAudioFile(filename string) string {
+	candidates := make([]string, 0, 4)
 	if m.soundDir != "" {
-		path := filepath.Join(m.soundDir, filename)
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
+		candidates = append(candidates, m.soundDir)
+	}
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		candidates = append(candidates, filepath.Join(exeDir, "..", "..", "sounds"))
+	}
+	if cwd, err := os.Getwd(); err == nil && cwd != "" {
+		candidates = append(candidates, filepath.Join(cwd, "sounds"))
 	}
 
-	if cwd, err := os.Getwd(); err == nil && cwd != "" {
-		path := filepath.Join(cwd, "sounds", filename)
+	for _, dir := range candidates {
+		path := filepath.Join(dir, filename)
 		if _, err := os.Stat(path); err == nil {
 			return path
 		}

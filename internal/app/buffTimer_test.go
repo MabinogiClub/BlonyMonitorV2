@@ -39,6 +39,9 @@ func TestBuffTimerManagerIncludesSuperBurningBuff(t *testing.T) {
 		if got := mgr.getNotifyThreshold(buff.id); got != 30 {
 			t.Errorf("buff %d notify threshold = %d, want 30", buff.id, got)
 		}
+		if got := resolveBuffDuration(buff.id, 0); got != 1800 {
+			t.Errorf("buff %d fallback duration = %d, want 1800", buff.id, got)
+		}
 		if !slices.Contains(mgr.buffOrder, buff.id) {
 			t.Errorf("buff %d missing from default order: %v", buff.id, mgr.buffOrder)
 		}
