@@ -60,6 +60,8 @@ type App struct {
 	region                      string
 	resourceURL                 string
 	channelName                 string
+	serverIP                    string
+	serverPort                  uint16
 	attackerStats               map[string]*attackerAggStats
 	skillStats                  map[string]map[int]*skillAggStats
 	totalDamage                 float64

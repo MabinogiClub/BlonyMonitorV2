@@ -14,6 +14,28 @@ func (a *App) GetChannelName() string {
 	return a.channelName
 }
 
+func (a *App) observeServerConnection(ip string, port uint16, connectionChanged bool, at int64) (channelName string, previousChannelName string, changed bool) {
+	channelName = constants.GetChannelName(ip, port)
+
+	a.mu.Lock()
+	previousChannelName = constants.GetChannelName(a.serverIP, a.serverPort)
+	knownChannelChanged := previousChannelName != "" && channelName != "" && (a.serverIP != ip || a.serverPort != port)
+	changed = connectionChanged || knownChannelChanged
+	if changed {
+		a.expireTransientStatusesForChannelChangeUnsafe(at)
+	}
+	a.serverIP = ip
+	a.serverPort = port
+	a.channelName = channelName
+	buffTimerMgr := a.buffTimerMgr
+	a.mu.Unlock()
+
+	if changed && buffTimerMgr != nil {
+		buffTimerMgr.ResetForChannelChange()
+	}
+	return channelName, previousChannelName, changed
+}
+
 // GetAllChannels 获取所有频道列表 (供前端调用)
 func (a *App) GetAllChannels() []constants.ChannelInfo {
 	return constants.GetAllChannels()

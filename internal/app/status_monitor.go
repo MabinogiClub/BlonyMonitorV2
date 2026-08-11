@@ -7,7 +7,7 @@ import (
 	"blonymonitorv2/internal/packet"
 )
 
-var monitoredStatusOrder = []uint32{515, 516, 914, 915, 680, 192, 193, 681, 194, 1225, battlefieldShockStatusID}
+var monitoredStatusOrder = []uint32{515, 516, 914, 915, 680, 192, 193, 681, 194, 1225, 63, 1121, 1150, 1023, 1033, battlefieldShockStatusID}
 
 var monitoredStatusNames = map[uint32]string{
 	515:                      "状态支援",
@@ -20,6 +20,11 @@ var monitoredStatusNames = map[uint32]string{
 	681:                      "忍耐之歌",
 	194:                      "丰收之歌",
 	1225:                     "超燃咚咚",
+	63:                       "攻击力增加",
+	1121:                     "魔法攻击强化",
+	1150:                     "炼金术伤害增加",
+	1023:                     "月亮",
+	1033:                     "星星",
 	battlefieldShockStatusID: "战场的震慑",
 }
 
@@ -32,6 +37,17 @@ var statusStrengthFields = map[uint32]string{
 
 var statusIconIDs = map[uint32]uint32{
 	battlefieldShockStatusID: battlefieldShockIconID,
+}
+
+var channelPersistentStatusIDs = map[uint32]struct{}{
+	63:   {},
+	1121: {},
+	1150: {},
+}
+
+func isChannelPersistentStatus(conditionID uint32) bool {
+	_, ok := channelPersistentStatusIDs[conditionID]
+	return ok
 }
 
 type BuffDetailValue struct {
@@ -223,6 +239,55 @@ func (a *App) endStatusIntervalsForEntityUnsafe(entityID string, at int64) {
 		delete(a.activeStatusIntervals, key)
 	}
 	delete(a.battlefieldShockStates, entityID)
+}
+
+func (a *App) expireTransientStatusesForChannelChangeUnsafe(at int64) {
+	for key, interval := range a.activeStatusIntervals {
+		if isChannelPersistentStatus(key.conditionID) {
+			continue
+		}
+		interval.EndedAt = at
+		delete(a.activeStatusIntervals, key)
+	}
+
+	activeConditions := make(map[statusIntervalKey]EventLog)
+	for _, event := range a.eventLogs {
+		if event.Type != "condition" {
+			continue
+		}
+		key := statusIntervalKey{entityID: event.EntityID, conditionID: event.ConditionID}
+		if event.IsEnable {
+			activeConditions[key] = event
+		} else {
+			delete(activeConditions, key)
+		}
+	}
+	for key, event := range activeConditions {
+		if isChannelPersistentStatus(key.conditionID) {
+			continue
+		}
+		event.At = at
+		event.IsEnable = false
+		event.AttackerID = ""
+		event.AttackerName = ""
+		a.eventLogs = append(a.eventLogs, event)
+	}
+	if len(a.eventLogs) > 500 {
+		a.eventLogs = a.eventLogs[len(a.eventLogs)-500:]
+	}
+
+	for _, entity := range a.entities {
+		kept := entity.Conditions[:0]
+		for _, conditionID := range entity.Conditions {
+			if isChannelPersistentStatus(conditionID) {
+				kept = append(kept, conditionID)
+			}
+		}
+		entity.Conditions = kept
+	}
+
+	a.musicPerformances = make(map[uint64]*musicPerformance)
+	a.battlefieldShockStates = make(map[string]*battlefieldShockState)
 }
 
 func (a *App) resetStatusHistoryUnsafe(at int64) {

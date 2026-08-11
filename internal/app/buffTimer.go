@@ -13,7 +13,7 @@ import (
 	"unsafe"
 )
 
-var defaultBuffOrder = []uint32{515, 680, 192, 193, 681, 194, 1225}
+var defaultBuffOrder = []uint32{515, 680, 192, 193, 681, 194, 1225, 63, 1121, 1150}
 
 // buffFallbackDurations 用于状态包未提供可计算时长的 Buff。
 // 当前数据库没有结构化的 Buff 时长字段。
@@ -65,6 +65,9 @@ func NewBuffTimerManager(ctx context.Context, selfId string) *BuffTimerManager {
 		680:  "战争序曲",
 		681:  "忍耐之歌",
 		1225: "超燃咚咚",
+		63:   "攻击力增加",
+		1121: "魔法攻击强化",
+		1150: "炼金术伤害增加",
 	}
 	buffOrder := append([]uint32(nil), defaultBuffOrder...)
 	soundEnabled := make(map[uint32]bool, len(buffOrder))
@@ -259,6 +262,19 @@ func (m *BuffTimerManager) StartTimer(ccId uint32, entityId uint64, entityName s
 func (m *BuffTimerManager) StopTimer(entityId uint64, ccId uint32) {
 	key := fmt.Sprintf("%d_%d", entityId, ccId)
 	m.cancelTimer(key)
+}
+
+func (m *BuffTimerManager) ResetForChannelChange() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for key, timer := range m.timers {
+		if isChannelPersistentStatus(timer.CCId) {
+			continue
+		}
+		timer.CancelFunc()
+		delete(m.timers, key)
+	}
 }
 
 func (m *BuffTimerManager) cancelTimer(key string) {

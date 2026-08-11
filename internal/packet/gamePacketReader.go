@@ -32,9 +32,10 @@ type GameServerPacketReader struct {
 	logFd     *os.File
 
 	// 服务器信息
-	serverIP     string
-	serverPort   uint16
-	onServerInfo func(ip string, port uint16) // 服务器信息回调
+	serverIP           string
+	serverPort         uint16
+	onServerInfo       func(ip string, port uint16) // 服务器信息回调
+	onConnectionChange func(ip string, port uint16) // 已建立抓包中的游戏 TCP 连接发生变化
 
 	// 连接跟踪（用于加速器模式）
 	gameConnections map[string]bool // 已识别的游戏连接：key = "srcIP:srcPort"
@@ -42,12 +43,13 @@ type GameServerPacketReader struct {
 }
 
 type GameServerPacketReaderOpt struct {
-	Ctx          context.Context
-	FileName     string
-	NicName      string
-	ClientIp     string
-	OnServerInfo func(ip string, port uint16) // 服务器信息回调
-	DisableLog   bool                         // 禁用数据包日志记录
+	Ctx                context.Context
+	FileName           string
+	NicName            string
+	ClientIp           string
+	OnServerInfo       func(ip string, port uint16) // 服务器信息回调
+	OnConnectionChange func(ip string, port uint16) // 已建立抓包中的游戏 TCP 连接发生变化
+	DisableLog         bool // 禁用数据包日志记录
 }
 
 type gamePacketPayload struct {
@@ -347,10 +349,11 @@ func NewGameServerPacketReaderWithFilter(opt *GameServerPacketReaderOpt, customF
 	logger.Println("game packet filter...", filter)
 
 	v := &GameServerPacketReader{
-		ctx:             opt.Ctx,
-		packetCh:        make(chan *GamePacket, packetQueueSize),
-		onServerInfo:    opt.OnServerInfo,
-		gameConnections: make(map[string]bool),
+		ctx:                opt.Ctx,
+		packetCh:           make(chan *GamePacket, packetQueueSize),
+		onServerInfo:       opt.OnServerInfo,
+		onConnectionChange: opt.OnConnectionChange,
+		gameConnections:    make(map[string]bool),
 	}
 
 	// 仅在未禁用日志时创建日志文件
@@ -706,11 +709,15 @@ func (t *GameServerPacketReader) readPacketLoop(ch chan<- gamePacketPayload) {
 
 			// 捕获并报告服务器信息
 			if !serverInfoReported || prevDstPort != tcpLayer.DstPort {
+				connectionChanged := serverInfoReported && prevDstPort != tcpLayer.DstPort
 				srcIP := ip4Layer.SrcIP.String()
 				srcPort := uint16(tcpLayer.SrcPort)
 				t.serverIP = srcIP
 				t.serverPort = srcPort
 
+				if connectionChanged && t.onConnectionChange != nil {
+					t.onConnectionChange(srcIP, srcPort)
+				}
 				if t.onServerInfo != nil {
 					t.onServerInfo(srcIP, srcPort)
 				}

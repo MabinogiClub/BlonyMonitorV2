@@ -12,6 +12,36 @@ import (
 	"blonymonitorv2/internal/pcaputil"
 )
 
+func (a *App) logChannelBuffReset(previousChannelName, channelName string) {
+	if previousChannelName == "" {
+		previousChannelName = "未知线路"
+	}
+	if channelName == "" {
+		channelName = "未知线路"
+	}
+	logger.Printf("【Buff监控】检测到线路切换: %s -> %s，已结束非药水类 Buff\n", previousChannelName, channelName)
+}
+
+func (a *App) handleCapturedConnectionChange(ip string, port uint16) {
+	channelName, previousChannelName, changed := a.observeServerConnection(ip, port, true, nowCentiseconds())
+	if changed {
+		a.logChannelBuffReset(previousChannelName, channelName)
+	}
+}
+
+func (a *App) handleCapturedServerInfo(ip string, port uint16, nicName string) {
+	channelName, previousChannelName, changed := a.observeServerConnection(ip, port, false, nowCentiseconds())
+	if changed {
+		a.logChannelBuffReset(previousChannelName, channelName)
+	}
+	a.scheduleRankingConsentSync()
+	if channelName != "" {
+		logger.Printf("【数据接收】检测到频道: %s (IP: %s, Port: %d)\n", channelName, ip, port)
+		logger.Printf("【数据接收】当前使用网卡: %s\n", nicName)
+		runtime.EventsEmit(a.ctx, "channel", channelName)
+	}
+}
+
 // startCapture 自动检测模式启动抓包
 func (a *App) startCapture() {
 	if a.reportNpcapMissingIfNeeded() {
@@ -82,16 +112,10 @@ func (a *App) startCapture() {
 		NicName:    nicName,
 		DisableLog: true, // 禁用 pcapng 日志
 		OnServerInfo: func(ip string, port uint16) {
-			channelName := constants.GetChannelName(ip, port)
-			a.mu.Lock()
-			a.channelName = channelName
-			a.mu.Unlock()
-			a.scheduleRankingConsentSync()
-			if channelName != "" {
-				logger.Printf("【数据接收】检测到频道: %s (IP: %s, Port: %d)\n", channelName, ip, port)
-				logger.Printf("【数据接收】当前使用网卡: %s\n", nicName)
-				runtime.EventsEmit(a.ctx, "channel", channelName)
-			}
+			a.handleCapturedServerInfo(ip, port, nicName)
+		},
+		OnConnectionChange: func(ip string, port uint16) {
+			a.handleCapturedConnectionChange(ip, port)
 		},
 	})
 	if err != nil {
@@ -241,16 +265,10 @@ func (a *App) startCaptureForChannel(channel int) {
 		NicName:    nicName,
 		DisableLog: true, // 禁用 pcapng 日志
 		OnServerInfo: func(ip string, port uint16) {
-			channelName := constants.GetChannelName(ip, port)
-			a.mu.Lock()
-			a.channelName = channelName
-			a.mu.Unlock()
-			a.scheduleRankingConsentSync()
-			if channelName != "" {
-				logger.Printf("【数据接收】检测到频道: %s (IP: %s, Port: %d)\n", channelName, ip, port)
-				logger.Printf("【数据接收】当前使用网卡: %s\n", nicName)
-				runtime.EventsEmit(a.ctx, "channel", channelName)
-			}
+			a.handleCapturedServerInfo(ip, port, nicName)
+		},
+		OnConnectionChange: func(ip string, port uint16) {
+			a.handleCapturedConnectionChange(ip, port)
 		},
 	}, filter)
 	if err != nil {
