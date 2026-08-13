@@ -429,7 +429,7 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 		}
 
 		effectType := pkt.Msg[0].Data().(uint32)
-		if effectType != 353 {
+		if effectType != effectDamageTypeHydra {
 			return
 		}
 
@@ -450,7 +450,7 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 		}
 
 		ttype := pkt.Msg[1].Data().(uint32)
-		if ttype != 318 {
+		if ttype != effectDelayedDamageType {
 			return
 		}
 

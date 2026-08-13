@@ -19,6 +19,11 @@ const (
 	opcodeInstanceName     = 0x8ca0 // 副本名称包
 )
 
+const (
+	effectDamageTypeHydra   uint32 = 354
+	effectDelayedDamageType uint32 = 319
+)
+
 func isRandomInstanceMapID(mapID int) bool {
 	return mapID >= 35000 && mapID <= 35999
 }
