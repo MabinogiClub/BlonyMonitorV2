@@ -106,6 +106,7 @@ type App struct {
 	selfName                    string
 	rankingConsentSyncKey       string
 	buffTimerMgr                *BuffTimerManager
+	farmMgr                     *FarmManager
 	statusIntervals             []*statusInterval
 	activeStatusIntervals       map[statusIntervalKey]*statusInterval
 	musicPerformances           map[uint64]*musicPerformance
@@ -150,6 +151,20 @@ func (a *App) Startup(ctx context.Context) {
 	a.attackerTimerMgr = NewAttackerTimerManager(a)
 	a.targetTimerMgr = NewTargetTimerManager(a)
 	a.buffTimerMgr = NewBuffTimerManager(a.ctx, "")
+	a.farmMgr = NewFarmManager(
+		a.ctx,
+		func(state FarmState) {
+			runtime.EventsEmit(a.ctx, "farm-state", state)
+		},
+		func(plot FarmPlotState) {
+			playFarmSound("农作物成熟.wav")
+			runtime.EventsEmit(a.ctx, "farm-ready", plot)
+		},
+		func(plot FarmPlotState) {
+			playFarmSound("这是一颗高级种子.wav")
+			runtime.EventsEmit(a.ctx, "farm-special", plot)
+		},
+	)
 
 	db.InitDB()
 
@@ -409,4 +424,43 @@ func (a *App) GetBuffNotifyThreshold() int64 {
 		return 30
 	}
 	return a.buffTimerMgr.GetNotifyThreshold()
+}
+
+// GetFarmState returns the latest server-authoritative farm state.
+func (a *App) GetFarmState() FarmState {
+	if a.farmMgr == nil {
+		plots := make([]FarmPlotState, len(farmSlotDefinitions))
+		for index, definition := range farmSlotDefinitions {
+			plots[index] = FarmPlotState{Index: index, Kind: definition.Kind, Label: definition.Label, Quality: "empty"}
+		}
+		return FarmState{FertilityMax: farmResourceMaximum, EnergyMax: farmResourceMaximum, Plots: plots}
+	}
+	return a.farmMgr.State(time.Now())
+}
+
+// SetFarmMonitorEnabled controls farm reminders. Packet state continues to be synchronized while disabled.
+func (a *App) SetFarmMonitorEnabled(enabled bool) FarmState {
+	if a.farmMgr == nil {
+		return a.GetFarmState()
+	}
+	a.farmMgr.SetEnabled(enabled)
+	return a.farmMgr.State(time.Now())
+}
+
+// SetFarmReadyNotificationEnabled controls mature crop notifications.
+func (a *App) SetFarmReadyNotificationEnabled(enabled bool) FarmState {
+	if a.farmMgr == nil {
+		return a.GetFarmState()
+	}
+	a.farmMgr.SetReadyNotificationEnabled(enabled)
+	return a.farmMgr.State(time.Now())
+}
+
+// SetFarmSpecialNotificationEnabled controls special seed notifications.
+func (a *App) SetFarmSpecialNotificationEnabled(enabled bool) FarmState {
+	if a.farmMgr == nil {
+		return a.GetFarmState()
+	}
+	a.farmMgr.SetSpecialNotificationEnabled(enabled)
+	return a.farmMgr.State(time.Now())
 }

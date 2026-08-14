@@ -18,6 +18,7 @@ declare module 'vue' {
     HistoryChartPanel: typeof import('./../components/HistoryChartPanel.vue')['default']
     NpcapGuideDialog: typeof import('./../components/NpcapGuideDialog.vue')['default']
     PlayerChart: typeof import('./../components/PlayerChart.vue')['default']
+    SidebarNav: typeof import('./../components/SidebarNav.vue')['default']
     SkillDetailItem: typeof import('./../components/SkillDetailItem.vue')['default']
     StartupNoticeDialog: typeof import('./../components/StartupNoticeDialog.vue')['default']
     StatusBar: typeof import('./../components/StatusBar.vue')['default']
@@ -34,8 +35,6 @@ declare module 'vue' {
     VanRadioGroup: typeof import('vant/es')['RadioGroup']
     VanSearch: typeof import('vant/es')['Search']
     VanSwitch: typeof import('vant/es')['Switch']
-    VanTab: typeof import('vant/es')['Tab']
-    VanTabs: typeof import('vant/es')['Tabs']
     VanTag: typeof import('vant/es')['Tag']
   }
 }

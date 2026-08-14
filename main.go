@@ -66,9 +66,9 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:            "BlonyMonitorV2",
-		Width:            440,
+		Width:            560,
 		Height:           600,
-		MinWidth:         440,
+		MinWidth:         540,
 		MinHeight:        600,
 		DisableResize:    false,
 		Frameless:        true,

@@ -89,6 +89,10 @@ interface GoApp {
   SetBuffOrder(order: number[]): Promise<void>
   SetBuffNotifyThreshold(seconds: number): Promise<void>
   GetBuffNotifyThreshold(): Promise<number>
+  GetFarmState(): Promise<FarmState>
+  SetFarmMonitorEnabled(enabled: boolean): Promise<FarmState>
+  SetFarmReadyNotificationEnabled(enabled: boolean): Promise<FarmState>
+  SetFarmSpecialNotificationEnabled(enabled: boolean): Promise<FarmState>
   GetNpcapStatus(): Promise<NpcapStatus>
   OpenNpcapDownloadPage(): Promise<void>
   RecheckNpcap(): Promise<NpcapStatus>
@@ -518,6 +522,42 @@ interface ActiveBuffTimerInfo {
   totalTime: number
   notifyAt: number
   willNotify: boolean
+}
+
+interface FarmPlotState {
+  index: number
+  kind: string
+  label: string
+  entityId?: string
+  planted: boolean
+  itemId?: number
+  cropName?: string
+  phase?: string
+  support: number
+  quality: string
+  special: boolean
+  fertility: boolean
+  startedAt?: number
+  readyAt?: number
+  totalSeconds?: number
+  remainingSeconds?: number
+  progress: number
+  ready: boolean
+}
+
+interface FarmState {
+  enabled: boolean
+  readyNotificationEnabled: boolean
+  specialNotificationEnabled: boolean
+  fertility: number
+  fertilityMax: number
+  fertilityKnown: boolean
+  energy: number
+  energyMax: number
+  energyKnown: boolean
+  synced: boolean
+  updatedAt: number
+  plots: FarmPlotState[]
 }
 
 interface BossHPRecord {

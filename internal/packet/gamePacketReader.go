@@ -49,7 +49,7 @@ type GameServerPacketReaderOpt struct {
 	ClientIp           string
 	OnServerInfo       func(ip string, port uint16) // 服务器信息回调
 	OnConnectionChange func(ip string, port uint16) // 已建立抓包中的游戏 TCP 连接发生变化
-	DisableLog         bool // 禁用数据包日志记录
+	DisableLog         bool                         // 禁用数据包日志记录
 }
 
 type gamePacketPayload struct {
@@ -100,20 +100,25 @@ func isLikelyGamePacket(data []byte) bool {
 
 // 已知的游戏opcode（用于验证游戏连接）
 var knownGameOpcodes = map[uint32]bool{
-	0x520c: true, // 实体出现
-	0x5334: true, // 多个实体出现
-	0x7926: true, // 战斗动作（伤害）
-	0x9095: true, // 效果延迟
-	0xa028: true, // 状态更新
-	0x7921: true, // 设置终结者
-	0x9470: true, // 地下城信息
-	0x6599: true, // 地图切换
-	0x526d: true, // 中文名称包
-	0x52d0: true, // 演奏开始
-	0x52d1: true, // 演奏停止
-	0x8ca0: true, // 副本名称包
-	0x5209: true, // 背包数据
-	0x6988: true, // 技能使用事件
+	0x52d2:  true, // Farm crop state
+	0x2138d: true, // Farm entity list
+	0x2138e: true, // Farm summary and fertility
+	0x21394: true, // Complete farm snapshot
+	0x2139c: true, // Farm energy
+	0x520c:  true, // 实体出现
+	0x5334:  true, // 多个实体出现
+	0x7926:  true, // 战斗动作（伤害）
+	0x9095:  true, // 效果延迟
+	0xa028:  true, // 状态更新
+	0x7921:  true, // 设置终结者
+	0x9470:  true, // 地下城信息
+	0x6599:  true, // 地图切换
+	0x526d:  true, // 中文名称包
+	0x52d0:  true, // 演奏开始
+	0x52d1:  true, // 演奏停止
+	0x8ca0:  true, // 副本名称包
+	0x5209:  true, // 背包数据
+	0x6988:  true, // 技能使用事件
 }
 
 // hasKnownGameOpcode 检查数据包是否包含已知的游戏opcode

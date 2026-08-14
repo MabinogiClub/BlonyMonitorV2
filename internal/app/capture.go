@@ -359,6 +359,11 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 	}
 
 	switch pkt.Op {
+	case opcodeFarmCropState, opcodeFarmEntityList, opcodeFarmSummary, opcodeFarmSnapshot, opcodeFarmEnergy:
+		if a.farmMgr != nil {
+			a.farmMgr.HandlePacket(pkt)
+		}
+
 	case opcodeEntityAppear:
 		entity, err := packet.ParseEntityAppearPacket(pkt.Msg)
 		if err != nil {

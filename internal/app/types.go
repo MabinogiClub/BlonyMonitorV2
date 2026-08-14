@@ -2,6 +2,11 @@ package app
 
 // 游戏数据包操作码
 const (
+	opcodeFarmCropState    = 0x52d2
+	opcodeFarmEntityList   = 0x2138d
+	opcodeFarmSummary      = 0x2138e
+	opcodeFarmSnapshot     = 0x21394
+	opcodeFarmEnergy       = 0x2139c
 	opcodeEntityAppear     = 0x520c
 	opcodeEntitiesAppear   = 0x5334
 	opcodeEntityProperty   = 0x7532

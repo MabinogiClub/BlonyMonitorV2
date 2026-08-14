@@ -10,6 +10,59 @@ const isWailsReady = () => !!window.go?.app?.App && !!window.runtime
 
 const eventUnsubscribers = new Map<string, Map<(...args: any[]) => void, () => void>>()
 
+let previewFarmEnabled = false
+let previewFarmReadyNotificationEnabled = true
+let previewFarmSpecialNotificationEnabled = true
+
+function previewFarmState(): FarmState {
+  const slots: Array<Pick<FarmPlotState, 'kind' | 'label'>> = [
+    { kind: 'field', label: '农田 1' },
+    { kind: 'field', label: '农田 2' },
+    { kind: 'field', label: '农田 3' },
+    { kind: 'field', label: '农田 4' },
+    { kind: 'field', label: '农田 5' },
+    { kind: 'field', label: '农田 6' },
+    { kind: 'redPear', label: '红梨木 1' },
+    { kind: 'rubber', label: '橡胶树 1' },
+    { kind: 'spider', label: '蜘蛛古木' },
+    { kind: 'redPear', label: '红梨木 2' },
+    { kind: 'rubber', label: '橡胶树 2' },
+    { kind: 'quartz', label: '石英矿脉' },
+  ]
+  const samples: Record<number, Partial<FarmPlotState>> = {
+    0: { planted: true, cropName: '黑莓', support: 18, quality: 'normal', progress: 34, remainingSeconds: 95, fertility: true },
+    1: { planted: true, cropName: '茉莉', support: 45, quality: 'advanced', progress: 72, remainingSeconds: 106, fertility: true },
+    6: { planted: true, cropName: '红梨树', support: 45, quality: 'advanced', progress: 58, remainingSeconds: 54, special: true },
+    7: { planted: true, cropName: '橡胶树', support: 78, quality: 'highest', progress: 100, remainingSeconds: 0, ready: true },
+    8: { planted: true, cropName: '蜘蛛古木', support: 5, quality: 'normal', progress: 21, remainingSeconds: 156 },
+  }
+  return {
+    enabled: previewFarmEnabled,
+    readyNotificationEnabled: previewFarmReadyNotificationEnabled,
+    specialNotificationEnabled: previewFarmSpecialNotificationEnabled,
+    fertility: 62,
+    fertilityMax: 100,
+    fertilityKnown: true,
+    energy: 71,
+    energyMax: 100,
+    energyKnown: true,
+    synced: true,
+    updatedAt: Date.now(),
+    plots: slots.map((slot, index) => ({
+      index,
+      ...slot,
+      planted: false,
+      support: 0,
+      quality: 'empty',
+      special: false,
+      fertility: false,
+      progress: 0,
+      ready: false,
+      ...samples[index],
+    })),
+  }
+}
+
 const previewAttackers: AttackerStats[] = [
   {
     id: '100001',
@@ -653,4 +706,33 @@ export async function setBuffSoundEnabled(ccId: number, enabled: boolean): Promi
 export async function setBuffOrder(order: number[]): Promise<void> {
   if (!isWailsReady()) return
   return window.go.app.App.SetBuffOrder(order)
+}
+
+export async function getFarmState(): Promise<FarmState> {
+  if (!isWailsReady()) return previewFarmState()
+  return window.go.app.App.GetFarmState()
+}
+
+export async function setFarmMonitorEnabled(enabled: boolean): Promise<FarmState> {
+  if (!isWailsReady()) {
+    previewFarmEnabled = enabled
+    return previewFarmState()
+  }
+  return window.go.app.App.SetFarmMonitorEnabled(enabled)
+}
+
+export async function setFarmReadyNotificationEnabled(enabled: boolean): Promise<FarmState> {
+  if (!isWailsReady()) {
+    previewFarmReadyNotificationEnabled = enabled
+    return previewFarmState()
+  }
+  return window.go.app.App.SetFarmReadyNotificationEnabled(enabled)
+}
+
+export async function setFarmSpecialNotificationEnabled(enabled: boolean): Promise<FarmState> {
+  if (!isWailsReady()) {
+    previewFarmSpecialNotificationEnabled = enabled
+    return previewFarmState()
+  }
+  return window.go.app.App.SetFarmSpecialNotificationEnabled(enabled)
 }

@@ -13,6 +13,7 @@ import ChartPanel from './components/ChartPanel.vue'
 import DpsChartPanel from './components/DpsChartPanel.vue'
 import HistoryChartPanel from './components/HistoryChartPanel.vue'
 import TabsPanel from './components/TabsPanel.vue'
+import SidebarNav from './components/SidebarNav.vue'
 import NpcapGuideDialog from './components/NpcapGuideDialog.vue'
 import StartupNoticeDialog from './components/StartupNoticeDialog.vue'
 
@@ -52,7 +53,7 @@ async function applyHistoryWindowSize() {
 
 async function restoreNormalWindowSize() {
   const base = appStore.historyWindowSize
-  await api.setWindowMinSize(440, 600)
+  await api.setWindowMinSize(540, 600)
   await api.setWindowSize(base.width, base.height)
 }
 
@@ -176,13 +177,16 @@ onUnmounted(() => {
     </div>
 
     <div class="main-container">
-      <TabsPanel />
-      <DpsChartPanel
-        v-if="appStore.activeTab === 'history' && appStore.isShowingHistory && appStore.selectedSkillFilters.length === 0"
-      />
-      <HistoryChartPanel
-        v-if="appStore.activeTab === 'history' && appStore.isShowingHistory && appStore.selectedSkillFilters.length > 0"
-      />
+      <SidebarNav />
+      <div class="content-container">
+        <TabsPanel />
+        <DpsChartPanel
+          v-if="appStore.activeTab === 'history' && appStore.isShowingHistory && appStore.selectedSkillFilters.length === 0"
+        />
+        <HistoryChartPanel
+          v-if="appStore.activeTab === 'history' && appStore.isShowingHistory && appStore.selectedSkillFilters.length > 0"
+        />
+      </div>
     </div>
 
     <DebugPanel />
@@ -215,8 +219,17 @@ onUnmounted(() => {
 .main-container {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   min-height: 0;
+  overflow: hidden;
+}
+
+.content-container {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
