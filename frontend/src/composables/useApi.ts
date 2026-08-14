@@ -368,6 +368,11 @@ export async function reloadResourceData(): Promise<void> {
   return window.go.app.App.ReloadResourceData()
 }
 
+export async function getClientVersion(): Promise<string> {
+  if (!isWailsReady()) return 'dev'
+  return window.go.app.App.GetClientVersion()
+}
+
 /**
  * 获取按技能分组的伤害统计
  */

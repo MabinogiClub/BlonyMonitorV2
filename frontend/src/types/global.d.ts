@@ -33,6 +33,7 @@ interface GoApp {
   GetResourceURL(): Promise<string>
   GetRegion(): Promise<string>
   GetDebugInfo(): Promise<DebugInfo>
+  GetClientVersion(): Promise<string>
   ReloadResourceData(): Promise<void>
   GetDamageBySkill(): Promise<AttackerStats[]>
   GetDamageByAttacker(): Promise<any[]>

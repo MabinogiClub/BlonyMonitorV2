@@ -1,320 +1,357 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import SvgIcon from '@jamescoyle/vue-icon'
 import {
-  mdiAccountGroupOutline,
-  mdiBellRingOutline,
-  mdiSproutOutline,
-  mdiSwordCross,
+  mdiAlertCircleOutline,
+  mdiCheckCircleOutline,
+  mdiDownload,
+  mdiMessageAlertOutline,
+  mdiOpenInNew,
+  mdiRefresh,
 } from '@mdi/js'
-import { useAppStore } from '../stores/app'
+import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
 import * as api from '../composables/useApi'
-import { formatNumber } from '../composables/useUtils'
 
-const appStore = useAppStore()
-const attackers = ref<AttackerStats[]>([])
-const entities = ref<EntityInfo[]>([])
-const buffs = ref<BuffDisplayInfo[]>([])
-const farm = ref<FarmState | null>(null)
-let updateInterval: number | null = null
+const LATEST_RELEASE_URL = 'https://github.com/MabinogiClub/BlonyMonitorV2/releases/latest'
+const FEEDBACK_URL = 'https://github.com/MabinogiClub/BlonyMonitorV2/issues'
+const RELEASE_API_URL = 'https://api.github.com/repos/MabinogiClub/BlonyMonitorV2/releases/latest'
 
-const totalDamage = computed(() => attackers.value.reduce((sum, item) => sum + item.totalDamage, 0))
-const totalDps = computed(() => attackers.value.reduce((sum, item) => sum + item.dps, 0))
-const activeBuffs = computed(() => buffs.value.filter(item => item.isActive).length)
-const readyPlots = computed(() => farm.value?.plots.filter(plot => plot.ready).length || 0)
+type UpdateState = 'idle' | 'checking' | 'latest' | 'available' | 'error'
 
-const metrics = computed(() => [
-  { label: '团队 DPS', value: formatNumber(totalDps.value), icon: mdiSwordCross, tone: 'blue', target: 'bySkill' },
-  { label: '累计伤害', value: formatNumber(totalDamage.value), icon: mdiSwordCross, tone: 'gold', target: 'bySkill' },
-  { label: '已识别角色', value: String(entities.value.length), icon: mdiAccountGroupOutline, tone: 'green', target: 'entities' },
-  { label: '生效 Buff', value: String(activeBuffs.value), icon: mdiBellRingOutline, tone: 'orange', target: 'buffTimer' },
-])
+const currentVersion = ref('dev')
+const latestVersion = ref('')
+const updateState = ref<UpdateState>('idle')
 
-async function loadOverview() {
-  const [damageResult, entityResult, buffResult, farmResult] = await Promise.allSettled([
-    api.getDamageBySkill(),
-    api.getAllPCEntities(),
-    api.getBuffDisplayList(),
-    api.getFarmState(),
-  ])
+const currentVersionLabel = computed(() => {
+  if (currentVersion.value === 'dev') return '开发版'
+  return currentVersion.value.startsWith('v') ? currentVersion.value : `v${currentVersion.value}`
+})
 
-  if (damageResult.status === 'fulfilled') attackers.value = damageResult.value || []
-  if (entityResult.status === 'fulfilled') entities.value = entityResult.value || []
-  if (buffResult.status === 'fulfilled') buffs.value = buffResult.value || []
-  if (farmResult.status === 'fulfilled') farm.value = farmResult.value
+const latestVersionLabel = computed(() => {
+  if (!latestVersion.value) return ''
+  return latestVersion.value.startsWith('v') ? latestVersion.value : `v${latestVersion.value}`
+})
+
+const updateMessage = computed(() => {
+  switch (updateState.value) {
+    case 'checking':
+      return '正在检查更新...'
+    case 'latest':
+      return latestVersionLabel.value ? `已是最新版 ${latestVersionLabel.value}` : '已是最新版'
+    case 'available':
+      return latestVersionLabel.value ? `发现新版本 ${latestVersionLabel.value}` : '发现新版本'
+    case 'error':
+      return '检查失败，请重试'
+    default:
+      return '尚未检查更新'
+  }
+})
+
+const updateIcon = computed(() => {
+  if (updateState.value === 'error') return mdiAlertCircleOutline
+  if (updateState.value === 'latest') return mdiCheckCircleOutline
+  return mdiRefresh
+})
+
+function parseVersion(version: string): [number, number, number] | null {
+  const match = version.trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)/)
+  if (!match) return null
+  return [Number(match[1]), Number(match[2]), Number(match[3])]
+}
+
+function compareVersions(left: string, right: string): number {
+  const leftParts = parseVersion(left)
+  const rightParts = parseVersion(right)
+  if (!leftParts || !rightParts) return 0
+
+  for (let index = 0; index < leftParts.length; index += 1) {
+    if (leftParts[index] !== rightParts[index]) {
+      return leftParts[index] > rightParts[index] ? 1 : -1
+    }
+  }
+  return 0
+}
+
+function openExternal(url: string) {
+  if (typeof window !== 'undefined' && window.runtime) {
+    BrowserOpenURL(url)
+    return
+  }
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+async function loadCurrentVersion() {
+  try {
+    currentVersion.value = await api.getClientVersion()
+  } catch (error) {
+    console.error('加载客户端版本失败:', error)
+  }
+}
+
+async function checkForUpdates() {
+  if (updateState.value === 'checking') return
+
+  updateState.value = 'checking'
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 5000)
+  try {
+    const response = await fetch(RELEASE_API_URL, {
+      headers: { Accept: 'application/vnd.github+json' },
+      signal: controller.signal,
+    })
+
+    if (!response.ok) throw new Error(`GitHub release request failed: ${response.status}`)
+    const release = await response.json() as { tag_name?: string }
+    latestVersion.value = release.tag_name || ''
+
+    const isDevelopmentBuild = currentVersion.value === 'dev' || !parseVersion(currentVersion.value)
+    updateState.value = isDevelopmentBuild || compareVersions(latestVersion.value, currentVersion.value) > 0
+      ? 'available'
+      : 'latest'
+  } catch (error) {
+    updateState.value = 'error'
+    console.error('检查 GitHub 更新失败:', error)
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 
 onMounted(() => {
-  void loadOverview()
-  updateInterval = window.setInterval(loadOverview, 1000)
-})
-
-onUnmounted(() => {
-  if (updateInterval !== null) clearInterval(updateInterval)
+  void loadCurrentVersion()
+  void checkForUpdates()
 })
 </script>
 
 <template>
   <div class="home-view">
-    <header class="home-header">
-      <div>
-        <h1>首页</h1>
-        <p>{{ appStore.selfInfo?.name || '等待识别角色' }}</p>
+    <section class="hero" aria-labelledby="home-title">
+      <div class="hero-content">
+        <span class="hero-eyebrow">BlonyMonitorV2</span>
+        <h1 id="home-title">布罗妮大调查</h1>
+        <p>记录每一次战斗，洞察每一份数据</p>
       </div>
-      <span class="connection-state" :class="{ connected: appStore.isConnected }">
-        <i />{{ appStore.isConnected ? '已连接' : '未连接' }}
-      </span>
-    </header>
-
-    <section class="metric-grid" aria-label="实时概览">
-      <button
-        v-for="metric in metrics"
-        :key="metric.label"
-        type="button"
-        class="metric-item"
-        @click="appStore.setActiveTab(metric.target)"
-      >
-        <span class="metric-icon" :class="metric.tone">
-          <svg-icon type="mdi" :path="metric.icon" :size="18" />
-        </span>
-        <span class="metric-copy">
-          <strong>{{ metric.value }}</strong>
-          <small>{{ metric.label }}</small>
-        </span>
-      </button>
     </section>
 
-    <section class="home-section">
-      <div class="section-heading">
-        <h2>伤害排行</h2>
-        <button type="button" @click="appStore.setActiveTab('bySkill')">查看全部</button>
-      </div>
-      <div v-if="attackers.length" class="ranking-list">
-        <button
-          v-for="(attacker, index) in attackers.slice(0, 5)"
-          :key="attacker.id"
-          type="button"
-          class="ranking-row"
-          @click="appStore.setActiveTab('bySkill')"
+    <section class="welcome-content">
+      <p class="intro-copy">
+        面向《洛奇》冒险者的战斗数据监控工具，帮助你更清晰地了解伤害、角色状态与战斗过程。
+      </p>
+
+      <div class="action-links" aria-label="项目链接">
+        <a
+          class="action-link primary"
+          :href="LATEST_RELEASE_URL"
+          target="_blank"
+          rel="noreferrer"
+          @click.prevent="openExternal(LATEST_RELEASE_URL)"
         >
-          <span class="rank">{{ index + 1 }}</span>
-          <span class="player-name">{{ attacker.name }}</span>
-          <span class="player-dps">{{ formatNumber(attacker.dps) }}/s</span>
-          <span class="player-percent">{{ attacker.percent.toFixed(1) }}%</span>
+          <svg-icon type="mdi" :path="mdiDownload" :size="16" />
+          <span>下载最新版</span>
+          <svg-icon type="mdi" :path="mdiOpenInNew" :size="13" class="external-icon" />
+        </a>
+        <a
+          class="action-link"
+          :href="FEEDBACK_URL"
+          target="_blank"
+          rel="noreferrer"
+          @click.prevent="openExternal(FEEDBACK_URL)"
+        >
+          <svg-icon type="mdi" :path="mdiMessageAlertOutline" :size="16" />
+          <span>提交反馈</span>
+          <svg-icon type="mdi" :path="mdiOpenInNew" :size="13" class="external-icon" />
+        </a>
+      </div>
+
+      <div class="version-row">
+        <div class="version-info">
+          <span class="version-label">当前版本</span>
+          <strong>{{ currentVersionLabel }}</strong>
+        </div>
+        <button
+          type="button"
+          class="update-check"
+          :class="updateState"
+          :disabled="updateState === 'checking'"
+          :title="updateMessage"
+          @click="checkForUpdates"
+        >
+          <svg-icon type="mdi" :path="updateIcon" :size="14" :spin="updateState === 'checking'" />
+          <span>{{ updateMessage }}</span>
         </button>
       </div>
-      <div v-else class="empty-overview">等待战斗数据...</div>
     </section>
-
-    <button type="button" class="farm-summary" @click="appStore.setActiveTab('farm')">
-      <span class="farm-icon"><svg-icon type="mdi" :path="mdiSproutOutline" :size="20" /></span>
-      <div>
-        <strong>塔汀农场</strong>
-        <small v-if="farm?.synced">{{ readyPlots ? `${readyPlots} 块作物可收获` : '作物生长中' }}</small>
-        <small v-else>等待农场数据</small>
-      </div>
-      <span class="farm-state" :class="{ ready: readyPlots > 0 }">{{ readyPlots > 0 ? '可收获' : '查看' }}</span>
-    </button>
   </div>
 </template>
 
 <style lang="scss" scoped>
 .home-view {
   min-height: 100%;
-  padding: 12px;
-  color: #eee;
+  overflow: hidden;
+  color: #f2f2f2;
+  background: #171717;
 }
 
-.home-header {
-  min-height: 54px;
+.hero {
+  min-height: 238px;
+  position: relative;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  align-items: flex-end;
+  isolation: isolate;
+  background-image: url('../assets/home-hero.png');
+  background-position: center 28%;
+  background-size: cover;
 
-  h1 {
-    font-size: 17px;
-    line-height: 1.2;
-    font-weight: 600;
-  }
-
-  p {
-    margin-top: 5px;
-    color: #888;
-    font-size: 11px;
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: linear-gradient(180deg, rgba(15, 15, 15, 0.02) 46%, rgba(23, 23, 23, 0.2) 70%, #171717 100%);
   }
 }
 
-.connection-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 2px;
-  color: #999;
-  font-size: 10px;
-
-  i {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #777;
-  }
-
-  &.connected {
-    color: #81c784;
-
-    i { background: #4caf50; }
-  }
+.hero-content {
+  width: 100%;
+  padding: 0 18px 25px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
 }
 
-.metric-grid {
-  margin: 12px 0 16px;
+.hero-eyebrow {
+  display: block;
+  margin-bottom: 7px;
+  color: #a9d8f6;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+}
+
+h1 {
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.hero-content p {
+  margin-top: 7px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+}
+
+.welcome-content {
+  padding: 0 18px 18px;
+}
+
+.intro-copy {
+  max-width: 390px;
+  margin: -3px 0 18px;
+  color: #aaa;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.action-links {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 8px;
 }
 
-.metric-item {
+.action-link {
   min-width: 0;
-  height: 58px;
-  padding: 8px;
+  min-height: 38px;
+  padding: 0 9px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 5px;
-  color: #ddd;
-  background: rgba(255, 255, 255, 0.035);
-  cursor: pointer;
-  text-align: left;
+  color: #d2d2d2;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  text-decoration: none;
+  transition: background-color 0.15s, border-color 0.15s;
 
-  &:hover { background: rgba(255, 255, 255, 0.07); }
+  &:hover {
+    border-color: rgba(144, 202, 249, 0.55);
+    background: rgba(144, 202, 249, 0.12);
+    color: #fff;
+  }
+
+  &.primary {
+    border-color: rgba(66, 165, 245, 0.5);
+    color: #d8efff;
+    background: rgba(66, 165, 245, 0.2);
+  }
 }
 
-.metric-icon {
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  border-radius: 4px;
-
-  &.blue { color: #64b5f6; background: rgba(66, 165, 245, 0.15); }
-  &.gold { color: #ffd54f; background: rgba(255, 193, 7, 0.14); }
-  &.green { color: #81c784; background: rgba(76, 175, 80, 0.14); }
-  &.orange { color: #ffb74d; background: rgba(255, 152, 0, 0.14); }
+.external-icon {
+  opacity: 0.65;
 }
 
-.metric-copy {
+.version-row {
+  min-height: 42px;
+  margin-top: 16px;
+  padding-top: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.version-info {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: baseline;
+  gap: 7px;
 
   strong {
     overflow: hidden;
-    color: #fff;
-    font-size: 15px;
-    line-height: 1;
+    color: #ddd;
+    font-size: 11px;
     text-overflow: ellipsis;
-  }
-
-  small { color: #8e8e8e; font-size: 10px; }
-}
-
-.home-section {
-  margin-bottom: 12px;
-}
-
-.section-heading {
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-
-  h2 { font-size: 12px; font-weight: 600; }
-
-  button {
-    border: 0;
-    color: #64b5f6;
-    background: transparent;
-    font-size: 10px;
-    cursor: pointer;
+    white-space: nowrap;
   }
 }
 
-.ranking-list {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.ranking-row {
-  width: 100%;
-  height: 34px;
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto 42px;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  color: #ccc;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-
-  &:hover { background: rgba(255, 255, 255, 0.04); }
-}
-
-.rank { color: #777; text-align: center; }
-.player-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.player-dps { color: #81c784; font-size: 10px; }
-.player-percent { color: #999; font-size: 10px; text-align: right; }
-
-.empty-overview {
-  height: 90px;
-  display: grid;
-  place-items: center;
-  color: #666;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 11px;
-}
-
-.farm-summary {
-  width: 100%;
-  min-height: 52px;
-  padding: 8px 10px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
-  border-right: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-  border-left: 0;
-  color: #eee;
-  background: transparent;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-
-  &:hover { background: rgba(255, 255, 255, 0.04); }
-
-  > div {
-    min-width: 0;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  strong { font-size: 11px; font-weight: 600; }
-  small { color: #888; font-size: 10px; }
-}
-
-.farm-icon { color: #81c784; }
-.farm-state {
+.version-label {
+  flex-shrink: 0;
   color: #777;
   font-size: 10px;
+}
 
-  &.ready { color: #ffd54f; }
+.update-check {
+  min-width: 0;
+  padding: 3px 0 3px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  color: #999;
+  background: transparent;
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+
+  span {
+    overflow: hidden;
+    max-width: 180px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &:hover:not(:disabled) { color: #ddd; }
+  &:disabled { cursor: wait; }
+  &.latest { color: #81c784; }
+  &.available { color: #ffd54f; }
+  &.error { color: #ef9a9a; }
+}
+
+@media (max-width: 390px) {
+  .hero-content,
+  .welcome-content { padding-right: 12px; padding-left: 12px; }
+
+  .version-row { align-items: flex-start; flex-direction: column; }
+  .update-check { padding-left: 0; }
 }
 </style>
