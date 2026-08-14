@@ -50,6 +50,8 @@ export const useAppStore = defineStore('app', () => {
   const npcapMessage = ref('')
   const advancedSettingsSection = ref<'general' | 'ranking'>('general')
   const advancedSettingsVisible = ref(false)
+  const dpsBackendRefreshInterval = ref(100)
+  const dpsFrontendRefreshInterval = ref(200)
 
   const chartData = ref<ChartSeries[]>([])
   const historyChartData = ref<ChartSeries[]>([])
@@ -297,6 +299,12 @@ export const useAppStore = defineStore('app', () => {
       console.error('加载玩家信息失败:', e)
     }
 
+    try {
+      applyDPSRefreshSettings(await api.getDPSRefreshSettings())
+    } catch (e) {
+      console.error('加载DPS刷新设置失败:', e)
+    }
+
     setTimeout(async () => {
       try {
         skillNameMap.value = await api.getAllSkillNames()
@@ -385,6 +393,20 @@ export const useAppStore = defineStore('app', () => {
     api.onEvent('npcapReady', () => {
       dismissNpcapDialog()
     })
+    api.onEvent('dps-refresh-settings-changed', (settings: DPSRefreshSettings) => {
+      applyDPSRefreshSettings(settings)
+    })
+  }
+
+  function applyDPSRefreshSettings(settings: DPSRefreshSettings) {
+    dpsBackendRefreshInterval.value = settings.backendIntervalMs
+    dpsFrontendRefreshInterval.value = settings.frontendIntervalMs
+  }
+
+  async function setDPSRefreshSettings(settings: DPSRefreshSettings): Promise<DPSRefreshSettings> {
+    const saved = await api.setDPSRefreshSettings(settings)
+    applyDPSRefreshSettings(saved)
+    return saved
   }
 
   async function updateAllViews() {
@@ -456,6 +478,8 @@ export const useAppStore = defineStore('app', () => {
     npcapMessage,
     advancedSettingsSection,
     advancedSettingsVisible,
+    dpsBackendRefreshInterval,
+    dpsFrontendRefreshInterval,
     updateConfig,
     toggleExpanded,
     isExpanded,
@@ -481,6 +505,8 @@ export const useAppStore = defineStore('app', () => {
     selectChannel,
     setAutoDetectMode,
     setAcceleratorMode,
+    applyDPSRefreshSettings,
+    setDPSRefreshSettings,
     reloadResources,
     registerEvents,
     updateAllViews,

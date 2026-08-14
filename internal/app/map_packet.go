@@ -46,14 +46,22 @@ func (a *App) handleMapChange(pkt *packet.GamePacket) {
 
 	a.mu.RLock()
 	oldMapName := ""
+	oldMapID := 0
 	if a.currentMap != nil {
 		oldMapName = a.currentMap.LocalName
+		oldMapID = a.currentMap.MapID
 	}
 	leavingDungeon := a.currentDungeon != nil && (mapID < 10000 || mapID >= 20000)
 	leavingInstance := a.currentInstance != nil && a.currentInstance.MapID != 0 && !isInstanceMapID(mapID)
 	a.mu.RUnlock()
 
-	a.cleanupAndSaveTakenStats(mapID, oldMapName)
+	resetMode := detailResetNone
+	if leavingDungeon || leavingInstance {
+		resetMode = detailResetDeferred
+	} else if isInstanceMapID(mapID) && !isInstanceMapID(oldMapID) {
+		resetMode = detailResetImmediately
+	}
+	a.cleanupAndSaveTakenStats(mapID, oldMapName, resetMode)
 
 	if leavingDungeon || leavingInstance {
 		time.Sleep(100 * time.Millisecond)

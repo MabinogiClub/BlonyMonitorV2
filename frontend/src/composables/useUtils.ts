@@ -256,31 +256,53 @@ export function getDisplayDamageRange(skill: {
  * @param interval 最小间隔时间（毫秒）
  * @returns 节流后的函数
  */
-export function throttle<T extends (...args: any[]) => any>(fn: T, interval: number): T {
+export function throttle<T extends (...args: any[]) => any>(fn: T, interval: number | (() => number)): T {
   let lastTime = 0
   let pendingArgs: Parameters<T> | null = null
   let timeoutId: number | null = null
+  let timeoutDue = 0
+
+  const schedulePending = (delay: number) => {
+    timeoutDue = Date.now() + delay
+    timeoutId = window.setTimeout(() => {
+      if (pendingArgs !== null) {
+        lastTime = Date.now()
+        fn(...pendingArgs)
+        pendingArgs = null
+      }
+      timeoutId = null
+      timeoutDue = 0
+    }, delay)
+  }
 
   return ((...args: Parameters<T>) => {
     const now = Date.now()
+    const currentInterval = Math.max(0, typeof interval === 'function' ? interval() : interval)
     const timeSinceLastCall = now - lastTime
 
-    if (timeSinceLastCall >= interval) {
+    if (timeSinceLastCall >= currentInterval) {
       // 已经超过间隔时间，立即执行
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId)
+        timeoutId = null
+        timeoutDue = 0
+        pendingArgs = null
+      }
       lastTime = now
       fn(...args)
     } else {
       // 还没到间隔时间，保存参数，等待下次执行
       pendingArgs = args
+
+      const delay = currentInterval - timeSinceLastCall
       if (timeoutId === null) {
-        timeoutId = window.setTimeout(() => {
-          if (pendingArgs !== null) {
-            lastTime = Date.now()
-            fn(...pendingArgs)
-            pendingArgs = null
-          }
-          timeoutId = null
-        }, interval - timeSinceLastCall)
+        schedulePending(delay)
+      } else {
+        const desiredDue = now + delay
+        if (Math.abs(desiredDue - timeoutDue) > 1) {
+          clearTimeout(timeoutId)
+          schedulePending(delay)
+        }
       }
     }
   }) as T

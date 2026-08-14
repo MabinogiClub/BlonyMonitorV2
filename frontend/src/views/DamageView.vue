@@ -95,8 +95,8 @@ async function updateView() {
   }
 }
 
-// 节流后的更新函数（最小间隔200ms）
-const throttledUpdateView = throttle(updateView, 200)
+// 使用设置中的前端刷新间隔动态节流
+const throttledUpdateView = throttle(updateView, () => appStore.dpsFrontendRefreshInterval)
 
 onMounted(async () => {
   updateView()

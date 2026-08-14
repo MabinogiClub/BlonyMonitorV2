@@ -24,6 +24,7 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 
 	// 在锁内完成所有数据更新
 	a.mu.Lock()
+	a.resetPendingDetailSegmentUnsafe("first damage after leaving battle")
 
 	attackerIdStr, attackerName := a.resolveDamageAttackerUnsafe(sourceAttackerIdStr)
 	targetName := a.getEntityNameUnsafe(targetIdStr)
@@ -289,23 +290,50 @@ func (a *App) GetDamageByAttacker() []DamageStats {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	adjustedTotal := a.aggregateAdjustedPCDamageUnsafe(exportDamage)
+	for _, cumulative := range a.cumulativeAttackerStats {
+		adjustedTotal += cumulative.total
+	}
 
-	result := make([]DamageStats, 0)
+	attackerIDs := make(map[string]struct{}, len(a.attackerStats)+len(a.cumulativeAttackerStats))
+	for id := range a.attackerStats {
+		attackerIDs[id] = struct{}{}
+	}
+	for id := range a.cumulativeAttackerStats {
+		attackerIDs[id] = struct{}{}
+	}
+
+	result := make([]DamageStats, 0, len(attackerIDs))
 	now := nowCentiseconds()
-	for id, stats := range a.attackerStats {
+	for id := range attackerIDs {
+		stats := a.attackerStats[id]
+		cumulative := a.cumulativeAttackerStats[id]
 		attackerTotal, hits, crits := a.aggregateAttackerHitRecordsUnsafe(id, exportDamage)
+		combatDuration := 0.0
+		name := ""
+		if cumulative != nil {
+			attackerTotal += cumulative.total
+			hits += cumulative.hits
+			crits += cumulative.crits
+			combatDuration = cumulative.combatDuration
+			name = cumulative.name
+		}
 
 		dps := 0.0
 		status := "idle"
-		isActive := now-stats.lastHit < 8*timePrecisionScale
+		isActive := stats != nil && now-stats.lastHit < 8*timePrecisionScale
 		if isActive {
 			status = "active"
 		}
 
-		if isActive && now > stats.firstHit {
-			dps = attackerTotal / durationSeconds(stats.firstHit, now)
-		} else if stats.lastHit > stats.firstHit {
-			dps = attackerTotal / durationSeconds(stats.firstHit, stats.lastHit)
+		if stats != nil {
+			segmentEnd := stats.lastHit
+			if isActive && now > stats.firstHit {
+				segmentEnd = now
+			}
+			combatDuration += durationSeconds(stats.firstHit, segmentEnd)
+		}
+		if combatDuration > 0 {
+			dps = attackerTotal / combatDuration
 		}
 
 		percent := 0.0
@@ -313,9 +341,12 @@ func (a *App) GetDamageByAttacker() []DamageStats {
 			percent = (attackerTotal / adjustedTotal) * 100
 		}
 
+		if stats != nil || name == "" {
+			name = a.getEntityNameUnsafe(id)
+		}
 		result = append(result, DamageStats{
 			ID:          id,
-			Name:        a.getEntityNameUnsafe(id),
+			Name:        name,
 			TotalDamage: attackerTotal,
 			DPS:         dps,
 			Percent:     percent,
@@ -339,28 +370,50 @@ func (a *App) GetDamageBySkill() []AttackerWithSkills {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	adjustedTotal := a.aggregateAdjustedPCDamageUnsafe(exportDamage)
+	for _, cumulative := range a.cumulativeAttackerStats {
+		adjustedTotal += cumulative.total
+	}
 
-	result := make([]AttackerWithSkills, 0)
+	attackerIDs := make(map[string]struct{}, len(a.skillStats)+len(a.cumulativeAttackerStats))
+	for id := range a.skillStats {
+		attackerIDs[id] = struct{}{}
+	}
+	for id := range a.cumulativeAttackerStats {
+		attackerIDs[id] = struct{}{}
+	}
+
+	result := make([]AttackerWithSkills, 0, len(attackerIDs))
 	now := nowCentiseconds()
-	for attackerId, skillMap := range a.skillStats {
+	for attackerId := range attackerIDs {
+		skillMap := a.skillStats[attackerId]
 		attackerStat := a.attackerStats[attackerId]
-		if attackerStat == nil {
-			continue
-		}
+		cumulative := a.cumulativeAttackerStats[attackerId]
 
 		attackerTotal, _, _ := a.aggregateAttackerHitRecordsUnsafe(attackerId, exportDamage)
+		combatDuration := 0.0
+		name := ""
+		if cumulative != nil {
+			attackerTotal += cumulative.total
+			combatDuration = cumulative.combatDuration
+			name = cumulative.name
+		}
 
 		status := "idle"
-		isActive := now-attackerStat.lastHit < 8*timePrecisionScale
+		isActive := attackerStat != nil && now-attackerStat.lastHit < 8*timePrecisionScale
 		if isActive {
 			status = "active"
 		}
 
 		dps := 0.0
-		if isActive && now > attackerStat.firstHit {
-			dps = attackerTotal / durationSeconds(attackerStat.firstHit, now)
-		} else if attackerStat.lastHit > attackerStat.firstHit {
-			dps = attackerTotal / durationSeconds(attackerStat.firstHit, attackerStat.lastHit)
+		if attackerStat != nil {
+			segmentEnd := attackerStat.lastHit
+			if isActive && now > attackerStat.firstHit {
+				segmentEnd = now
+			}
+			combatDuration += durationSeconds(attackerStat.firstHit, segmentEnd)
+		}
+		if combatDuration > 0 {
+			dps = attackerTotal / combatDuration
 		}
 
 		percent := 0.0
@@ -379,22 +432,43 @@ func (a *App) GetDamageBySkill() []AttackerWithSkills {
 			}
 		}
 
-		skills := make([]SkillDamageStats, 0, len(skillMap))
-		for skillId := range skillMap {
-			records := mergedSkillRecords[skillId]
-			if len(records) == 0 {
-				continue
+		skillIDs := make(map[int]struct{}, len(skillMap))
+		for skillID := range skillMap {
+			skillIDs[skillID] = struct{}{}
+		}
+		if cumulative != nil {
+			for skillID := range cumulative.skills {
+				skillIDs[skillID] = struct{}{}
 			}
-			skills = append(skills, a.buildSkillDamageStatsFromRecordsUnsafe(skillId, records, exportDamage, attackerTotal))
+		}
+
+		skills := make([]SkillDamageStats, 0, len(skillIDs))
+		for skillId := range skillIDs {
+			records := mergedSkillRecords[skillId]
+			var cumulativeSkill *skillAggStats
+			if cumulative != nil {
+				cumulativeSkill = cumulative.skills[skillId]
+			}
+			skills = append(skills, mergedSkillDamageStats(
+				skillId,
+				cumulativeSkill,
+				records,
+				exportDamage,
+				attackerTotal,
+				a.getSkillNameUnsafe(skillId),
+			))
 		}
 
 		sort.Slice(skills, func(i, j int) bool {
 			return skills[i].TotalDamage > skills[j].TotalDamage
 		})
 
+		if attackerStat != nil || name == "" {
+			name = a.getEntityNameUnsafe(attackerId)
+		}
 		result = append(result, AttackerWithSkills{
 			ID:          attackerId,
-			Name:        a.getEntityNameUnsafe(attackerId),
+			Name:        name,
 			TotalDamage: attackerTotal,
 			DPS:         dps,
 			Percent:     percent,
@@ -412,6 +486,10 @@ func (a *App) GetDamageBySkill() []AttackerWithSkills {
 
 // GetDamageTaken 获取受到伤害统计
 func (a *App) GetDamageTaken() []TargetDamageStats {
+	if a.analysisLoggingEnabled() {
+		damageTakenStarted := time.Now()
+		defer func() { a.recordDamageTaken(time.Since(damageTakenStarted)) }()
+	}
 	exportDamage := a.getExportDamage()
 
 	a.mu.RLock()

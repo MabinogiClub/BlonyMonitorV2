@@ -397,6 +397,16 @@ export async function getDamageTaken(): Promise<TakenStats[]> {
   return window.go.app.App.GetDamageTaken()
 }
 
+export async function getDPSRefreshSettings(): Promise<DPSRefreshSettings> {
+  if (!isWailsReady()) return { backendIntervalMs: 100, frontendIntervalMs: 200 }
+  return window.go.app.App.GetDPSRefreshSettings()
+}
+
+export async function setDPSRefreshSettings(settings: DPSRefreshSettings): Promise<DPSRefreshSettings> {
+  if (!isWailsReady()) return settings
+  return window.go.app.App.SetDPSRefreshSettings(settings)
+}
+
 /**
  * 获取图表数据
  */

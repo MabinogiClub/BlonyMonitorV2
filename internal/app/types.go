@@ -297,6 +297,19 @@ type skillAggStats struct {
 	critMax float64
 }
 
+// cumulativeAttackerAggStats keeps only the finalized summary needed by the
+// damage views after detailed records from an earlier battle are released.
+type cumulativeAttackerAggStats struct {
+	name           string
+	total          float64
+	hits           int
+	crits          int
+	firstHit       int64
+	lastHit        int64
+	combatDuration float64
+	skills         map[int]*skillAggStats
+}
+
 // takenSkillAggStats 受到伤害技能聚合统计
 type SkillHitRecord struct {
 	Seq            int64   `json:"seq,omitempty"`

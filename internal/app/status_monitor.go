@@ -3,6 +3,7 @@ package app
 import (
 	"sort"
 	"strconv"
+	"time"
 
 	"blonymonitorv2/internal/packet"
 )
@@ -93,16 +94,12 @@ type statusIntervalKey struct {
 }
 
 type statusInterval struct {
-	EntityID      string
-	EntityName    string
-	IsPC          bool
-	ConditionID   uint32
-	StartedAt     int64
-	EndedAt       int64
-	RawDetail     string
-	Details       map[string]BuffDetailValue
-	StrengthField string
-	Strength      *float64
+	EntityID    string
+	ConditionID uint32
+	StartedAt   int64
+	EndedAt     int64
+	RawDetail   string
+	Strength    *float64
 }
 
 type buffParticipant struct {
@@ -115,42 +112,20 @@ func isMonitoredStatus(conditionID uint32) bool {
 	return ok
 }
 
-func cloneBuffDetails(details map[string]packet.ConditionDetailValue) map[string]BuffDetailValue {
-	if len(details) == 0 {
-		return nil
-	}
-	result := make(map[string]BuffDetailValue, len(details))
-	for key, value := range details {
-		result[key] = BuffDetailValue{Type: value.Type, Value: value.Value}
-	}
-	return result
-}
-
-func cloneStoredBuffDetails(details map[string]BuffDetailValue) map[string]BuffDetailValue {
-	if len(details) == 0 {
-		return nil
-	}
-	result := make(map[string]BuffDetailValue, len(details))
-	for key, value := range details {
-		result[key] = value
-	}
-	return result
-}
-
-func extractStatusStrength(conditionID uint32, details map[string]packet.ConditionDetailValue) (string, *float64) {
+func extractStatusStrength(conditionID uint32, details map[string]packet.ConditionDetailValue) *float64 {
 	field := statusStrengthFields[conditionID]
 	if field == "" {
-		return "", nil
+		return nil
 	}
 	detail, ok := details[field]
 	if !ok {
-		return field, nil
+		return nil
 	}
 	value, err := strconv.ParseFloat(detail.Value, 64)
 	if err != nil {
-		return field, nil
+		return nil
 	}
-	return field, &value
+	return &value
 }
 
 func (a *App) recordStatusConditionUnsafe(entityID uint64, conditionID uint32, enabled bool, rawDetail string, details map[string]packet.ConditionDetailValue, at int64) {
@@ -173,23 +148,13 @@ func (a *App) recordStatusConditionUnsafe(entityID uint64, conditionID uint32, e
 		return
 	}
 
-	entityName := a.getEntityNameUnsafe(entityIDString)
-	isPlayer := entityIDString == a.selfId
-	if entity := a.entities[entityIDString]; entity != nil {
-		entityName = entity.Name
-		isPlayer = isPlayer || entity.IsPC
-	}
-	strengthField, strength := extractStatusStrength(conditionID, details)
+	strength := extractStatusStrength(conditionID, details)
 	interval := &statusInterval{
-		EntityID:      entityIDString,
-		EntityName:    entityName,
-		IsPC:          isPlayer,
-		ConditionID:   conditionID,
-		StartedAt:     at,
-		RawDetail:     rawDetail,
-		Details:       cloneBuffDetails(details),
-		StrengthField: strengthField,
-		Strength:      strength,
+		EntityID:    entityIDString,
+		ConditionID: conditionID,
+		StartedAt:   at,
+		RawDetail:   rawDetail,
+		Strength:    strength,
 	}
 	a.statusIntervals = append(a.statusIntervals, interval)
 	a.activeStatusIntervals[key] = interval
@@ -208,14 +173,10 @@ func (a *App) ensureAppearedStatusUnsafe(entity *packet.EntityInfo, conditionID 
 	entityID := strconv.FormatUint(entity.Id, 10)
 	key := statusIntervalKey{entityID: entityID, conditionID: conditionID}
 	if active := a.activeStatusIntervals[key]; active != nil {
-		active.EntityName = entity.Name
-		active.IsPC = active.IsPC || isPC(int(entity.RaceId)) || entityID == a.selfId
 		return
 	}
 	interval := &statusInterval{
 		EntityID:    entityID,
-		EntityName:  entity.Name,
-		IsPC:        isPC(int(entity.RaceId)) || entityID == a.selfId,
 		ConditionID: conditionID,
 		StartedAt:   at,
 	}
@@ -296,15 +257,11 @@ func (a *App) resetStatusHistoryUnsafe(at int64) {
 	for key, current := range a.activeStatusIntervals {
 		current.EndedAt = at
 		next := &statusInterval{
-			EntityID:      current.EntityID,
-			EntityName:    current.EntityName,
-			IsPC:          current.IsPC,
-			ConditionID:   current.ConditionID,
-			StartedAt:     at,
-			RawDetail:     current.RawDetail,
-			Details:       cloneStoredBuffDetails(current.Details),
-			StrengthField: current.StrengthField,
-			Strength:      current.Strength,
+			EntityID:    current.EntityID,
+			ConditionID: current.ConditionID,
+			StartedAt:   at,
+			RawDetail:   current.RawDetail,
+			Strength:    current.Strength,
 		}
 		continued = append(continued, next)
 		active[key] = next
@@ -314,6 +271,10 @@ func (a *App) resetStatusHistoryUnsafe(at int64) {
 }
 
 func (a *App) buildBuffCoverageUnsafe(start, end int64, participants map[string]buffParticipant) []PlayerBuffCoverage {
+	if a.analysisLoggingEnabled() {
+		coverageStarted := time.Now()
+		defer func() { a.recordBuffCoverage(time.Since(coverageStarted)) }()
+	}
 	if end <= start {
 		return nil
 	}
@@ -365,7 +326,6 @@ func (a *App) buildBuffCoverageUnsafe(start, end int64, participants map[string]
 			ActiveSeconds: seconds,
 			Strength:      interval.Strength,
 			RawDetail:     interval.RawDetail,
-			Details:       cloneStoredBuffDetails(interval.Details),
 		}
 		aggregate.segments = append(aggregate.segments, segment)
 		if interval.Strength != nil {

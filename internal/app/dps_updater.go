@@ -11,19 +11,25 @@ import (
 // DPSUpdateThrottler DPS更新节流器
 // 用于合并多个攻击者/目标的更新事件，减少前端刷新频率
 type DPSUpdateThrottler struct {
-	app           *App
-	pending       atomic.Bool // 是否有待发送的更新
-	minInterval   time.Duration
-	lastEmit      time.Time
-	lastEmitMu    sync.Mutex
+	app             *App
+	pending         atomic.Bool // 是否有待发送的更新
+	minInterval     atomic.Int64
+	scheduleVersion atomic.Uint64
+	lastEmit        time.Time
+	lastEmitMu      sync.Mutex
 }
 
 // NewDPSUpdateThrottler 创建DPS更新节流器
-func NewDPSUpdateThrottler(app *App) *DPSUpdateThrottler {
-	return &DPSUpdateThrottler{
-		app:         app,
-		minInterval: 100 * time.Millisecond, // 最小间隔100ms
-	}
+func NewDPSUpdateThrottler(app *App, minInterval time.Duration) *DPSUpdateThrottler {
+	t := &DPSUpdateThrottler{app: app}
+	t.SetMinInterval(minInterval)
+	return t
+}
+
+func (t *DPSUpdateThrottler) SetMinInterval(minInterval time.Duration) {
+	t.minInterval.Store(int64(minInterval))
+	t.scheduleVersion.Add(1)
+	t.pending.Store(false)
 }
 
 // RequestUpdate 请求更新（会被节流）
@@ -36,15 +42,20 @@ func (t *DPSUpdateThrottler) RequestUpdate() {
 	t.lastEmitMu.Lock()
 	timeSinceLastEmit := time.Since(t.lastEmit)
 	t.lastEmitMu.Unlock()
+	minInterval := time.Duration(t.minInterval.Load())
 
-	if timeSinceLastEmit >= t.minInterval {
+	if timeSinceLastEmit >= minInterval {
 		// 已经过了最小间隔，直接发送
 		t.emitUpdate()
 	} else {
 		// 还没到最小间隔，设置定时发送
+		version := t.scheduleVersion.Load()
 		if t.pending.CompareAndSwap(false, true) {
 			go func() {
-				time.Sleep(t.minInterval - timeSinceLastEmit)
+				time.Sleep(minInterval - timeSinceLastEmit)
+				if version != t.scheduleVersion.Load() {
+					return
+				}
 				t.emitUpdate()
 				t.pending.Store(false)
 			}()

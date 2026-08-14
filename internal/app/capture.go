@@ -103,6 +103,9 @@ func (a *App) startCapture() {
 	logger.Printf("选择的加速器: %s\n", constants.SelectedAccelerator)
 	logger.Printf("当前过滤器: %s\n", constants.GetCurrentFilter())
 	logger.Printf("========================================\n")
+	a.mu.Lock()
+	a.captureNic = nicName
+	a.mu.Unlock()
 
 	a.setStatus("已连接")
 	a.setConnected(true)
@@ -250,6 +253,9 @@ func (a *App) startCaptureForChannel(channel int) {
 	logger.Printf("========================================\n")
 	logger.Printf("正在使用网卡: %s (频道 %d)\n", nicName, channel)
 	logger.Printf("========================================\n")
+	a.mu.Lock()
+	a.captureNic = nicName
+	a.mu.Unlock()
 
 	a.setStatus("已连接")
 	a.setConnected(true)
@@ -356,6 +362,10 @@ func (a *App) restartCapture() {
 func (a *App) processPacket(pkt *packet.GamePacket) {
 	if pkt == nil || pkt.Msg == nil {
 		return
+	}
+	if a.analysisLoggingEnabled() {
+		packetStarted := time.Now()
+		defer func() { a.recordPacketProcessing(pkt.Op, time.Since(packetStarted)) }()
 	}
 
 	switch pkt.Op {

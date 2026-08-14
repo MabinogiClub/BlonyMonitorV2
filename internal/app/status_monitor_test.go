@@ -97,8 +97,11 @@ func TestBuildBuffCoverageTracksStrengthSegments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal coverage: %v", err)
 	}
-	if !strings.Contains(string(encoded), "MCMBAMAX:f:50") || !strings.Contains(string(encoded), `"details"`) {
-		t.Fatalf("raw buff details were not preserved: %s", encoded)
+	if !strings.Contains(string(encoded), "MCMBAMAX:f:50") {
+		t.Fatalf("raw buff detail was not preserved: %s", encoded)
+	}
+	if strings.Contains(string(encoded), `"details"`) {
+		t.Fatalf("parsed buff details should not be retained in coverage output: %s", encoded)
 	}
 }
 

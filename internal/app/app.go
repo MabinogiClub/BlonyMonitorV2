@@ -64,11 +64,13 @@ type App struct {
 	serverPort                  uint16
 	attackerStats               map[string]*attackerAggStats
 	skillStats                  map[string]map[int]*skillAggStats
+	cumulativeAttackerStats     map[string]*cumulativeAttackerAggStats
 	totalDamage                 float64
 	takenStats                  map[string]*targetAggStats
 	targetDamages               map[string][]DamageRecord
 	damageSeq                   int64
 	damageSeqAtLastAutoSave     int64
+	detailResetPending          bool
 	bossHP                      map[string]*BossHPInfo
 	bossHPHistory               map[string][]BossHPRecord
 	bossHPWatch                 map[string]*BossHPWatchState
@@ -78,6 +80,7 @@ type App struct {
 	attackerTimerMgr            *AttackerTimerManager
 	targetTimerMgr              *TargetTimerManager
 	dpsUpdateThrottler          *DPSUpdateThrottler
+	dpsRefreshSettings          DPSRefreshSettings
 	exportDamageMu              sync.Mutex
 	exportDamageCache           map[int64]float64
 	exportDamageDirty           bool
@@ -86,6 +89,7 @@ type App struct {
 	selectedChannel             int
 	captureCancel               context.CancelFunc
 	manualNic                   string
+	captureNic                  string
 	clickThrough                bool
 	opacity                     int
 	alwaysOnTop                 bool
@@ -112,42 +116,52 @@ type App struct {
 	musicPerformances           map[uint64]*musicPerformance
 	battlefieldShockStates      map[string]*battlefieldShockState
 	battlefieldShockGeneration  uint64
+	analysisLog                 *analysisLogController
 	onHide                      func()
 }
 
 // NewApp ?????
 func NewApp() *App {
 	return &App{
-		entities:               make(map[string]*EntityInfo),
-		creatureLib:            make(map[string]string),
-		damages:                make([]DamageRecord, 0),
-		eventLogs:              make([]EventLog, 0),
-		statusMsg:              "????...",
-		region:                 "cn",
-		attackerStats:          make(map[string]*attackerAggStats),
-		skillStats:             make(map[string]map[int]*skillAggStats),
-		takenStats:             make(map[string]*targetAggStats),
-		targetDamages:          make(map[string][]DamageRecord),
-		bossHP:                 make(map[string]*BossHPInfo),
-		bossHPHistory:          make(map[string][]BossHPRecord),
-		bossHPWatch:            make(map[string]*BossHPWatchState),
-		bossHPPending:          make(map[string]*BossHPPendingDamageWindow),
-		chartAggData:           make(map[string]*chartAttackerData),
-		targetChartAggData:     make(map[string]map[string]*chartAttackerData),
-		statusIntervals:        make([]*statusInterval, 0),
-		activeStatusIntervals:  make(map[statusIntervalKey]*statusInterval),
-		musicPerformances:      make(map[uint64]*musicPerformance),
-		battlefieldShockStates: make(map[string]*battlefieldShockState),
-		autoDetect:             true,
-		opacity:                100,
+		entities:                make(map[string]*EntityInfo),
+		creatureLib:             make(map[string]string),
+		damages:                 make([]DamageRecord, 0),
+		eventLogs:               make([]EventLog, 0),
+		statusMsg:               "????...",
+		region:                  "cn",
+		attackerStats:           make(map[string]*attackerAggStats),
+		skillStats:              make(map[string]map[int]*skillAggStats),
+		cumulativeAttackerStats: make(map[string]*cumulativeAttackerAggStats),
+		takenStats:              make(map[string]*targetAggStats),
+		targetDamages:           make(map[string][]DamageRecord),
+		bossHP:                  make(map[string]*BossHPInfo),
+		bossHPHistory:           make(map[string][]BossHPRecord),
+		bossHPWatch:             make(map[string]*BossHPWatchState),
+		bossHPPending:           make(map[string]*BossHPPendingDamageWindow),
+		chartAggData:            make(map[string]*chartAttackerData),
+		targetChartAggData:      make(map[string]map[string]*chartAttackerData),
+		statusIntervals:         make([]*statusInterval, 0),
+		activeStatusIntervals:   make(map[statusIntervalKey]*statusInterval),
+		musicPerformances:       make(map[uint64]*musicPerformance),
+		battlefieldShockStates:  make(map[string]*battlefieldShockState),
+		analysisLog:             &analysisLogController{},
+		dpsRefreshSettings:      defaultDPSRefreshSettings(),
+		autoDetect:              true,
+		opacity:                 100,
 	}
 }
 
 // Startup ???????
 func (a *App) Startup(ctx context.Context) {
 	a.ctx, a.cancel = context.WithCancel(ctx)
+	if loadAnalysisLogEnabled() {
+		if err := a.startAnalysisLog(); err != nil {
+			logger.Printf("[AnalysisLog] 启动失败: %v", err)
+		}
+	}
 
-	a.dpsUpdateThrottler = NewDPSUpdateThrottler(a)
+	a.dpsRefreshSettings = loadDPSRefreshSettings()
+	a.dpsUpdateThrottler = NewDPSUpdateThrottler(a, time.Duration(a.dpsRefreshSettings.BackendIntervalMS)*time.Millisecond)
 	a.attackerTimerMgr = NewAttackerTimerManager(a)
 	a.targetTimerMgr = NewTargetTimerManager(a)
 	a.buffTimerMgr = NewBuffTimerManager(a.ctx, "")
@@ -179,6 +193,7 @@ func (a *App) Startup(ctx context.Context) {
 // Shutdown ???????
 func (a *App) Shutdown(ctx context.Context) {
 	a.shutdownSaveData()
+	a.stopAnalysisLog()
 	if a.cancel != nil {
 		a.cancel()
 	}

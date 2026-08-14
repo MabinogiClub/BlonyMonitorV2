@@ -6,8 +6,9 @@
  */
 
 import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { GetAllNics, GetManualNic, SetManualNic, GetAccelerators, GetSelectedAccelerator, SetAccelerator, GetUploadSettings, SetUploadSettings, GetRankingParticipation, SetRankingParticipation } from '../../wailsjs/go/app/App'
+import { GetAllNics, GetManualNic, SetManualNic, GetAccelerators, GetSelectedAccelerator, SetAccelerator, GetUploadSettings, SetUploadSettings, GetRankingParticipation, SetRankingParticipation, GetAnalysisLogEnabled, GetAnalysisLogPath, SetAnalysisLogEnabled } from '../../wailsjs/go/app/App'
 import { useAppStore } from '../stores/app'
+import * as api from '../composables/useApi'
 
 // 定义 props
 const props = defineProps<{
@@ -58,6 +59,36 @@ const rankingSaving = ref(false)
 const rankingSyncFailed = ref(false)
 let rankingRequestVersion = 0
 const rankingSectionRef = ref<HTMLElement | null>(null)
+
+// 分析日志默认关闭，仅在需要反馈性能问题时启用
+const analysisLogEnabled = ref(false)
+const analysisLogPath = ref('')
+const analysisLogSaving = ref(false)
+const backendRefreshInterval = ref(100)
+const frontendRefreshInterval = ref(200)
+const refreshSettingsSaving = ref(false)
+
+const backendRefreshOptions = [
+  { value: 50, label: '50 ms（极高频）' },
+  { value: 100, label: '100 ms（默认）' },
+  { value: 250, label: '250 ms' },
+  { value: 500, label: '500 ms' },
+  { value: 1000, label: '1 秒' },
+  { value: 2000, label: '2 秒' },
+  { value: 5000, label: '5 秒' },
+  { value: 15000, label: '15 秒（低负载测试）' },
+]
+
+const frontendRefreshOptions = [
+  { value: 50, label: '50 ms（极高频）' },
+  { value: 100, label: '100 ms' },
+  { value: 200, label: '200 ms（默认）' },
+  { value: 500, label: '500 ms' },
+  { value: 1000, label: '1 秒' },
+  { value: 2000, label: '2 秒' },
+  { value: 5000, label: '5 秒' },
+  { value: 15000, label: '15 秒（低负载测试）' },
+]
 
 const rankingModeOptions: Array<{ value: RankingMode; label: string }> = [
   { value: 'none', label: '不参与排行' },
@@ -146,6 +177,61 @@ async function loadUploadSettings() {
     uploadSecretReady.value = settings.secretReady
   } catch (err) {
     console.error('加载推送设置失败:', err)
+  }
+}
+
+async function loadAnalysisLogSettings() {
+  try {
+    analysisLogEnabled.value = await GetAnalysisLogEnabled()
+    analysisLogPath.value = await GetAnalysisLogPath()
+  } catch (err) {
+    console.error('加载分析日志设置失败:', err)
+  }
+}
+
+async function loadRefreshSettings() {
+  try {
+    const settings = await api.getDPSRefreshSettings()
+    backendRefreshInterval.value = settings.backendIntervalMs
+    frontendRefreshInterval.value = settings.frontendIntervalMs
+    appStore.applyDPSRefreshSettings(settings)
+  } catch (err) {
+    console.error('加载刷新设置失败:', err)
+  }
+}
+
+async function saveRefreshSettings() {
+  if (refreshSettingsSaving.value) return
+  refreshSettingsSaving.value = true
+  try {
+    const settings = await appStore.setDPSRefreshSettings({
+      backendIntervalMs: backendRefreshInterval.value,
+      frontendIntervalMs: frontendRefreshInterval.value,
+    })
+    backendRefreshInterval.value = settings.backendIntervalMs
+    frontendRefreshInterval.value = settings.frontendIntervalMs
+  } catch (err) {
+    backendRefreshInterval.value = appStore.dpsBackendRefreshInterval
+    frontendRefreshInterval.value = appStore.dpsFrontendRefreshInterval
+    console.error('保存刷新设置失败:', err)
+  } finally {
+    refreshSettingsSaving.value = false
+  }
+}
+
+async function handleAnalysisLogChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  const nextValue = target.checked
+  analysisLogSaving.value = true
+  try {
+    await SetAnalysisLogEnabled(nextValue)
+    analysisLogEnabled.value = nextValue
+    if (!analysisLogPath.value) analysisLogPath.value = await GetAnalysisLogPath()
+  } catch (err) {
+    target.checked = analysisLogEnabled.value
+    console.error('设置分析日志失败:', err)
+  } finally {
+    analysisLogSaving.value = false
   }
 }
 
@@ -412,6 +498,8 @@ watch(() => props.visible, (newVal) => {
     loadOpacity()
     loadChannelSettings()
     loadUploadSettings()
+    loadAnalysisLogSettings()
+    loadRefreshSettings()
     loadRankingParticipation()
     if (props.initialSection === 'ranking') {
       void nextTick(() => rankingSectionRef.value?.scrollIntoView({ block: 'center' }))
@@ -641,6 +729,75 @@ watch(() => appStore.selfInfo?.id, (newID, oldID) => {
         <!-- 分割线 -->
         <div class="setting-divider"></div>
 
+        <!-- DPS 刷新设置 -->
+        <div class="setting-section">
+          <div class="section-header">
+            <div>
+              <h4>DPS 刷新间隔</h4>
+              <p class="setting-desc">分别控制后端推送和前端统计页面重算频率</p>
+            </div>
+          </div>
+          <div class="refresh-rate-grid">
+            <label class="refresh-rate-field">
+              <span>后端推送</span>
+              <select
+                v-model.number="backendRefreshInterval"
+                :disabled="refreshSettingsSaving"
+                @change="saveRefreshSettings"
+              >
+                <option v-for="option in backendRefreshOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label class="refresh-rate-field">
+              <span>前端计算</span>
+              <select
+                v-model.number="frontendRefreshInterval"
+                :disabled="refreshSettingsSaving"
+                @change="saveRefreshSettings"
+              >
+                <option v-for="option in frontendRefreshOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+          </div>
+          <p class="refresh-rate-warning" role="note">
+            较短间隔会增加 CPU 占用；较长间隔会让实时 DPS 和 Buff 显示滞后，实际速度受两项中较大的间隔限制。此设置不会丢失伤害数据，也不会改变历史记录精度。
+          </p>
+        </div>
+
+        <!-- 分割线 -->
+        <div class="setting-divider"></div>
+
+        <!-- 分析日志 -->
+        <div class="setting-section">
+          <div class="section-header">
+            <div>
+              <h4>输出分析日志</h4>
+              <p class="setting-desc">仅在需要排查卡顿或延迟问题时开启，日志每 5 秒记录一次运行状态</p>
+            </div>
+          </div>
+          <div class="auto-detect-control">
+            <label class="auto-detect-label">
+              <input
+                type="checkbox"
+                :checked="analysisLogEnabled"
+                :disabled="analysisLogSaving"
+                @change="handleAnalysisLogChange"
+              >
+              <span>{{ analysisLogEnabled ? '已开启' : '关闭' }}</span>
+            </label>
+          </div>
+          <p v-if="analysisLogEnabled && analysisLogPath" class="setting-desc analysis-log-path">
+            {{ analysisLogPath }}
+          </p>
+        </div>
+
+        <!-- 分割线 -->
+        <div class="setting-divider"></div>
+
         <!-- 网卡选择 -->
         <div class="setting-section">
           <div class="section-header">
@@ -777,6 +934,58 @@ watch(() => appStore.selfInfo?.id, (newID, oldID) => {
   font-size: 12px;
   color: #aaa;
   line-height: 1.5;
+}
+
+.analysis-log-path {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.refresh-rate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.refresh-rate-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  color: #ccc;
+  font-size: 12px;
+
+  select {
+    width: 100%;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    outline: none;
+    background: rgba(50, 50, 50, 0.9);
+    color: #fff;
+    font-size: 12px;
+
+    &:disabled {
+      opacity: 0.55;
+    }
+  }
+}
+
+.refresh-rate-warning {
+  margin: 10px 0 0;
+  padding: 9px 10px;
+  border-left: 3px solid #ffb74d;
+  background: rgba(255, 183, 77, 0.08);
+  color: #d0b88f;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+@media (max-width: 480px) {
+  .refresh-rate-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 // 搜索框样式

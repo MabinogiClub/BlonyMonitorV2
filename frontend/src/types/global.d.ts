@@ -34,6 +34,11 @@ interface GoApp {
   GetRegion(): Promise<string>
   GetDebugInfo(): Promise<DebugInfo>
   GetClientVersion(): Promise<string>
+  GetDPSRefreshSettings(): Promise<DPSRefreshSettings>
+  SetDPSRefreshSettings(settings: DPSRefreshSettings): Promise<DPSRefreshSettings>
+  GetAnalysisLogEnabled(): Promise<boolean>
+  GetAnalysisLogPath(): Promise<string>
+  SetAnalysisLogEnabled(enabled: boolean): Promise<void>
   ReloadResourceData(): Promise<void>
   GetDamageBySkill(): Promise<AttackerStats[]>
   GetDamageByAttacker(): Promise<any[]>
@@ -601,6 +606,11 @@ interface UploadSettings {
   endpointReady: boolean
   dungeonKeyword: string
   secretReady: boolean
+}
+
+interface DPSRefreshSettings {
+  backendIntervalMs: number
+  frontendIntervalMs: number
 }
 
 interface RankingParticipation {

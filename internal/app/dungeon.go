@@ -82,6 +82,19 @@ func (a *App) onDungeonEnter(pkt *packet.GamePacket, info *DungeonInfo) {
 	now := time.Now().UnixMilli()
 	playerIdStr := strconv.FormatUint(playerIdFromPacket, 10)
 
+	a.mu.RLock()
+	isDuplicateEntry := a.currentDungeon != nil &&
+		a.currentDungeon.InstanceID == info.InstanceID &&
+		a.currentDungeon.DungeonID == info.DungeonID
+	oldMapName := ""
+	if a.currentMap != nil {
+		oldMapName = a.currentMap.LocalName
+	}
+	a.mu.RUnlock()
+	if !isDuplicateEntry {
+		a.cleanupAndSaveTakenStats(int(info.DungeonID), oldMapName, detailResetImmediately)
+	}
+
 	a.mu.Lock()
 	a.currentDungeon = info
 	a.dungeonLocalName = dungeonLocalName

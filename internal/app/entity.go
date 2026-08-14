@@ -67,12 +67,6 @@ func (a *App) addEntity(entity *packet.EntityInfo) {
 		MaxStamina:      entity.MaxStamina,
 		AddedAt:         now,
 	}
-	for key, active := range a.activeStatusIntervals {
-		if key.entityID == idStr {
-			active.EntityName = entity.Name
-			active.IsPC = active.IsPC || isPc || idStr == a.selfId
-		}
-	}
 	for _, conditionID := range conditions {
 		a.ensureAppearedStatusUnsafe(entity, conditionID, eventAt)
 	}

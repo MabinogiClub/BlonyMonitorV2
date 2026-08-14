@@ -689,15 +689,15 @@ func (a *App) GetSaveDir() string {
 	return a.saveDir()
 }
 
-func (a *App) clearDamageStateUnsafe() {
+func (a *App) clearDetailDamageStateUnsafe() {
 	a.takenStats = make(map[string]*targetAggStats)
 	a.targetDamages = make(map[string][]DamageRecord)
 	a.attackerStats = make(map[string]*attackerAggStats)
 	a.skillStats = make(map[string]map[int]*skillAggStats)
 	a.totalDamage = 0
 	a.damages = make([]DamageRecord, 0)
+	a.eventLogs = make([]EventLog, 0)
 	a.damageSeq = 0
-	a.chartAggData = make(map[string]*chartAttackerData)
 	a.targetChartAggData = make(map[string]map[string]*chartAttackerData)
 	a.damageSeqAtLastAutoSave = 0
 	a.clearAllBossHPUnsafe()
@@ -705,32 +705,39 @@ func (a *App) clearDamageStateUnsafe() {
 	a.resetStatusHistoryUnsafe(nowCentiseconds())
 }
 
+func (a *App) clearDamageStateUnsafe() {
+	a.clearDetailDamageStateUnsafe()
+	a.cumulativeAttackerStats = make(map[string]*cumulativeAttackerAggStats)
+	a.chartAggData = make(map[string]*chartAttackerData)
+	a.detailResetPending = false
+}
+
 // cleanupAndSaveTakenStats 场景/副本切换时保存本场新增的战斗记录，保留实时统计供造成伤害/受到伤害页面展示。
-func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string) {
+func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string, resetMode detailResetMode) bool {
 	a.mu.RLock()
 	oldMapID := 0
 	if a.currentMap != nil {
 		oldMapID = a.currentMap.MapID
 	}
 	instanceSaveName := a.instanceSaveName
-	damageSeq := a.damageSeq
-	damageSeqAtLastAutoSave := a.damageSeqAtLastAutoSave
 	a.mu.RUnlock()
 
 	if isRandomInstanceMapID(oldMapID) && isRandomInstanceMapID(mapID) {
 		logger.Printf("[Cleanup] 副本内切换 (%d -> %d)，保留数据\n", oldMapID, mapID)
-		return
-	}
-
-	if damageSeq == damageSeqAtLastAutoSave {
-		return
+		return true
 	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if a.damageSeq == a.damageSeqAtLastAutoSave {
+		a.applyDetailResetModeUnsafe(resetMode, "saved battle transition")
+		return true
+	}
+
 	if len(a.takenStats) == 0 {
-		return
+		a.applyDetailResetModeUnsafe(resetMode, "empty battle transition")
+		return true
 	}
 
 	saveName := a.transitionSaveNameUnsafe(mapName, oldMapID, instanceSaveName)
@@ -739,14 +746,17 @@ func (a *App) cleanupAndSaveTakenStats(mapID int, mapName string) {
 	finalPath, targetCount, bossHPCount, err := a.saveTakenStatsLocked(saveName, sinceSeq)
 	if err != nil {
 		logger.Printf("[Cleanup] 保存失败: %v\n", err)
-		return
+		return false
 	}
 	if finalPath == "" {
-		return
+		a.applyDetailResetModeUnsafe(resetMode, "empty battle transition")
+		return true
 	}
 
 	a.damageSeqAtLastAutoSave = a.damageSeq
+	a.applyDetailResetModeUnsafe(resetMode, "saved battle transition")
 	logger.Printf("[Cleanup] 地图切换保存 %d 个目标, %d 个bossHP -> %s（保留实时统计）\n", targetCount, bossHPCount, finalPath)
+	return true
 }
 
 // ClearAndSave 清空实时数据；仅保存尚未写入历史的部分，已自动保存过的不再重复保存。
