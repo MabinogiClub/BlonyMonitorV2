@@ -7,17 +7,13 @@ import { ref, computed } from 'vue'
 import { useAppStore } from '../stores/app'
 import AdvancedSettings from './AdvancedSettings.vue'
 import SvgIcon from '@jamescoyle/vue-icon'
-import { mdiPin, mdiPinOff, mdiBug, mdiBugPlay, mdiCog, mdiBroom, mdiWindowClose, mdiChartLine } from '@mdi/js'
+import { mdiPin, mdiPinOff, mdiBug, mdiBugPlay, mdiBroom, mdiWindowClose, mdiChartLine } from '@mdi/js'
 import appIcon from '../assets/appicon.png'
 import { showLoadingToast, showSuccessToast, showFailToast } from 'vant'
 
 const appStore = useAppStore()
 
 const closeDialogVisible = ref(false)
-
-function openAdvancedSettings() {
-  appStore.requestAdvancedSettings('general')
-}
 
 function closeAdvancedSettings() {
   appStore.closeAdvancedSettings()
@@ -101,14 +97,6 @@ const debugIcon = computed(() => {
         @click="appStore.toggleDebug"
       >
         <svg-icon type="mdi" :path="debugIcon" :size="14" />
-      </button>
-
-      <button
-        class="titlebar-btn settings"
-        title="高级设置"
-        @click="openAdvancedSettings"
-      >
-        <svg-icon type="mdi" :path="mdiCog" :size="14" />
       </button>
 
       <button

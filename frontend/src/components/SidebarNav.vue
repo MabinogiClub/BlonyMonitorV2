@@ -4,6 +4,7 @@ import SvgIcon from '@jamescoyle/vue-icon'
 import {
   mdiAccountGroupOutline,
   mdiBellRingOutline,
+  mdiCogOutline,
   mdiHome,
   mdiSproutOutline,
   mdiSwordCross,
@@ -49,6 +50,18 @@ function selectPage(name: string) {
     >
       <svg-icon type="mdi" :path="item.icon" :size="19" class="nav-icon" />
       <span class="nav-label">{{ item.title }}</span>
+    </button>
+
+    <button
+      type="button"
+      class="nav-item settings-item"
+      :class="{ active: appStore.advancedSettingsVisible }"
+      :aria-expanded="appStore.advancedSettingsVisible"
+      title="高级设置"
+      @click="appStore.requestAdvancedSettings('general')"
+    >
+      <svg-icon type="mdi" :path="mdiCogOutline" :size="19" class="nav-icon" />
+      <span class="nav-label">设置</span>
     </button>
   </nav>
 </template>
@@ -98,6 +111,11 @@ function selectPage(name: string) {
 
 .nav-icon {
   flex-shrink: 0;
+}
+
+.settings-item {
+  margin-top: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .nav-label {
