@@ -572,6 +572,14 @@ export async function getSoundVolume(): Promise<number> {
 }
 
 /**
+ * 试听当前提示音音量
+ */
+export async function playSoundPreview(): Promise<void> {
+  if (!isWailsReady()) return
+  return window.go.app.App.PlaySoundPreview()
+}
+
+/**
  * 设置窗口固定在前
  */
 export async function setAlwaysOnTop(enabled: boolean): Promise<void> {

@@ -185,6 +185,11 @@ async function handleSoundVolumeChange() {
   await appStore.setSoundVolume(soundVolume.value)
 }
 
+async function handleSoundPreview() {
+  await appStore.setSoundVolume(soundVolume.value)
+  await api.playSoundPreview()
+}
+
 /**
  * 加载战斗数据推送设置
  */
@@ -602,6 +607,15 @@ watch(() => appStore.selfInfo?.id, (newID, oldID) => {
               @change="handleSoundVolumeChange"
             >
             <span class="opacity-value">{{ soundVolume }}%</span>
+            <button
+              class="sound-preview-button"
+              type="button"
+              title="试听当前音量"
+              aria-label="试听当前音量"
+              @click="handleSoundPreview"
+            >
+              <van-icon name="volume-o" aria-hidden="true" />
+            </button>
           </div>
         </div>
 
@@ -1209,6 +1223,37 @@ watch(() => appStore.selfInfo?.id, (newID, oldID) => {
   font-weight: 500;
   min-width: 45px;
   text-align: right;
+}
+
+.sound-preview-button {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+
+  &:hover {
+    border-color: #42a5f5;
+    background: rgba(66, 165, 245, 0.16);
+    color: #42a5f5;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #42a5f5;
+    outline-offset: 2px;
+  }
+
+  .van-icon {
+    font-size: 19px;
+  }
 }
 
 // 自动检测控制

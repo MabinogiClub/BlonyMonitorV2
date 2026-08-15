@@ -68,3 +68,8 @@ func (a *App) GetSoundVolume() int {
 	defer a.mu.RUnlock()
 	return a.soundVolume
 }
+
+// PlaySoundPreview plays a real reminder sound at the current volume.
+func (a *App) PlaySoundPreview() {
+	playFarmSound("农作物成熟.wav", a.GetSoundVolume())
+}

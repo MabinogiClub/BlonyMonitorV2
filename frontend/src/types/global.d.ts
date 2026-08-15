@@ -60,6 +60,7 @@ interface GoApp {
   GetOpacity(): Promise<number>
   SetSoundVolume(volume: number): Promise<void>
   GetSoundVolume(): Promise<number>
+  PlaySoundPreview(): Promise<void>
   SetAlwaysOnTop(enabled: boolean): Promise<void>
   GetAlwaysOnTop(): Promise<boolean>
   // 窗口大小
