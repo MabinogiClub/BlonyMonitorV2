@@ -7,7 +7,7 @@ import (
 )
 
 func (a *App) restorePersistentConditions(characterData *packet.CharacterDataPacket) {
-	if characterData == nil || characterData.Id == 0 {
+	if characterData == nil || characterData.Id == 0 || !isPC(int(characterData.RaceId)) {
 		return
 	}
 

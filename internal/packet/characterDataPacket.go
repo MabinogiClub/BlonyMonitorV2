@@ -5,6 +5,7 @@ import "fmt"
 type CharacterDataPacket struct {
 	Id         uint64
 	Name       string
+	RaceId     uint32
 	Conditions []*CharacterConditionPacket
 }
 
@@ -20,6 +21,12 @@ func ParseCharacterDataPacket(p *GamePacket) (*CharacterDataPacket, error) {
 		Id:         p.Msg[1].Data().(uint64),
 		Name:       p.Msg[3].Data().(string),
 		Conditions: make([]*CharacterConditionPacket, 0),
+	}
+	if len(p.Msg) > 6 &&
+		p.Msg[4].Type() == MessageElemTypeString &&
+		p.Msg[5].Type() == MessageElemTypeString &&
+		p.Msg[6].Type() == MessageElemTypeInt {
+		result.RaceId = p.Msg[6].Data().(uint32)
 	}
 
 	for index := 4; index < len(p.Msg); index++ {

@@ -13,6 +13,9 @@ func TestParseCharacterDataPacketRestoresPersistentConditions(t *testing.T) {
 		NewMessageElemLong(4503599638666428),
 		NewMessageElemByte(2),
 		NewMessageElemString("Flandre"),
+		NewMessageElemString(""),
+		NewMessageElemString(""),
+		NewMessageElemInt(10001),
 		NewMessageElemByte(0),
 		NewMessageElemInt(3),
 		NewMessageElemInt(63),
@@ -39,8 +42,8 @@ func TestParseCharacterDataPacketRestoresPersistentConditions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse character data: %v", err)
 	}
-	if parsed.Id != 4503599638666428 || parsed.Name != "Flandre" {
-		t.Fatalf("unexpected character: id=%d name=%q", parsed.Id, parsed.Name)
+	if parsed.Id != 4503599638666428 || parsed.Name != "Flandre" || parsed.RaceId != 10001 {
+		t.Fatalf("unexpected character: id=%d name=%q race=%d", parsed.Id, parsed.Name, parsed.RaceId)
 	}
 	if len(parsed.Conditions) != 3 {
 		t.Fatalf("condition count = %d, want 3", len(parsed.Conditions))
