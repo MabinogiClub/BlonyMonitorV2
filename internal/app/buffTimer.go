@@ -36,6 +36,7 @@ type BuffTimer struct {
 	CCId        uint32
 	EntityId    uint64
 	EntityName  string
+	DisableAt   int64
 	DurationSec int64
 	StartTime   time.Time
 	CancelFunc  context.CancelFunc
@@ -230,7 +231,7 @@ func (m *BuffTimerManager) GetBuffOrder() []uint32 {
 }
 
 // StartTimer 启动buff定时器
-func (m *BuffTimerManager) StartTimer(ccId uint32, entityId uint64, entityName string, duration int64) {
+func (m *BuffTimerManager) StartTimer(ccId uint32, entityId uint64, entityName string, disableAt int64, duration int64) {
 	buffName, isTarget := m.targetBuffs[ccId]
 	if !isTarget {
 		return
@@ -251,6 +252,13 @@ func (m *BuffTimerManager) StartTimer(ccId uint32, entityId uint64, entityName s
 	}
 
 	key := fmt.Sprintf("%d_%d", entityId, ccId)
+	m.mu.RLock()
+	existing := m.timers[key]
+	m.mu.RUnlock()
+	// 状态包也会发送属性更新；结束时间不变表示仍是同一个 Buff 实例。
+	if existing != nil && disableAt > 0 && existing.DisableAt == disableAt {
+		return
+	}
 	m.cancelTimer(key)
 
 	ctx, cancel := context.WithCancel(m.ctx)
@@ -258,6 +266,7 @@ func (m *BuffTimerManager) StartTimer(ccId uint32, entityId uint64, entityName s
 		CCId:        ccId,
 		EntityId:    entityId,
 		EntityName:  entityName,
+		DisableAt:   disableAt,
 		DurationSec: duration,
 		StartTime:   time.Now(),
 		CancelFunc:  cancel,

@@ -168,8 +168,8 @@ func TestChannelChangeExpiresTransientStatusesAndTimers(t *testing.T) {
 	a.battlefieldShockStates["1"] = &battlefieldShockState{TargetID: 1}
 
 	a.buffTimerMgr = NewBuffTimerManager(context.Background(), "1")
-	a.buffTimerMgr.StartTimer(63, 1, "Self", 120)
-	a.buffTimerMgr.StartTimer(680, 1, "Self", 120)
+	a.buffTimerMgr.StartTimer(63, 1, "Self", 0, 120)
+	a.buffTimerMgr.StartTimer(680, 1, "Self", 0, 120)
 
 	if _, _, changed := a.observeServerConnection("211.147.76.31", 11020, false, 150); changed {
 		t.Fatal("initial server observation must not be treated as a channel change")

@@ -49,7 +49,7 @@ func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bo
 			if entityKnown {
 				entityName = entity.Name
 			}
-			a.buffTimerMgr.StartTimer(conditionId, entityId, entityName, duration)
+			a.buffTimerMgr.StartTimer(conditionId, entityId, entityName, disableAt, duration)
 		} else if !isEnable {
 			a.buffTimerMgr.StopTimer(entityId, conditionId)
 		}

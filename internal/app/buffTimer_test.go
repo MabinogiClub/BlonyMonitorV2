@@ -47,3 +47,40 @@ func TestBuffTimerManagerIncludesSuperBurningBuff(t *testing.T) {
 		}
 	}
 }
+
+func TestStartTimerIgnoresConditionUpdateWithSameDisableAt(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	mgr := NewBuffTimerManager(ctx, "1")
+
+	mgr.StartTimer(515, 1, "Self", 63922387254713, 300)
+	first := mgr.timers["1_515"]
+	if first == nil {
+		t.Fatal("expected status support timer to start")
+	}
+
+	mgr.StartTimer(515, 1, "Self", 63922387254713, 300)
+	if got := mgr.timers["1_515"]; got != first {
+		t.Fatal("same buff instance must not restart the timer")
+	}
+}
+
+func TestStartTimerRestartsWhenDisableAtChanges(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	mgr := NewBuffTimerManager(ctx, "1")
+
+	mgr.StartTimer(515, 1, "Self", 63922387254713, 300)
+	first := mgr.timers["1_515"]
+	mgr.StartTimer(515, 1, "Self", 63922387554713, 300)
+	second := mgr.timers["1_515"]
+
+	if second == nil || second == first {
+		t.Fatal("new buff instance must restart the timer")
+	}
+	if second.DisableAt != 63922387554713 {
+		t.Fatalf("disableAt = %d, want %d", second.DisableAt, int64(63922387554713))
+	}
+}
