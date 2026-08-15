@@ -436,6 +436,16 @@ func (m *FarmManager) handleFarmSnapshot(pkt *packet.GamePacket) bool {
 	m.inferSnapshotEntitySlotsLocked(slotsPresent, fieldOccupied, newCrops)
 	for id, record := range newCrops {
 		if old := m.findSameCropLocked(record); old != nil {
+			// The official panel snapshot can retain the planting-time support and
+			// lmtime. Keep newer entity updates while still accepting its slot map.
+			if old.LastRawMS > record.LastRawMS {
+				record.Phase = old.Phase
+				record.Support = old.Support
+				record.SupportIdx = old.SupportIdx
+				record.Special = old.Special
+				record.Fertility = old.Fertility
+				record.LastRawMS = old.LastRawMS
+			}
 			record.Notified = old.Notified
 			record.SpecialNotified = old.SpecialNotified
 			if record.SlotID == 0 {

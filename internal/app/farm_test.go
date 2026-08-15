@@ -195,6 +195,40 @@ func TestFarmSnapshotRebuildsCropsAndFertility(t *testing.T) {
 	}
 }
 
+func TestFarmSnapshotKeepsNewerLiveCareState(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr := NewFarmManager(ctx, nil, nil, nil)
+	now := time.Now()
+	startRaw := farmRawMilliseconds(now.Add(-time.Minute))
+	fieldEntityID := uint64(1001)
+	cropEntityID := uint64(2001)
+
+	liveXML := fmt.Sprintf(`<xml onwer="123" fieldprop="%d" itemid="5040989" support="85" lmtime="%d" supportIndex="5" Special="true" starttime="%d" Fertility="false"/>`, fieldEntityID, startRaw+20_000, startRaw)
+	mgr.HandlePacket(farmCropPacket(now, cropEntityID, "bud", liveXML))
+
+	staleSnapshotXML := fmt.Sprintf(`<xml onwer="123" fieldprop="%d" itemid="5040989" support="45" lmtime="%d" supportIndex="0" Special="true" starttime="%d" Fertility="false"/>`, fieldEntityID, startRaw, startRaw)
+	mgr.HandlePacket(&packet.GamePacket{
+		At: now.Add(time.Second),
+		Op: opcodeFarmSnapshot,
+		Msg: packet.Message{
+			packet.NewMessageElemString(`<xml level="12" fertility="7" ownerName="Tester"/>`),
+			packet.NewMessageElemInt(1),
+			packet.NewMessageElemInt(0),
+			packet.NewMessageElemString(staleSnapshotXML),
+		},
+	})
+
+	state := mgr.State(now.Add(time.Second))
+	plot := state.Plots[0]
+	if plot.Support != 85 || plot.Phase != "bud" || !plot.Special {
+		t.Fatalf("stale snapshot overwrote live care state: %#v", plot)
+	}
+	if !state.FertilityKnown || state.Fertility != 7 {
+		t.Fatalf("snapshot fertility was not applied: known=%v value=%d", state.FertilityKnown, state.Fertility)
+	}
+}
+
 func TestFarmSnapshotUsesOfficialFieldSlotOrder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
