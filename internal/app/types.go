@@ -8,6 +8,7 @@ const (
 	opcodeFarmSnapshot     = 0x21394
 	opcodeFarmEnergy       = 0x2139c
 	opcodeEntityAppear     = 0x520c
+	opcodeCharacterData    = 0x5209
 	opcodeEntitiesAppear   = 0x5334
 	opcodeEntityProperty   = 0x7532
 	opcodeEntityRemove     = 0x520d

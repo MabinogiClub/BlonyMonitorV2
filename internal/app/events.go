@@ -6,6 +6,30 @@ import (
 	"blonymonitorv2/internal/packet"
 )
 
+func (a *App) restorePersistentConditions(characterData *packet.CharacterDataPacket) {
+	if characterData == nil || characterData.Id == 0 {
+		return
+	}
+
+	entityID := strconv.FormatUint(characterData.Id, 10)
+	a.setSelfInfo(entityID, characterData.Name)
+	for _, condition := range characterData.Conditions {
+		if condition == nil || !isChannelPersistentStatus(condition.CCId) || condition.Duration <= 0 {
+			continue
+		}
+		a.addConditionEvent(
+			characterData.Id,
+			condition.CCId,
+			true,
+			condition.AttackerId,
+			condition.DisableAt,
+			condition.Duration,
+			condition.DetailRaw,
+			condition.Details,
+		)
+	}
+}
+
 // addConditionEvent ????????
 func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bool, attackerId uint64, disableAt int64, duration int64, rawDetail string, details map[string]packet.ConditionDetailValue) {
 	a.mu.Lock()

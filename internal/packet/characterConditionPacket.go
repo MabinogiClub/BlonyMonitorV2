@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
+
+const dotNetUnixEpochMilliseconds = int64(62_135_596_800_000)
 
 type ConditionDetailValue struct {
 	Type  string `json:"type"`
@@ -59,6 +62,39 @@ func extractDurationSeconds(details map[string]ConditionDetailValue) int64 {
 		return 0
 	}
 	return (durationMillis + 999) / 1000
+}
+
+func durationFromDisableAt(disableAt int64, packetAt time.Time) int64 {
+	remainingMilliseconds := remainingMillisecondsFromDisableAt(disableAt, packetAt)
+	if remainingMilliseconds <= 0 {
+		return 0
+	}
+
+	// Condition 63 durations are defined in whole minutes. Rounding also absorbs
+	// the small clock difference between the game server and the capture host.
+	const minuteMilliseconds = int64(time.Minute / time.Millisecond)
+	minutes := (remainingMilliseconds + minuteMilliseconds/2) / minuteMilliseconds
+	if minutes <= 0 {
+		return 0
+	}
+	return minutes * 60
+}
+
+func remainingMillisecondsFromDisableAt(disableAt int64, packetAt time.Time) int64 {
+	if disableAt <= dotNetUnixEpochMilliseconds || packetAt.IsZero() {
+		return 0
+	}
+	_, zoneOffset := packetAt.Zone()
+	packetWallMilliseconds := packetAt.UnixMilli() + dotNetUnixEpochMilliseconds + int64(zoneOffset)*1000
+	return disableAt - packetWallMilliseconds
+}
+
+func remainingDurationSeconds(disableAt int64, packetAt time.Time) int64 {
+	remainingMilliseconds := remainingMillisecondsFromDisableAt(disableAt, packetAt)
+	if remainingMilliseconds <= 0 {
+		return 0
+	}
+	return (remainingMilliseconds + 999) / 1000
 }
 
 type CharacterConditionPacket struct {
@@ -125,6 +161,9 @@ func ParseCharacterConditionPacket(p *GamePacket) (*CharacterConditionPacket, er
 		}
 		if duration <= 0 {
 			duration = extractDurationSeconds(details)
+		}
+		if duration <= 0 && ccId == 63 {
+			duration = durationFromDisableAt(disableAt, p.At)
 		}
 	}
 

@@ -374,6 +374,13 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 			a.farmMgr.HandlePacket(pkt)
 		}
 
+	case opcodeCharacterData:
+		characterData, err := packet.ParseCharacterDataPacket(pkt)
+		if err != nil || characterData.Id == 0 {
+			return
+		}
+		a.restorePersistentConditions(characterData)
+
 	case opcodeEntityAppear:
 		entity, err := packet.ParseEntityAppearPacket(pkt.Msg)
 		if err != nil {
