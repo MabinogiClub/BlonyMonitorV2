@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -419,44 +420,107 @@ func (m *BuffTimerManager) resolveAudioFile(filename string) string {
 	return ""
 }
 
-var audioPlaybackSequence atomic.Uint64
+var (
+	audioPlaybackSequence atomic.Uint64
+	audioPlaybackMu       sync.Mutex
+	audioPlaybackBuffers  = make(map[uint64][]byte)
+)
 
 func playWavFile(audioFile string, volume int) {
+	audioData, duration, err := prepareWavPlayback(audioFile, volume)
+	if err != nil {
+		logger.Printf("[Audio] 读取音效失败: %s, error: %v", audioFile, err)
+		return
+	}
+	if len(audioData) == 0 {
+		logger.Printf("[Audio] 音效文件为空: %s", audioFile)
+		return
+	}
+
 	winmm := syscall.NewLazyDLL("winmm.dll")
-	mciSendString := winmm.NewProc("mciSendStringW")
-	alias := fmt.Sprintf("blonymonitor_sound_%d", audioPlaybackSequence.Add(1))
+	playSound := winmm.NewProc("PlaySoundW")
+	playbackID := audioPlaybackSequence.Add(1)
+	audioPlaybackMu.Lock()
+	audioPlaybackBuffers[playbackID] = audioData
+	audioPlaybackMu.Unlock()
 
-	runMCICommand := func(command string) error {
-		utf16Command, err := syscall.UTF16PtrFromString(command)
-		if err != nil {
-			return err
-		}
-		ret, _, _ := mciSendString.Call(uintptr(unsafe.Pointer(utf16Command)), 0, 0, 0)
-		if ret != 0 {
-			return fmt.Errorf("%s: MCI error %d", command, ret)
-		}
-		return nil
-	}
-
-	if err := runMCICommand(fmt.Sprintf(`open "%s" type waveaudio alias %s`, audioFile, alias)); err != nil {
-		logger.Printf("[Audio] 打开音效失败: %s, error: %v", audioFile, err)
+	ret, _, lastErr := playSound.Call(
+		uintptr(unsafe.Pointer(&audioData[0])),
+		0,
+		0x00000007, // SND_ASYNC | SND_MEMORY | SND_NODEFAULT
+	)
+	if ret == 0 {
+		audioPlaybackMu.Lock()
+		delete(audioPlaybackBuffers, playbackID)
+		audioPlaybackMu.Unlock()
+		logger.Printf("[Audio] 播放音效失败: %s, error: %v", audioFile, lastErr)
 		return
 	}
-	defer func() {
-		if err := runMCICommand(fmt.Sprintf("close %s", alias)); err != nil {
-			logger.Printf("[Audio] 关闭音效通道失败: %v", err)
-		}
-	}()
 
-	if err := runMCICommand(fmt.Sprintf("setaudio %s volume to %d", alias, normalizeSoundVolume(volume)*10)); err != nil {
-		logger.Printf("[Audio] 设置音量失败: %s, error: %v", audioFile, err)
-		return
-	}
-	if err := runMCICommand(fmt.Sprintf("play %s wait", alias)); err != nil {
-		logger.Printf("[Audio] 播放音效失败: %s, error: %v", audioFile, err)
-		return
-	}
+	time.AfterFunc(duration+time.Second, func() {
+		audioPlaybackMu.Lock()
+		delete(audioPlaybackBuffers, playbackID)
+		audioPlaybackMu.Unlock()
+	})
 	logger.Printf("[Audio] 播放成功: %s", audioFile)
+}
+
+func prepareWavPlayback(audioFile string, volume int) ([]byte, time.Duration, error) {
+	audioData, err := os.ReadFile(audioFile)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(audioData) < 12 || string(audioData[:4]) != "RIFF" || string(audioData[8:12]) != "WAVE" {
+		return audioData, 30 * time.Second, nil
+	}
+
+	var (
+		audioFormat uint16
+		bitsPerSample uint16
+		byteRate uint32
+		dataOffset int
+		dataLength int
+	)
+	for offset := 12; offset+8 <= len(audioData); {
+		chunkSize := int(binary.LittleEndian.Uint32(audioData[offset+4 : offset+8]))
+		chunkStart := offset + 8
+		chunkEnd := chunkStart + chunkSize
+		if chunkEnd > len(audioData) {
+			break
+		}
+		switch string(audioData[offset : offset+4]) {
+		case "fmt ":
+			if chunkSize >= 16 {
+				audioFormat = binary.LittleEndian.Uint16(audioData[chunkStart : chunkStart+2])
+				byteRate = binary.LittleEndian.Uint32(audioData[chunkStart+8 : chunkStart+12])
+				bitsPerSample = binary.LittleEndian.Uint16(audioData[chunkStart+14 : chunkStart+16])
+			}
+		case "data":
+			dataOffset = chunkStart
+			dataLength = chunkSize
+		}
+		offset = chunkEnd
+		if chunkSize%2 != 0 {
+			offset++
+		}
+	}
+
+	duration := 30 * time.Second
+	if byteRate > 0 && dataLength > 0 {
+		duration = time.Duration(dataLength) * time.Second / time.Duration(byteRate)
+	}
+	if volume == defaultSoundVolume || dataLength == 0 || audioFormat != 1 || bitsPerSample != 16 {
+		return audioData, duration, nil
+	}
+
+	scaledData := append([]byte(nil), audioData...)
+	volume = normalizeSoundVolume(volume)
+	for offset := dataOffset; offset+1 < dataOffset+dataLength; offset += 2 {
+		sample := int16(binary.LittleEndian.Uint16(scaledData[offset : offset+2]))
+		scaledSample := int16(int32(sample) * int32(volume) / defaultSoundVolume)
+		binary.LittleEndian.PutUint16(scaledData[offset:offset+2], uint16(scaledSample))
+	}
+	return scaledData, duration, nil
 }
 
 // SetNotifyThreshold 设置通知阈值（秒）

@@ -2,9 +2,52 @@ package app
 
 import (
 	"context"
+	"encoding/binary"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 )
+
+func TestPrepareWavPlaybackScalesPCM16Samples(t *testing.T) {
+	wav := make([]byte, 48)
+	copy(wav[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(wav[4:8], 40)
+	copy(wav[8:12], "WAVE")
+	copy(wav[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(wav[16:20], 16)
+	binary.LittleEndian.PutUint16(wav[20:22], 1)
+	binary.LittleEndian.PutUint16(wav[22:24], 1)
+	binary.LittleEndian.PutUint32(wav[24:28], 2)
+	binary.LittleEndian.PutUint32(wav[28:32], 4)
+	binary.LittleEndian.PutUint16(wav[32:34], 2)
+	binary.LittleEndian.PutUint16(wav[34:36], 16)
+	copy(wav[36:40], "data")
+	binary.LittleEndian.PutUint32(wav[40:44], 4)
+	binary.LittleEndian.PutUint16(wav[44:46], uint16(int16(10_000)))
+	negativeSample := int16(-10_000)
+	binary.LittleEndian.PutUint16(wav[46:48], uint16(negativeSample))
+
+	path := filepath.Join(t.TempDir(), "test.wav")
+	if err := os.WriteFile(path, wav, 0o644); err != nil {
+		t.Fatalf("write WAV: %v", err)
+	}
+
+	scaled, duration, err := prepareWavPlayback(path, 50)
+	if err != nil {
+		t.Fatalf("prepare WAV playback: %v", err)
+	}
+	if duration != time.Second {
+		t.Fatalf("duration = %v, want 1s", duration)
+	}
+	if got := int16(binary.LittleEndian.Uint16(scaled[44:46])); got != 5_000 {
+		t.Fatalf("positive sample = %d, want 5000", got)
+	}
+	if got := int16(binary.LittleEndian.Uint16(scaled[46:48])); got != -5_000 {
+		t.Fatalf("negative sample = %d, want -5000", got)
+	}
+}
 
 func TestBuffTimerManagerIncludesSuperBurningBuff(t *testing.T) {
 	t.Setenv("MABI_WORK_DIR", t.TempDir())
