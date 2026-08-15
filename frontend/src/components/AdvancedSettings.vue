@@ -36,6 +36,7 @@ const searchKeyword = ref('')
 
 // 透明度
 const opacity = ref(100)
+const soundVolume = ref(100)
 
 // 频道相关
 const autoDetect = ref(true)
@@ -165,6 +166,23 @@ async function handleOpacityChange(event: Event) {
   const newOpacity = parseInt(target.value, 10)
   opacity.value = newOpacity
   await appStore.setOpacity(newOpacity)
+}
+
+async function loadSoundVolume() {
+  try {
+    soundVolume.value = appStore.soundVolume
+  } catch (err) {
+    console.error('加载音效音量失败:', err)
+  }
+}
+
+function handleSoundVolumeInput(event: Event) {
+  const target = event.target as HTMLInputElement
+  soundVolume.value = parseInt(target.value, 10)
+}
+
+async function handleSoundVolumeChange() {
+  await appStore.setSoundVolume(soundVolume.value)
 }
 
 /**
@@ -496,6 +514,7 @@ watch(() => props.visible, (newVal) => {
   if (newVal) {
     loadNics()
     loadOpacity()
+    loadSoundVolume()
     loadChannelSettings()
     loadUploadSettings()
     loadAnalysisLogSettings()
@@ -561,6 +580,28 @@ watch(() => appStore.selfInfo?.id, (newID, oldID) => {
               @change="handleOpacityChange"
             >
             <span class="opacity-value">{{ opacity }}%</span>
+          </div>
+        </div>
+
+        <!-- 音效音量设置 -->
+        <div class="setting-section">
+          <div class="section-header">
+            <div>
+              <h4>音效音量</h4>
+              <p class="setting-desc">Buff 提醒与农场提示音</p>
+            </div>
+          </div>
+          <div class="opacity-control">
+            <input
+              id="soundVolumeSlider"
+              type="range"
+              min="0"
+              max="100"
+              :value="soundVolume"
+              @input="handleSoundVolumeInput"
+              @change="handleSoundVolumeChange"
+            >
+            <span class="opacity-value">{{ soundVolume }}%</span>
           </div>
         </div>
 
@@ -1126,7 +1167,8 @@ watch(() => appStore.selfInfo?.id, (newID, oldID) => {
   padding: 12px 0;
 }
 
-#opacitySlider {
+#opacitySlider,
+#soundVolumeSlider {
   flex: 1;
   height: 6px;
   -webkit-appearance: none;

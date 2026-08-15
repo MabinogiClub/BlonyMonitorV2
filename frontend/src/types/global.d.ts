@@ -58,6 +58,8 @@ interface GoApp {
   GetClickThrough(): Promise<boolean>
   SetOpacity(opacity: number): Promise<void>
   GetOpacity(): Promise<number>
+  SetSoundVolume(volume: number): Promise<void>
+  GetSoundVolume(): Promise<number>
   SetAlwaysOnTop(enabled: boolean): Promise<void>
   GetAlwaysOnTop(): Promise<boolean>
   // 窗口大小

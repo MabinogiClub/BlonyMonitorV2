@@ -139,6 +139,7 @@ type FarmState struct {
 
 type FarmManager struct {
 	mu                         sync.RWMutex
+	settingsMu                 sync.Mutex
 	enabled                    bool
 	readyNotificationEnabled   bool
 	specialNotificationEnabled bool
@@ -164,14 +165,16 @@ type FarmManager struct {
 }
 
 func NewFarmManager(ctx context.Context, onState func(FarmState), onReady func(FarmPlotState), onSpecial func(FarmPlotState)) *FarmManager {
+	settings := loadFarmSettings()
 	m := &FarmManager{
+		enabled:                    settings.Enabled,
 		crops:                      make(map[uint64]*farmCropRecord),
 		entityLinks:                make(map[uint64]map[uint64]struct{}),
 		entitySlots:                make(map[uint64]int),
 		snapshotSlotsPresent:       make(map[int]bool),
 		snapshotFieldOccupied:      make(map[int]bool),
-		readyNotificationEnabled:   true,
-		specialNotificationEnabled: true,
+		readyNotificationEnabled:   settings.ReadyNotificationEnabled,
+		specialNotificationEnabled: settings.SpecialNotificationEnabled,
 		readyNotifiedAt:            make(map[string]time.Time),
 		onState:                    onState,
 		onReady:                    onReady,
@@ -195,10 +198,16 @@ func (m *FarmManager) run(ctx context.Context) {
 }
 
 func (m *FarmManager) SetEnabled(enabled bool) {
+	m.settingsMu.Lock()
 	m.mu.Lock()
 	m.enabled = enabled
 	m.updatedAt = time.Now()
+	settings := m.settingsLocked()
 	m.mu.Unlock()
+	if err := saveFarmSettings(settings); err != nil {
+		logger.Printf("[Farm] 保存提醒设置失败: %v", err)
+	}
+	m.settingsMu.Unlock()
 	m.emitState()
 	if enabled {
 		m.notifyReady(time.Now())
@@ -206,10 +215,16 @@ func (m *FarmManager) SetEnabled(enabled bool) {
 }
 
 func (m *FarmManager) SetReadyNotificationEnabled(enabled bool) {
+	m.settingsMu.Lock()
 	m.mu.Lock()
 	m.readyNotificationEnabled = enabled
 	m.updatedAt = time.Now()
+	settings := m.settingsLocked()
 	m.mu.Unlock()
+	if err := saveFarmSettings(settings); err != nil {
+		logger.Printf("[Farm] 保存提醒设置失败: %v", err)
+	}
+	m.settingsMu.Unlock()
 	m.emitState()
 	if enabled {
 		m.notifyReady(time.Now())
@@ -217,11 +232,25 @@ func (m *FarmManager) SetReadyNotificationEnabled(enabled bool) {
 }
 
 func (m *FarmManager) SetSpecialNotificationEnabled(enabled bool) {
+	m.settingsMu.Lock()
 	m.mu.Lock()
 	m.specialNotificationEnabled = enabled
 	m.updatedAt = time.Now()
+	settings := m.settingsLocked()
 	m.mu.Unlock()
+	if err := saveFarmSettings(settings); err != nil {
+		logger.Printf("[Farm] 保存提醒设置失败: %v", err)
+	}
+	m.settingsMu.Unlock()
 	m.emitState()
+}
+
+func (m *FarmManager) settingsLocked() farmSettings {
+	return farmSettings{
+		Enabled:                    m.enabled,
+		ReadyNotificationEnabled:   m.readyNotificationEnabled,
+		SpecialNotificationEnabled: m.specialNotificationEnabled,
+	}
 }
 
 func (m *FarmManager) HandlePacket(pkt *packet.GamePacket) {
@@ -1018,7 +1047,7 @@ func (m *FarmManager) emitState() {
 	}
 }
 
-func playFarmSound(filename string) {
+func playFarmSound(filename string, volume int) {
 	soundDir := resolveSoundDir()
 	if soundDir == "" {
 		logger.Printf("[Farm] 音效目录不存在: %s", filename)
@@ -1029,5 +1058,5 @@ func playFarmSound(filename string) {
 		logger.Printf("[Farm] 音效文件不存在: %s", audioFile)
 		return
 	}
-	go playWavFile(audioFile)
+	go playWavFile(audioFile, volume)
 }

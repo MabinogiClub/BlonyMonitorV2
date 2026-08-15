@@ -556,6 +556,22 @@ export async function getOpacity(): Promise<number> {
 }
 
 /**
+ * 设置 Buff 和农场提示音音量 (0-100)
+ */
+export async function setSoundVolume(volume: number): Promise<void> {
+  if (!isWailsReady()) return
+  return window.go.app.App.SetSoundVolume(volume)
+}
+
+/**
+ * 获取 Buff 和农场提示音音量
+ */
+export async function getSoundVolume(): Promise<number> {
+  if (!isWailsReady()) return 100
+  return window.go.app.App.GetSoundVolume()
+}
+
+/**
  * 设置窗口固定在前
  */
 export async function setAlwaysOnTop(enabled: boolean): Promise<void> {

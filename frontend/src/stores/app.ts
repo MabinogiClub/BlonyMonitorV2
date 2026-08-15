@@ -46,6 +46,7 @@ export const useAppStore = defineStore('app', () => {
   const alwaysOnTop = ref(false)
   const chartVisible = ref(false)
   const opacity = ref(100)
+  const soundVolume = ref(100)
   const npcapDialogVisible = ref(false)
   const npcapMessage = ref('')
   const advancedSettingsSection = ref<'general' | 'ranking'>('general')
@@ -282,6 +283,12 @@ export const useAppStore = defineStore('app', () => {
     }
 
     try {
+      soundVolume.value = await api.getSoundVolume()
+    } catch (e) {
+      console.error('加载音效音量失败:', e)
+    }
+
+    try {
       currentMap.value = await api.getCurrentMap()
     } catch (e) {
       console.error('加载地图信息失败:', e)
@@ -430,6 +437,15 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  async function setSoundVolume(newVolume: number) {
+    try {
+      await api.setSoundVolume(newVolume)
+      soundVolume.value = newVolume
+    } catch (e) {
+      console.error('设置音效音量失败:', e)
+    }
+  }
+
   function quit() {
     api.quit()
   }
@@ -474,6 +490,7 @@ export const useAppStore = defineStore('app', () => {
     selfInfo,
     chartVisible,
     opacity,
+    soundVolume,
     npcapDialogVisible,
     npcapMessage,
     advancedSettingsSection,
@@ -511,6 +528,7 @@ export const useAppStore = defineStore('app', () => {
     registerEvents,
     updateAllViews,
     setOpacity,
+    setSoundVolume,
     quit,
     hide,
     toggleChartVisible,

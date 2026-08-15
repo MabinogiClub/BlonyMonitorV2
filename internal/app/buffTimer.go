@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -54,10 +55,19 @@ type BuffTimerManager struct {
 	notifyThreshold  int64
 	selfId           string
 	soundDir         string
+	getSoundVolume   func() int
 }
 
 // NewBuffTimerManager 创建新的BuffTimerManager
 func NewBuffTimerManager(ctx context.Context, selfId string) *BuffTimerManager {
+	return NewBuffTimerManagerWithVolume(ctx, selfId, func() int { return defaultSoundVolume })
+}
+
+// NewBuffTimerManagerWithVolume creates a Buff timer manager with an application-wide sound volume source.
+func NewBuffTimerManagerWithVolume(ctx context.Context, selfId string, getSoundVolume func() int) *BuffTimerManager {
+	if getSoundVolume == nil {
+		getSoundVolume = func() int { return defaultSoundVolume }
+	}
 	soundDir := resolveSoundDir()
 	logger.Printf("[BuffTimer] 音效目录: %s", soundDir)
 
@@ -93,6 +103,7 @@ func NewBuffTimerManager(ctx context.Context, selfId string) *BuffTimerManager {
 		ctx:             ctx,
 		notifyThreshold: 30,
 		selfId:          selfId,
+		getSoundVolume:  getSoundVolume,
 		soundDir:        soundDir,
 	}
 	mgr.loadBuffOrder()
@@ -382,7 +393,7 @@ func (m *BuffTimerManager) playSound(ccId uint32) {
 		return
 	}
 
-	go playWavFile(audioFile)
+	go playWavFile(audioFile, m.getSoundVolume())
 }
 
 func (m *BuffTimerManager) resolveAudioFile(filename string) string {
@@ -408,26 +419,44 @@ func (m *BuffTimerManager) resolveAudioFile(filename string) string {
 	return ""
 }
 
-func playWavFile(audioFile string) {
-	winmm := syscall.NewLazyDLL("winmm.dll")
-	playSound := winmm.NewProc("PlaySoundW")
+var audioPlaybackSequence atomic.Uint64
 
-	utf16Path, err := syscall.UTF16PtrFromString(audioFile)
-	if err != nil {
-		logger.Printf("[BuffTimer] 路径转换失败: %v", err)
+func playWavFile(audioFile string, volume int) {
+	winmm := syscall.NewLazyDLL("winmm.dll")
+	mciSendString := winmm.NewProc("mciSendStringW")
+	alias := fmt.Sprintf("blonymonitor_sound_%d", audioPlaybackSequence.Add(1))
+
+	runMCICommand := func(command string) error {
+		utf16Command, err := syscall.UTF16PtrFromString(command)
+		if err != nil {
+			return err
+		}
+		ret, _, _ := mciSendString.Call(uintptr(unsafe.Pointer(utf16Command)), 0, 0, 0)
+		if ret != 0 {
+			return fmt.Errorf("%s: MCI error %d", command, ret)
+		}
+		return nil
+	}
+
+	if err := runMCICommand(fmt.Sprintf(`open "%s" type waveaudio alias %s`, audioFile, alias)); err != nil {
+		logger.Printf("[Audio] 打开音效失败: %s, error: %v", audioFile, err)
 		return
 	}
+	defer func() {
+		if err := runMCICommand(fmt.Sprintf("close %s", alias)); err != nil {
+			logger.Printf("[Audio] 关闭音效通道失败: %v", err)
+		}
+	}()
 
-	ret, _, lastErr := playSound.Call(
-		uintptr(unsafe.Pointer(utf16Path)),
-		0,
-		0x00020003,
-	)
-	if ret == 0 {
-		logger.Printf("[BuffTimer] 播放音效失败: %s, lastErr: %v", audioFile, lastErr)
-	} else {
-		logger.Printf("[BuffTimer] 播放成功: %s", audioFile)
+	if err := runMCICommand(fmt.Sprintf("setaudio %s volume to %d", alias, normalizeSoundVolume(volume)*10)); err != nil {
+		logger.Printf("[Audio] 设置音量失败: %s, error: %v", audioFile, err)
+		return
 	}
+	if err := runMCICommand(fmt.Sprintf("play %s wait", alias)); err != nil {
+		logger.Printf("[Audio] 播放音效失败: %s, error: %v", audioFile, err)
+		return
+	}
+	logger.Printf("[Audio] 播放成功: %s", audioFile)
 }
 
 // SetNotifyThreshold 设置通知阈值（秒）
@@ -604,5 +633,5 @@ func (m *BuffTimerManager) PlayCustomSound(filename string) {
 		return
 	}
 
-	go playWavFile(audioFile)
+	go playWavFile(audioFile, m.getSoundVolume())
 }

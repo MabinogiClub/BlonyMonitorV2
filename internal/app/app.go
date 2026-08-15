@@ -92,6 +92,7 @@ type App struct {
 	captureNic                  string
 	clickThrough                bool
 	opacity                     int
+	soundVolume                 int
 	alwaysOnTop                 bool
 	currentDungeon              *DungeonInfo
 	dungeonSaveName             string
@@ -148,6 +149,7 @@ func NewApp() *App {
 		dpsRefreshSettings:      defaultDPSRefreshSettings(),
 		autoDetect:              true,
 		opacity:                 100,
+		soundVolume:             defaultSoundVolume,
 	}
 }
 
@@ -161,21 +163,22 @@ func (a *App) Startup(ctx context.Context) {
 	}
 
 	a.dpsRefreshSettings = loadDPSRefreshSettings()
+	a.soundVolume = loadSoundVolume()
 	a.dpsUpdateThrottler = NewDPSUpdateThrottler(a, time.Duration(a.dpsRefreshSettings.BackendIntervalMS)*time.Millisecond)
 	a.attackerTimerMgr = NewAttackerTimerManager(a)
 	a.targetTimerMgr = NewTargetTimerManager(a)
-	a.buffTimerMgr = NewBuffTimerManager(a.ctx, "")
+	a.buffTimerMgr = NewBuffTimerManagerWithVolume(a.ctx, "", a.GetSoundVolume)
 	a.farmMgr = NewFarmManager(
 		a.ctx,
 		func(state FarmState) {
 			runtime.EventsEmit(a.ctx, "farm-state", state)
 		},
 		func(plot FarmPlotState) {
-			playFarmSound("农作物成熟.wav")
+			playFarmSound("农作物成熟.wav", a.GetSoundVolume())
 			runtime.EventsEmit(a.ctx, "farm-ready", plot)
 		},
 		func(plot FarmPlotState) {
-			playFarmSound("这是一颗高级种子.wav")
+			playFarmSound("这是一颗高级种子.wav", a.GetSoundVolume())
 			runtime.EventsEmit(a.ctx, "farm-special", plot)
 		},
 	)
