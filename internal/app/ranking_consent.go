@@ -113,6 +113,19 @@ func (a *App) currentServerID() string {
 
 // GetRankingParticipation 从服务器读取当前角色的排行参与状态。
 func (a *App) GetRankingParticipation() (RankingParticipation, error) {
+	return a.getRankingParticipation(false)
+}
+
+// syncRankingParticipation refreshes client metadata while preserving the
+// participation mode currently stored on the server.
+func (a *App) syncRankingParticipation() (RankingParticipation, error) {
+	return a.getRankingParticipation(true)
+}
+
+func (a *App) getRankingParticipation(syncClientVersion bool) (RankingParticipation, error) {
+	a.rankingConsentRequestMu.Lock()
+	defer a.rankingConsentRequestMu.Unlock()
+
 	playerID, playerName := a.currentPlayerIdentity()
 	state := RankingParticipation{
 		Available:   rankingConsentConfigured(),
@@ -146,28 +159,32 @@ func (a *App) GetRankingParticipation() (RankingParticipation, error) {
 	}
 	state.UpdatedAt = response.UpdatedAt
 
-	// GET is read-only. If an older row has no server (or the character moved
-	// to another configured server), refresh it with the current mode.
-	if serverFieldPresent && serverID != "" && responseServerID != serverID {
+	// Automatic identity sync also writes the running client version. Reuse the
+	// mode returned by GET so a version refresh cannot change user consent.
+	needsServerBackfill := serverFieldPresent && serverID != "" && responseServerID != serverID
+	if syncClientVersion || needsServerBackfill {
 		body, marshalErr := json.Marshal(rankingConsentUpdate{
 			Mode:          state.Mode,
 			PlayerName:    playerName,
 			ServerID:      serverID,
 			ClientVersion: config.ClientVersion,
 		})
-		if marshalErr == nil {
-			if saved, putErr := requestRankingConsent(http.MethodPut, playerID, playerName, body); putErr == nil {
-				savedServerID, savedServerFieldPresent := rankingResponseServerID(saved)
-				if savedServerFieldPresent {
-					state.ServerID = savedServerID
-				} else {
-					state.ServerID = serverID
-				}
-				state.UpdatedAt = saved.UpdatedAt
-			} else {
-				logger.Printf("[Ranking] 补全服务器失败: %v", putErr)
-			}
+		if marshalErr != nil {
+			setServerInteraction("ranking", "error", "同步失败")
+			return state, fmt.Errorf("encode ranking participation sync: %w", marshalErr)
 		}
+		saved, putErr := requestRankingConsent(http.MethodPut, playerID, playerName, body)
+		if putErr != nil {
+			setServerInteraction("ranking", "error", "同步失败")
+			return state, fmt.Errorf("update ranking participation metadata: %w", putErr)
+		}
+		savedServerID, savedServerFieldPresent := rankingResponseServerID(saved)
+		if savedServerFieldPresent {
+			state.ServerID = savedServerID
+		} else if serverID != "" {
+			state.ServerID = serverID
+		}
+		state.UpdatedAt = saved.UpdatedAt
 	}
 	setServerInteraction("ranking", "success", "同步成功")
 	return state, nil
@@ -175,6 +192,9 @@ func (a *App) GetRankingParticipation() (RankingParticipation, error) {
 
 // SetRankingParticipation 将当前角色的排行参与选择保存到服务器。
 func (a *App) SetRankingParticipation(mode string) (RankingParticipation, error) {
+	a.rankingConsentRequestMu.Lock()
+	defer a.rankingConsentRequestMu.Unlock()
+
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	playerID, playerName := a.currentPlayerIdentity()
 	serverID := a.currentServerID()

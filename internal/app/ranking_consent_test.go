@@ -116,6 +116,52 @@ func TestGetRankingParticipationLegacyServerDoesNotBackfill(t *testing.T) {
 	}
 }
 
+func TestSyncRankingParticipationUpdatesClientVersion(t *testing.T) {
+	origEndpoint, origSecret, origVersion := config.RankingConsentEndpoint, config.UploadSecret, config.ClientVersion
+	defer func() {
+		config.RankingConsentEndpoint, config.UploadSecret, config.ClientVersion = origEndpoint, origSecret, origVersion
+	}()
+	config.UploadSecret = "test-secret"
+	config.ClientVersion = "2.7.3"
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"mode":"anonymous","serverId":"yate"}`))
+			return
+		}
+		if r.Method != http.MethodPut {
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+		var update rankingConsentUpdate
+		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+			t.Fatal(err)
+		}
+		if update.Mode != RankingModeAnonymous || update.PlayerName != "Alice" || update.ServerID != "yate" || update.ClientVersion != "2.7.3" {
+			t.Errorf("unexpected version sync: %+v", update)
+		}
+		_, _ = w.Write([]byte(`{"mode":"anonymous","serverId":"yate"}`))
+	}))
+	defer server.Close()
+	config.RankingConsentEndpoint = server.URL
+
+	a := NewApp()
+	a.selfId = "12345"
+	a.selfName = "Alice"
+	a.channelName = "[亚特 频道1]"
+	state, err := a.syncRankingParticipation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Mode != RankingModeAnonymous || state.ServerID != "yate" {
+		t.Fatalf("unexpected state: %+v", state)
+	}
+	if requests != 2 {
+		t.Fatalf("expected GET plus client version PUT, got %d requests", requests)
+	}
+}
+
 func TestSetRankingParticipation(t *testing.T) {
 	origEndpoint, origSecret := config.RankingConsentEndpoint, config.UploadSecret
 	defer func() {

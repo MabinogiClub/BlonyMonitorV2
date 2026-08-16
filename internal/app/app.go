@@ -109,6 +109,7 @@ type App struct {
 	lastMapChangeAt             int64
 	selfId                      string
 	selfName                    string
+	rankingConsentRequestMu     sync.Mutex
 	rankingConsentSyncKey       string
 	buffTimerMgr                *BuffTimerManager
 	farmMgr                     *FarmManager
@@ -363,11 +364,16 @@ func (a *App) scheduleRankingConsentSync() {
 	}
 	a.rankingConsentSyncKey = key
 	a.mu.Unlock()
-	go func() {
-		if _, err := a.GetRankingParticipation(); err != nil {
+	go func(syncKey string) {
+		if _, err := a.syncRankingParticipation(); err != nil {
 			logger.Printf("[Ranking] 角色识别后同步失败: %v", err)
+			a.mu.Lock()
+			if a.rankingConsentSyncKey == syncKey {
+				a.rankingConsentSyncKey = ""
+			}
+			a.mu.Unlock()
 		}
-	}()
+	}(key)
 }
 
 // GetActiveBuffTimers 获取当前活跃的buff定时器
