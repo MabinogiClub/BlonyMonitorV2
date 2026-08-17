@@ -33,3 +33,4 @@ build/BlonyMonitorV2-NpcapFix-Test-*.zip
 build/diagnostic-package-*/
 build/README-DIAGNOSTIC.txt
 build/README-NPCAP-FIX-TEST.txt
+/.tmp-go-cache/
