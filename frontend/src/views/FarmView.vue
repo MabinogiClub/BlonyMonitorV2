@@ -12,6 +12,10 @@ import {
   mdiWateringCanOutline,
 } from '@mdi/js'
 import * as api from '../composables/useApi'
+import FarmRecommendationView from './FarmRecommendationView.vue'
+import FarmStorageView from './FarmStorageView.vue'
+
+const activeFarmTab = ref<'reminder' | 'recommendation' | 'storage'>('reminder')
 
 const emptyState = (): FarmState => ({
   enabled: false,
@@ -159,6 +163,40 @@ onUnmounted(() => {
 
 <template>
   <div class="farm-view">
+    <div class="farm-tabs" role="tablist" aria-label="塔汀农场功能">
+      <button
+        type="button"
+        role="tab"
+        class="farm-tab"
+        :class="{ active: activeFarmTab === 'reminder' }"
+        :aria-selected="activeFarmTab === 'reminder'"
+        @click="activeFarmTab = 'reminder'"
+      >
+        农场提醒
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="farm-tab"
+        :class="{ active: activeFarmTab === 'recommendation' }"
+        :aria-selected="activeFarmTab === 'recommendation'"
+        @click="activeFarmTab = 'recommendation'"
+      >
+        推荐订单
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="farm-tab"
+        :class="{ active: activeFarmTab === 'storage' }"
+        :aria-selected="activeFarmTab === 'storage'"
+        @click="activeFarmTab = 'storage'"
+      >
+        储存库
+      </button>
+    </div>
+
+    <div v-if="activeFarmTab === 'reminder'" class="reminder-view">
     <div class="feature-row">
       <div class="feature-name">
         <svg-icon type="mdi" :path="mdiSprout" :size="18" />
@@ -273,7 +311,11 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="!enabled" class="disabled-state">功能已关闭</div>
+      <div v-if="!enabled" class="disabled-state">功能已关闭</div>
+    </div>
+
+    <FarmRecommendationView v-else-if="activeFarmTab === 'recommendation'" />
+    <FarmStorageView v-else />
   </div>
 </template>
 
@@ -286,6 +328,56 @@ onUnmounted(() => {
   min-height: 100%;
   padding: 0 4px 4px;
   color: #e8e8e8;
+}
+
+.farm-tabs {
+  height: 34px;
+  min-height: 34px;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.farm-tab {
+  min-width: 76px;
+  padding: 0 10px;
+  position: relative;
+  border: 0;
+  color: #888;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.farm-tab:hover {
+  color: #ccc;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.farm-tab.active {
+  color: #fff;
+  font-weight: 500;
+}
+
+.farm-tab.active::after {
+  content: '';
+  position: absolute;
+  right: 10px;
+  bottom: 0;
+  left: 10px;
+  height: 2px;
+  background: #66bb6a;
+}
+
+.reminder-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .feature-row {

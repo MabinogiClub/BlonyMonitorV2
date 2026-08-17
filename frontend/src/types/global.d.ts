@@ -102,6 +102,10 @@ interface GoApp {
   SetFarmMonitorEnabled(enabled: boolean): Promise<FarmState>
   SetFarmReadyNotificationEnabled(enabled: boolean): Promise<FarmState>
   SetFarmSpecialNotificationEnabled(enabled: boolean): Promise<FarmState>
+  GetFarmRecommendationState(): Promise<FarmRecommendationState>
+  SetFarmRecommendationGoal(goal: string): Promise<FarmRecommendationState>
+  SetFarmRecommendationMaterialQualities(normal: boolean, advanced: boolean, highest: boolean): Promise<FarmRecommendationState>
+  SetFarmRecommendationCaptureEnabled(enabled: boolean): Promise<FarmRecommendationState>
   GetNpcapStatus(): Promise<NpcapStatus>
   OpenNpcapDownloadPage(): Promise<void>
   RecheckNpcap(): Promise<NpcapStatus>
@@ -537,6 +541,7 @@ interface FarmPlotState {
   index: number
   kind: string
   label: string
+  unlocked: boolean
   entityId?: string
   planted: boolean
   itemId?: number
@@ -567,6 +572,77 @@ interface FarmState {
   synced: boolean
   updatedAt: number
   plots: FarmPlotState[]
+}
+
+interface FarmRecommendationAmount {
+  itemId: number
+  name: string
+  count: number
+  plotKind?: 'field' | 'redPear' | 'rubber' | 'spider' | 'quartz'
+  factory?: 'abundant' | 'gentle' | 'delicate' | 'shining'
+}
+
+interface FarmStorageItem {
+  itemId: number
+  name: string
+  count: number
+  quality: 'normal' | 'advanced' | 'highest' | 'none'
+  category: 'crop' | 'product' | 'upgrade'
+  icon: string
+}
+
+interface FarmOrderRecommendation {
+  rank: number
+  dbKey: number
+  name: string
+  remainingDeliveries: number
+  maximumDeliveries: number
+  coinReward: number
+  coinRewardMin: number
+  coinRewardMax: number
+  keyReward: number
+  keyRewardMin: number
+  keyRewardMax: number
+  materialRewards?: Record<string, number>
+  materialRewardMin: number
+  materialRewardMax: number
+  refreshRecommended: boolean
+  materialSufficient: boolean
+  requiresCrafting: boolean
+  requiresPlanting: boolean
+  deliveryStatus?: 'delivering' | 'completed'
+  deliveryRemainingSeconds?: number
+  estimatedSeconds: number
+  deliverySeconds: number
+  targetPerHour: number
+  eligible: boolean
+  warnings?: string[]
+  missingRecipes?: string[]
+  suggestedCrops?: FarmRecommendationAmount[]
+  suggestedProductions?: FarmRecommendationAmount[]
+}
+
+interface FarmRecommendationState {
+  goal: 'keys' | 'coins'
+  useNormalMaterials: boolean
+  useAdvancedMaterials: boolean
+  useHighestMaterials: boolean
+  dataReady: boolean
+  ordersSynced: boolean
+  inventorySynced: boolean
+  recipesSynced: boolean
+  syncedAt?: number
+  storageLevel: number
+  storageUsed: number
+  storageCapacity: number
+  storageItems: FarmStorageItem[]
+  captureEnabled: boolean
+  captureFile?: string
+  statusMessage: string
+  plantingSuggestions: FarmRecommendationAmount[]
+  plantingProductions: FarmRecommendationAmount[]
+  plantingReferenceCount: number
+  recommendations: FarmOrderRecommendation[]
 }
 
 interface BossHPRecord {

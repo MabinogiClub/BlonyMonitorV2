@@ -104,6 +104,7 @@ type FarmPlotState struct {
 	Index            int     `json:"index"`
 	Kind             string  `json:"kind"`
 	Label            string  `json:"label"`
+	Unlocked         bool    `json:"unlocked"`
 	EntityID         string  `json:"entityId,omitempty"`
 	Planted          bool    `json:"planted"`
 	ItemID           uint32  `json:"itemId,omitempty"`
@@ -897,8 +898,10 @@ func (m *FarmManager) plotFromRecordLocked(record *farmCropRecord, index int, sl
 func (m *FarmManager) buildPlotsLocked(now time.Time) []FarmPlotState {
 	plots := make([]FarmPlotState, len(farmSlotDefinitions))
 	slotIndexByServerID := make(map[int]int, len(farmSlotDefinitions))
+	unlockStateKnown := len(m.snapshotSlotsPresent) > 0
 	for index, definition := range farmSlotDefinitions {
-		plots[index] = FarmPlotState{Index: index, Kind: definition.Kind, Label: definition.Label, Quality: "empty"}
+		unlocked := !unlockStateKnown || m.snapshotSlotsPresent[definition.ServerSlotID]
+		plots[index] = FarmPlotState{Index: index, Kind: definition.Kind, Label: definition.Label, Unlocked: unlocked, Quality: "empty"}
 		slotIndexByServerID[definition.ServerSlotID] = index
 	}
 
@@ -918,13 +921,15 @@ func (m *FarmManager) buildPlotsLocked(now time.Time) []FarmPlotState {
 
 	occupied := make(map[int]bool, len(positioned))
 	for index, record := range positioned {
-		plots[index] = m.plotFromRecordLocked(record, index, farmSlotDefinitions[index], now)
+		plot := m.plotFromRecordLocked(record, index, farmSlotDefinitions[index], now)
+		plot.Unlocked = plots[index].Unlocked
+		plots[index] = plot
 		occupied[index] = true
 	}
 
 	availableByKind := make(map[string][]int)
 	for index, definition := range farmSlotDefinitions {
-		if !occupied[index] {
+		if plots[index].Unlocked && !occupied[index] {
 			availableByKind[definition.Kind] = append(availableByKind[definition.Kind], index)
 		}
 	}
@@ -948,7 +953,9 @@ func (m *FarmManager) buildPlotsLocked(now time.Time) []FarmPlotState {
 		}
 		index := available[position]
 		usedByKind[definition.Kind]++
-		plots[index] = m.plotFromRecordLocked(record, index, farmSlotDefinitions[index], now)
+		plot := m.plotFromRecordLocked(record, index, farmSlotDefinitions[index], now)
+		plot.Unlocked = true
+		plots[index] = plot
 	}
 	return plots
 }
@@ -1058,15 +1065,25 @@ func (m *FarmManager) emitState() {
 }
 
 func playFarmSound(filename string, volume int) {
+	go playFarmSoundNow(filename, volume)
+}
+
+func playFarmSoundNow(filename string, volume int) time.Duration {
 	soundDir := resolveSoundDir()
 	if soundDir == "" {
 		logger.Printf("[Farm] 音效目录不存在: %s", filename)
-		return
+		return 0
 	}
 	audioFile := filepath.Join(soundDir, filename)
 	if _, err := os.Stat(audioFile); err != nil {
 		logger.Printf("[Farm] 音效文件不存在: %s", audioFile)
-		return
+		return 0
 	}
-	go playWavFile(audioFile, volume)
+	_, duration, err := prepareWavPlayback(audioFile, volume)
+	if err != nil {
+		logger.Printf("[Farm] 读取音效失败: %s, error: %v", audioFile, err)
+		return 0
+	}
+	playWavFile(audioFile, volume)
+	return duration
 }

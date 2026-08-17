@@ -113,6 +113,8 @@ type App struct {
 	rankingConsentSyncKey       string
 	buffTimerMgr                *BuffTimerManager
 	farmMgr                     *FarmManager
+	farmSoundPlayer             *farmSoundPlayer
+	farmRecommendationMgr       *farmRecommendationManager
 	statusIntervals             []*statusInterval
 	activeStatusIntervals       map[statusIntervalKey]*statusInterval
 	musicPerformances           map[uint64]*musicPerformance
@@ -169,20 +171,22 @@ func (a *App) Startup(ctx context.Context) {
 	a.attackerTimerMgr = NewAttackerTimerManager(a)
 	a.targetTimerMgr = NewTargetTimerManager(a)
 	a.buffTimerMgr = NewBuffTimerManagerWithVolume(a.ctx, "", a.GetSoundVolume)
+	a.farmSoundPlayer = newFarmSoundPlayer(a.ctx, a.GetSoundVolume)
 	a.farmMgr = NewFarmManager(
 		a.ctx,
 		func(state FarmState) {
 			runtime.EventsEmit(a.ctx, "farm-state", state)
 		},
 		func(plot FarmPlotState) {
-			playFarmSound("农作物成熟.wav", a.GetSoundVolume())
+			a.farmSoundPlayer.NotifyReady()
 			runtime.EventsEmit(a.ctx, "farm-ready", plot)
 		},
 		func(plot FarmPlotState) {
-			playFarmSound("这是一颗高级种子.wav", a.GetSoundVolume())
+			a.farmSoundPlayer.NotifySpecial()
 			runtime.EventsEmit(a.ctx, "farm-special", plot)
 		},
 	)
+	a.farmRecommendationMgr = newFarmRecommendationManager()
 
 	db.InitDB()
 
@@ -198,6 +202,9 @@ func (a *App) Startup(ctx context.Context) {
 func (a *App) Shutdown(ctx context.Context) {
 	a.shutdownSaveData()
 	a.stopAnalysisLog()
+	if a.farmRecommendationMgr != nil {
+		a.farmRecommendationMgr.close()
+	}
 	if a.cancel != nil {
 		a.cancel()
 	}
@@ -455,7 +462,7 @@ func (a *App) GetFarmState() FarmState {
 	if a.farmMgr == nil {
 		plots := make([]FarmPlotState, len(farmSlotDefinitions))
 		for index, definition := range farmSlotDefinitions {
-			plots[index] = FarmPlotState{Index: index, Kind: definition.Kind, Label: definition.Label, Quality: "empty"}
+			plots[index] = FarmPlotState{Index: index, Kind: definition.Kind, Label: definition.Label, Unlocked: true, Quality: "empty"}
 		}
 		return FarmState{FertilityMax: farmResourceMaximum, EnergyMax: farmResourceMaximum, Plots: plots}
 	}
@@ -487,4 +494,45 @@ func (a *App) SetFarmSpecialNotificationEnabled(enabled bool) FarmState {
 	}
 	a.farmMgr.SetSpecialNotificationEnabled(enabled)
 	return a.farmMgr.State(time.Now())
+}
+
+// GetFarmRecommendationState returns locally synchronized delivery recommendations.
+func (a *App) GetFarmRecommendationState() FarmRecommendationState {
+	if a.farmRecommendationMgr == nil {
+		return FarmRecommendationState{Goal: farmGoalKeys, StatusMessage: "推荐服务尚未初始化", Recommendations: []FarmOrderRecommendation{}}
+	}
+	return a.farmRecommendationMgr.state(a.GetFarmState())
+}
+
+// SetFarmRecommendationGoal switches between key and coin efficiency.
+func (a *App) SetFarmRecommendationGoal(goal string) FarmRecommendationState {
+	if a.farmRecommendationMgr == nil {
+		return a.GetFarmRecommendationState()
+	}
+	if err := a.farmRecommendationMgr.setGoal(goal); err != nil {
+		logger.Printf("[FarmRecommendation] 保存目标失败: %v", err)
+	}
+	return a.GetFarmRecommendationState()
+}
+
+// SetFarmRecommendationMaterialQualities controls which crop quality tiers may be consumed.
+func (a *App) SetFarmRecommendationMaterialQualities(normal, advanced, highest bool) FarmRecommendationState {
+	if a.farmRecommendationMgr == nil {
+		return a.GetFarmRecommendationState()
+	}
+	if err := a.farmRecommendationMgr.setMaterialQualities(normal, advanced, highest); err != nil {
+		logger.Printf("[FarmRecommendation] 保存材料品质偏好失败: %v", err)
+	}
+	return a.GetFarmRecommendationState()
+}
+
+// SetFarmRecommendationCaptureEnabled records a short local-only packet sample.
+func (a *App) SetFarmRecommendationCaptureEnabled(enabled bool) FarmRecommendationState {
+	if a.farmRecommendationMgr == nil {
+		return a.GetFarmRecommendationState()
+	}
+	if err := a.farmRecommendationMgr.setCaptureEnabled(enabled); err != nil {
+		logger.Printf("[FarmRecommendation] 切换本地采集失败: %v", err)
+	}
+	return a.GetFarmRecommendationState()
 }

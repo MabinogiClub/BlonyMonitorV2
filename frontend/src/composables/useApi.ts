@@ -13,6 +13,9 @@ const eventUnsubscribers = new Map<string, Map<(...args: any[]) => void, () => v
 let previewFarmEnabled = false
 let previewFarmReadyNotificationEnabled = true
 let previewFarmSpecialNotificationEnabled = true
+let previewFarmRecommendationGoal: 'keys' | 'coins' = 'keys'
+let previewFarmRecommendationCaptureEnabled = false
+let previewFarmMaterialQualities = { normal: true, advanced: false, highest: false }
 
 function previewFarmState(): FarmState {
   const slots: Array<Pick<FarmPlotState, 'kind' | 'label'>> = [
@@ -51,6 +54,7 @@ function previewFarmState(): FarmState {
     plots: slots.map((slot, index) => ({
       index,
       ...slot,
+      unlocked: true,
       planted: false,
       support: 0,
       quality: 'empty',
@@ -59,6 +63,215 @@ function previewFarmState(): FarmState {
       progress: 0,
       ready: false,
       ...samples[index],
+    })),
+  }
+}
+
+function previewFarmRecommendationState(): FarmRecommendationState {
+  const samples: FarmOrderRecommendation[] = [
+    {
+      rank: 1,
+      dbKey: 26,
+      name: '卡普港口服饰设计师的订单',
+      remainingDeliveries: 4,
+      maximumDeliveries: 5,
+      coinReward: 685,
+      coinRewardMin: 200,
+      coinRewardMax: 750,
+      keyReward: 2,
+      keyRewardMin: 1,
+      keyRewardMax: 2,
+      materialRewards: { 铁板: 1 },
+      materialRewardMin: 1,
+      materialRewardMax: 2,
+      refreshRecommended: false,
+      materialSufficient: false,
+      requiresCrafting: true,
+      requiresPlanting: true,
+      estimatedSeconds: 3030,
+      deliverySeconds: 300,
+      targetPerHour: previewFarmRecommendationGoal === 'keys' ? 2.376 : 813.861,
+      eligible: true,
+      suggestedCrops: [
+        { itemId: 5040996, name: '黑莓', count: 2 },
+        { itemId: 5040998, name: '茉莉', count: 4 },
+      ],
+      suggestedProductions: [
+        { itemId: 5041003, name: '黑莓汁', count: 1 },
+        { itemId: 5041007, name: '茉莉香水', count: 1 },
+      ],
+    },
+    {
+      rank: 2,
+      dbKey: 23,
+      name: '敦巴伦居民的订单',
+      remainingDeliveries: 2,
+      maximumDeliveries: 5,
+      coinReward: 532,
+      coinRewardMin: 200,
+      coinRewardMax: 750,
+      keyReward: 2,
+      keyRewardMin: 1,
+      keyRewardMax: 2,
+      materialRewards: { 涂料: 1 },
+      materialRewardMin: 1,
+      materialRewardMax: 2,
+      refreshRecommended: false,
+      materialSufficient: false,
+      requiresCrafting: true,
+      requiresPlanting: true,
+      estimatedSeconds: 3360,
+      deliverySeconds: 300,
+      targetPerHour: previewFarmRecommendationGoal === 'keys' ? 2.143 : 570,
+      eligible: true,
+      suggestedCrops: [
+        { itemId: 5040999, name: '红梨', count: 2 },
+        { itemId: 5041002, name: '石英', count: 1 },
+      ],
+      suggestedProductions: [{ itemId: 5041022, name: '黎明之弓', count: 1 }],
+    },
+    {
+      rank: 3,
+      dbKey: 29,
+      name: '塔拉“大佬”的订单',
+      remainingDeliveries: 5,
+      maximumDeliveries: 5,
+      coinReward: 910,
+      coinRewardMin: 300,
+      coinRewardMax: 1000,
+      keyReward: 3,
+      keyRewardMin: 1,
+      keyRewardMax: 3,
+      materialRewardMin: 1,
+      materialRewardMax: 3,
+      refreshRecommended: false,
+      materialSufficient: true,
+      requiresCrafting: false,
+      requiresPlanting: false,
+      deliveryStatus: 'delivering',
+      deliveryRemainingSeconds: 248,
+      estimatedSeconds: 248,
+      deliverySeconds: 600,
+      targetPerHour: 0,
+      eligible: false,
+    },
+  ]
+  return {
+    goal: previewFarmRecommendationGoal,
+    useNormalMaterials: previewFarmMaterialQualities.normal,
+    useAdvancedMaterials: previewFarmMaterialQualities.advanced,
+    useHighestMaterials: previewFarmMaterialQualities.highest,
+    dataReady: true,
+    ordersSynced: true,
+    inventorySynced: true,
+    recipesSynced: true,
+    syncedAt: Date.now(),
+    storageLevel: 5,
+    storageUsed: 369,
+    storageCapacity: 13000,
+    storageItems: [
+      { itemId: 5040996, name: '黑莓', count: 18, quality: 'normal', category: 'crop', icon: 'item_seasonalfarming_06_s' },
+      { itemId: 5041029, name: '高级黑莓', count: 1, quality: 'advanced', category: 'crop', icon: 'item_seasonalfarming_06_h' },
+      { itemId: 5041036, name: '最高级黑莓', count: 9, quality: 'highest', category: 'crop', icon: 'item_seasonalfarming_06_p' },
+      { itemId: 5040997, name: '秋葵', count: 40, quality: 'normal', category: 'crop', icon: 'item_seasonalfarming_05_s' },
+      { itemId: 5040998, name: '茉莉', count: 15, quality: 'normal', category: 'crop', icon: 'item_seasonalfarming_07_s' },
+      { itemId: 5041031, name: '高级茉莉', count: 81, quality: 'advanced', category: 'crop', icon: 'item_seasonalfarming_07_h' },
+      { itemId: 5040999, name: '红梨', count: 18, quality: 'normal', category: 'crop', icon: 'item_seasonalfarming_08_s' },
+      { itemId: 5041000, name: '橡胶', count: 46, quality: 'normal', category: 'crop', icon: 'item_seasonalfarming_09_s' },
+      { itemId: 5041001, name: '魔法蜘蛛丝', count: 28, quality: 'normal', category: 'crop', icon: 'item_seasonalfarming_04_s' },
+      { itemId: 5041002, name: '石英', count: 44, quality: 'normal', category: 'crop', icon: 'item_seasonalfarming_10_s' },
+      { itemId: 5041003, name: '黑莓汁', count: 3, quality: 'none', category: 'product', icon: 'item_seasonalfarming_15' },
+      { itemId: 5041006, name: '星星色拉', count: 2, quality: 'none', category: 'product', icon: 'item_seasonalfarming_18' },
+      { itemId: 5041013, name: '红月耳环', count: 1, quality: 'none', category: 'product', icon: 'item_seasonalfarming_25' },
+      { itemId: 5041022, name: '黎明之弓', count: 2, quality: 'none', category: 'product', icon: 'item_seasonalfarming_34' },
+      { itemId: 5041044, name: '储存库升级用砖块', count: 6, quality: 'none', category: 'upgrade', icon: 'item_brick' },
+      { itemId: 5041045, name: '储存库升级用铁板', count: 4, quality: 'none', category: 'upgrade', icon: 'item_metalplate' },
+      { itemId: 5041046, name: '储存库升级用涂料', count: 2, quality: 'none', category: 'upgrade', icon: 'item_paint' },
+    ],
+    captureEnabled: previewFarmRecommendationCaptureEnabled,
+    captureFile: 'blonymonitor-farm-recommendation-capture.jsonl',
+    statusMessage: '已根据当前订单和储存库生成推荐',
+    plantingSuggestions: [
+      { itemId: 5040996, name: '黑莓', count: 8, plotKind: 'field' },
+      { itemId: 5040998, name: '茉莉', count: 6, plotKind: 'field' },
+      { itemId: 5041002, name: '石英', count: 2, plotKind: 'quartz' },
+    ],
+    plantingProductions: [
+      { itemId: 5041003, name: '黑莓汁', count: 2 },
+      { itemId: 5041013, name: '红月耳环', count: 1 },
+    ],
+    plantingReferenceCount: 3,
+    recommendations: samples.sort((a, b) => {
+      if (a.eligible !== b.eligible) return a.eligible ? -1 : 1
+      return b.targetPerHour - a.targetPerHour
+    }).map((item, index) => ({ ...item, rank: index + 1 })),
+  }
+}
+
+type RawFarmStorageItem = Omit<FarmStorageItem, 'quality' | 'category'> & {
+  quality: string
+  category: string
+}
+
+type RawFarmRecommendationAmount = Omit<FarmRecommendationAmount, 'plotKind' | 'factory'> & {
+  plotKind?: string
+  factory?: string
+}
+
+type RawFarmOrderRecommendation = Omit<FarmOrderRecommendation, 'deliveryStatus' | 'suggestedCrops' | 'suggestedProductions'> & {
+  deliveryStatus?: string
+  suggestedCrops?: RawFarmRecommendationAmount[]
+  suggestedProductions?: RawFarmRecommendationAmount[]
+}
+
+type RawFarmRecommendationState = Omit<FarmRecommendationState, 'goal' | 'storageItems' | 'plantingSuggestions' | 'plantingProductions' | 'plantingReferenceCount' | 'recommendations'> & {
+  goal: string
+  storageItems?: RawFarmStorageItem[]
+  plantingSuggestions?: RawFarmRecommendationAmount[]
+  plantingProductions?: RawFarmRecommendationAmount[]
+  plantingReferenceCount?: number
+  recommendations?: RawFarmOrderRecommendation[]
+}
+
+function normalizeFarmRecommendationAmount(item: RawFarmRecommendationAmount): FarmRecommendationAmount {
+  const plotKind = item.plotKind === 'field'
+    || item.plotKind === 'redPear'
+    || item.plotKind === 'rubber'
+    || item.plotKind === 'spider'
+    || item.plotKind === 'quartz'
+    ? item.plotKind
+    : undefined
+  const factory = item.factory === 'abundant'
+    || item.factory === 'gentle'
+    || item.factory === 'delicate'
+    || item.factory === 'shining'
+    ? item.factory
+    : undefined
+  return { ...item, plotKind, factory }
+}
+
+function normalizeFarmRecommendationState(state: RawFarmRecommendationState): FarmRecommendationState {
+  return {
+    ...state,
+    goal: state.goal === 'coins' ? 'coins' : 'keys',
+    storageLevel: state.storageLevel || 0,
+    storageUsed: state.storageUsed || 0,
+    storageCapacity: state.storageCapacity || 0,
+    storageItems: (state.storageItems || []).map(item => ({
+      ...item,
+      quality: item.quality === 'advanced' || item.quality === 'highest' || item.quality === 'normal' ? item.quality : 'none',
+      category: item.category === 'product' || item.category === 'upgrade' ? item.category : 'crop',
+    })),
+    plantingSuggestions: (state.plantingSuggestions || []).map(normalizeFarmRecommendationAmount),
+    plantingProductions: (state.plantingProductions || []).map(normalizeFarmRecommendationAmount),
+    plantingReferenceCount: state.plantingReferenceCount || 0,
+    recommendations: (state.recommendations || []).map(order => ({
+      ...order,
+      deliveryStatus: order.deliveryStatus === 'delivering' || order.deliveryStatus === 'completed'
+        ? order.deliveryStatus
+        : undefined,
+      suggestedCrops: order.suggestedCrops?.map(normalizeFarmRecommendationAmount),
+      suggestedProductions: order.suggestedProductions?.map(normalizeFarmRecommendationAmount),
     })),
   }
 }
@@ -774,4 +987,33 @@ export async function setFarmSpecialNotificationEnabled(enabled: boolean): Promi
     return previewFarmState()
   }
   return window.go.app.App.SetFarmSpecialNotificationEnabled(enabled)
+}
+
+export async function getFarmRecommendationState(): Promise<FarmRecommendationState> {
+  if (!isWailsReady()) return previewFarmRecommendationState()
+  return normalizeFarmRecommendationState(await window.go.app.App.GetFarmRecommendationState())
+}
+
+export async function setFarmRecommendationGoal(goal: 'keys' | 'coins'): Promise<FarmRecommendationState> {
+  if (!isWailsReady()) {
+    previewFarmRecommendationGoal = goal
+    return previewFarmRecommendationState()
+  }
+  return normalizeFarmRecommendationState(await window.go.app.App.SetFarmRecommendationGoal(goal))
+}
+
+export async function setFarmRecommendationMaterialQualities(normal: boolean, advanced: boolean, highest: boolean): Promise<FarmRecommendationState> {
+  if (!isWailsReady()) {
+    previewFarmMaterialQualities = { normal, advanced, highest }
+    return previewFarmRecommendationState()
+  }
+  return normalizeFarmRecommendationState(await window.go.app.App.SetFarmRecommendationMaterialQualities(normal, advanced, highest))
+}
+
+export async function setFarmRecommendationCaptureEnabled(enabled: boolean): Promise<FarmRecommendationState> {
+  if (!isWailsReady()) {
+    previewFarmRecommendationCaptureEnabled = enabled
+    return previewFarmRecommendationState()
+  }
+  return normalizeFarmRecommendationState(await window.go.app.App.SetFarmRecommendationCaptureEnabled(enabled))
 }

@@ -363,6 +363,9 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 	if pkt == nil || pkt.Msg == nil {
 		return
 	}
+	if a.farmRecommendationMgr != nil {
+		a.farmRecommendationMgr.recordPacket(pkt)
+	}
 	if a.analysisLoggingEnabled() {
 		packetStarted := time.Now()
 		defer func() { a.recordPacketProcessing(pkt.Op, time.Since(packetStarted)) }()

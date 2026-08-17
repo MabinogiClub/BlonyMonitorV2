@@ -34,3 +34,12 @@ func TestRestorePersistentConditionsIgnoresPetCharacterData(t *testing.T) {
 		t.Fatalf("pet conditions were restored: event count = %d", len(a.eventLogs))
 	}
 }
+
+func TestIsPCAcceptsAllPlayableRaces(t *testing.T) {
+	playableRaces := []int{8001, 8002, 9001, 9002, 10001, 10002}
+	for _, raceID := range playableRaces {
+		if !isPC(raceID) {
+			t.Errorf("playable race %d was rejected", raceID)
+		}
+	}
+}
