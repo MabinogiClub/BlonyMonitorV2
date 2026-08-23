@@ -439,7 +439,13 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 			damage := v.Hit.Damage
 			isCritical := v.Hit.Options&0x1 != 0
 
-			a.addDamage(attackerId, targetId, attackSkillId, damage, isCritical)
+			a.addDamage(attackerId, targetId, attackSkillId, damage, isCritical, DamageEventMeta{
+				Timestamp:          packetCentiseconds(pkt),
+				CombatActionID:     pack.CombatActionId,
+				PrevCombatActionID: pack.PrevCombatActionId,
+				SubSkillID:         v.SubSkillId,
+				HitOptions:         uint32(v.Hit.Options),
+			})
 		}
 
 	case opcodeEffectDamage:
@@ -463,7 +469,9 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 		attackSkillId := pkt.Msg[5].Data().(uint16)
 		targetId := pkt.Id
 
-		a.addDamage(attackerId, targetId, attackSkillId, float32(damage), false)
+		a.addDamage(attackerId, targetId, attackSkillId, float32(damage), false, DamageEventMeta{
+			Timestamp: packetCentiseconds(pkt),
+		})
 
 	case opcodeEffectDelayed:
 		if len(pkt.Msg) < 7 {
@@ -490,7 +498,9 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 		attackSkillId := pkt.Msg[6].Data().(uint16)
 		targetId := pkt.Id
 
-		a.addDamage(attackerId, targetId, attackSkillId, float32(damage), false)
+		a.addDamage(attackerId, targetId, attackSkillId, float32(damage), false, DamageEventMeta{
+			Timestamp: packetCentiseconds(pkt),
+		})
 
 	case opcodeConditionUpdate:
 		cond, err := packet.ParseCharacterConditionPacket(pkt)

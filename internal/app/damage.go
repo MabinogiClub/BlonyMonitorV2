@@ -10,8 +10,15 @@ import (
 )
 
 // addDamage 添加伤害记录
-func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage float32, isCritical bool) {
+func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage float32, isCritical bool, metadata ...DamageEventMeta) {
 	now := nowCentiseconds()
+	eventMeta := DamageEventMeta{}
+	if len(metadata) > 0 {
+		eventMeta = metadata[0]
+		if eventMeta.Timestamp > 0 {
+			now = eventMeta.Timestamp
+		}
+	}
 	sourceAttackerIdStr := strconv.FormatUint(attackerId, 10)
 	targetIdStr := strconv.FormatUint(targetId, 10)
 	damageFloat := float64(damage)
@@ -192,13 +199,17 @@ func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage floa
 		}
 	}
 	takenSkillStat.records = append(takenSkillStat.records, SkillHitRecord{
-		Seq:            record.Seq,
-		Damage:         effectiveDamage,
-		RawDamage:      damageFloat,
-		OverflowDamage: overflowDamage,
-		Adjusted:       adjusted,
-		IsCritical:     isCritical,
-		Timestamp:      now,
+		Seq:                record.Seq,
+		Damage:             effectiveDamage,
+		RawDamage:          damageFloat,
+		OverflowDamage:     overflowDamage,
+		Adjusted:           adjusted,
+		IsCritical:         isCritical,
+		Timestamp:          now,
+		CombatActionID:     eventMeta.CombatActionID,
+		PrevCombatActionID: eventMeta.PrevCombatActionID,
+		SubSkillID:         eventMeta.SubSkillID,
+		HitOptions:         eventMeta.HitOptions,
 	})
 
 	// 标记需要触发目标计时器（锁外执行）

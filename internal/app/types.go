@@ -316,15 +316,29 @@ type cumulativeAttackerAggStats struct {
 
 // takenSkillAggStats 受到伤害技能聚合统计
 type SkillHitRecord struct {
-	Seq            int64   `json:"seq,omitempty"`
-	Damage         float64 `json:"damage"`
-	RawDamage      float64 `json:"rawDamage,omitempty"`
-	OverflowDamage float64 `json:"overflowDamage,omitempty"`
-	Adjusted       bool    `json:"adjusted,omitempty"`
-	LockTriggered  bool    `json:"lockTriggered,omitempty"`
-	LockThreshold  float64 `json:"lockThreshold,omitempty"`
-	IsCritical     bool    `json:"isCritical"`
-	Timestamp      int64   `json:"timestamp"`
+	Seq                int64   `json:"seq,omitempty"`
+	Damage             float64 `json:"damage"`
+	RawDamage          float64 `json:"rawDamage,omitempty"`
+	OverflowDamage     float64 `json:"overflowDamage,omitempty"`
+	Adjusted           bool    `json:"adjusted,omitempty"`
+	LockTriggered      bool    `json:"lockTriggered,omitempty"`
+	LockThreshold      float64 `json:"lockThreshold,omitempty"`
+	IsCritical         bool    `json:"isCritical"`
+	Timestamp          int64   `json:"timestamp"`
+	CombatActionID     uint32  `json:"combatActionId,omitempty"`
+	PrevCombatActionID uint32  `json:"prevCombatActionId,omitempty"`
+	SubSkillID         uint16  `json:"subSkillId,omitempty"`
+	HitOptions         uint32  `json:"hitOptions,omitempty"`
+}
+
+// DamageEventMeta carries packet-derived timing and action identity.
+// It is optional so synthetic damage callers retain the local-clock fallback.
+type DamageEventMeta struct {
+	Timestamp          int64
+	CombatActionID     uint32
+	PrevCombatActionID uint32
+	SubSkillID         uint16
+	HitOptions         uint32
 }
 
 type takenSkillAggStats struct {
