@@ -342,6 +342,24 @@ func (a *App) buildBuffCoverageUnsafe(start, end int64, participants map[string]
 			}
 		}
 	}
+	// 战场的震慑是团队范围效果，但游戏只向当前角色发送状态包。
+	// 本角色存在该状态时，将其覆盖区间共享给本场已确认的队友。
+	if a.selfId != "" {
+		sharedShock := aggregates[a.selfId][battlefieldShockStatusID]
+		if sharedShock != nil {
+			for playerID := range players {
+				if playerID == a.selfId {
+					continue
+				}
+				if aggregates[playerID] == nil {
+					aggregates[playerID] = make(map[uint32]*buffAggregate)
+				}
+				if aggregates[playerID][battlefieldShockStatusID] == nil {
+					aggregates[playerID][battlefieldShockStatusID] = sharedShock
+				}
+			}
+		}
+	}
 
 	battleSeconds := float64(end-start) / float64(timePrecisionScale)
 	result := make([]PlayerBuffCoverage, 0, len(players))

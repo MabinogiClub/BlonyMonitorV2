@@ -123,6 +123,55 @@ func TestBuildBuffCoverageExcludesNonParticipants(t *testing.T) {
 	}
 }
 
+func TestBuildBuffCoverageSharesBattlefieldShockWithTeammates(t *testing.T) {
+	a := NewApp()
+	a.selfId = "1"
+	a.entities["1"] = &EntityInfo{ID: "1", Name: "Self", IsPC: true}
+	a.entities["2"] = &EntityInfo{ID: "2", Name: "Teammate", IsPC: true}
+
+	a.mu.Lock()
+	a.recordStatusConditionUnsafe(1, battlefieldShockStatusID, true, "MAX_DAMAGE_PERCENT:f:35;", map[string]packet.ConditionDetailValue{
+		battlefieldShockStrengthField: {Type: "f", Value: "35"},
+	}, 100)
+	a.recordStatusConditionUnsafe(1, battlefieldShockStatusID, false, "", nil, 500)
+	coverage := a.buildBuffCoverageUnsafe(100, 600, map[string]buffParticipant{
+		"1": {name: "Self", isSelf: true},
+		"2": {name: "Teammate"},
+	})
+	a.mu.Unlock()
+
+	if len(coverage) != 2 {
+		t.Fatalf("unexpected coverage length: %d", len(coverage))
+	}
+	for _, player := range coverage {
+		shock := findBuffCoverage(t, player, battlefieldShockStatusID)
+		if shock.ActiveSeconds != 4 || shock.CoveragePercent != 80 || len(shock.Segments) != 1 {
+			t.Fatalf("unexpected shared shock coverage for %s: %+v", player.PlayerName, shock)
+		}
+		if shock.AverageStrength == nil || *shock.AverageStrength != 35 {
+			t.Fatalf("unexpected shared shock strength for %s: %+v", player.PlayerName, shock.AverageStrength)
+		}
+	}
+}
+
+func TestBuildBuffCoverageDoesNotInventBattlefieldShockWithoutSelfStatus(t *testing.T) {
+	a := NewApp()
+	a.selfId = "1"
+	a.mu.Lock()
+	coverage := a.buildBuffCoverageUnsafe(100, 600, map[string]buffParticipant{
+		"1": {name: "Self", isSelf: true},
+		"2": {name: "Teammate"},
+	})
+	a.mu.Unlock()
+
+	for _, player := range coverage {
+		shock := findBuffCoverage(t, player, battlefieldShockStatusID)
+		if shock.ActiveSeconds != 0 || shock.CoveragePercent != 0 {
+			t.Fatalf("invented shock coverage for %s: %+v", player.PlayerName, shock)
+		}
+	}
+}
+
 func TestFinishEventEndsPlayerStatuses(t *testing.T) {
 	a := NewApp()
 	a.selfId = "1"
