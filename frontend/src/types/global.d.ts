@@ -48,6 +48,7 @@ interface GoApp {
   GetChartDataForTarget(targetId: string): Promise<ChartSeries[]>
   GetEventLogs(limit: number, filter: string): Promise<EventLog[]>
   GetAllPCEntities(): Promise<EntityInfo[]>
+  GetSelfEquipmentState(): Promise<SelfEquipmentState>
   GetAllCreatures(): Promise<CreatureInfo[]>
   Clear(): Promise<void>
   ClearAndSave(): Promise<void>
@@ -396,6 +397,72 @@ interface EntityInfo {
   maxMp?: number
   stamina?: number
   maxStamina?: number
+  equipments?: EquipmentInfo[]
+  lastSeenAt?: number
+}
+
+interface SelfEquipmentSlot {
+  pocketType: number
+  slotLabel: string
+  itemId?: number
+  instanceId?: number
+  name?: string
+  durabilityValue?: number
+  durabilityMax?: number
+  durabilityRaw?: number
+  previousValue?: number
+  durabilityDelta?: number
+  updatedAt?: number
+  durabilityHistory?: Array<{ at: number; value: number; raw: number }>
+}
+
+interface SelfEquipmentState {
+  ready: boolean
+  character?: string
+  capturedAt?: number
+  slots: SelfEquipmentSlot[]
+}
+
+interface EquipmentInfo {
+  pocketType: number
+  itemId: number
+  instanceId?: number
+  name?: string
+  description?: string
+  icon?: string
+  color1?: number
+  color2?: number
+  color3?: number
+  color4?: number
+  color5?: number
+  color6?: number
+  color7?: number
+  amount?: number
+  detailAvailable?: boolean
+  durabilityValue?: number
+  durabilityMax?: number
+  durabilityRaw?: number
+  previousDurability?: number
+  durabilityDelta?: number
+  durabilityHistory?: Array<{ at: number; value: number; raw: number }>
+  detailCapturedAt?: number
+  quality?: number
+  repairCount?: number
+  repairBaseValue?: number
+  maxWear?: number
+  makerName?: string
+  defense?: number
+  protection?: number
+  magicDefense?: number
+  magicProtection?: number
+  attackMin?: number
+  upgradeEntries?: string[]
+  specialEntries?: string[]
+  statEntries?: string[]
+  enchantEntries?: string[]
+  reforgeEntries?: string[]
+  egoEntries?: string[]
+  rawAttributes?: string
 }
 
 /**

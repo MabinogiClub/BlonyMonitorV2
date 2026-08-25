@@ -383,6 +383,19 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 			return
 		}
 		a.restorePersistentConditions(characterData)
+		a.handleSelfInventoryPacket(pkt)
+
+	case opcodeItemDetail:
+		a.handleItemDetailPacket(pkt)
+
+	case opcodeItemInfoUpdate, opcodeItemMoveUpdate:
+		a.handleSelfEquipmentItemUpdatePacket(pkt)
+
+	case opcodeItemPocketMove, opcodeItemPocketSwap:
+		a.handleSelfEquipmentPocketMovePacket(pkt)
+
+	case opcodeItemDurabilityUpdate:
+		a.handleItemDurabilityUpdatePacket(pkt)
 
 	case opcodeEntityAppear:
 		entity, err := packet.ParseEntityAppearPacket(pkt.Msg)

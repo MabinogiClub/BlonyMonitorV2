@@ -52,6 +52,14 @@ type App struct {
 	cancel                      context.CancelFunc
 	mu                          sync.RWMutex
 	entities                    map[string]*EntityInfo
+	equipmentDetails            map[string]map[uint32]EquipmentInfo
+	equipmentHistory            map[string]map[uint32][]DurabilitySample
+	selfEquipmentSlots          map[uint32]SelfEquipmentSlot
+	selfEquipmentByInstance     map[uint64]uint32
+	selfEquipmentItemCache      map[uint64]SelfEquipmentSlot // 含背包物品，供手动拖拽换装还原
+	selfEquipmentRecent         []DurabilitySample
+	selfEquipmentCapturedAt     int64
+	selfEquipmentCharacter      string
 	creatureLib                 map[string]string
 	damages                     []DamageRecord
 	eventLogs                   []EventLog
@@ -151,6 +159,11 @@ func NewApp() *App {
 		analysisLog:             &analysisLogController{},
 		dpsRefreshSettings:      defaultDPSRefreshSettings(),
 		autoDetect:              true,
+		equipmentHistory:        make(map[string]map[uint32][]DurabilitySample),
+		equipmentDetails:        make(map[string]map[uint32]EquipmentInfo),
+		selfEquipmentSlots:      make(map[uint32]SelfEquipmentSlot),
+		selfEquipmentByInstance: make(map[uint64]uint32),
+		selfEquipmentItemCache:  make(map[uint64]SelfEquipmentSlot),
 		opacity:                 100,
 		soundVolume:             defaultSoundVolume,
 	}

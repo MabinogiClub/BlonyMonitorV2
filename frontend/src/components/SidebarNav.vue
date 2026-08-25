@@ -9,6 +9,7 @@ import {
   mdiSproutOutline,
   mdiSwordCross,
   mdiTimelineClockOutline,
+  mdiTshirtCrew,
 } from '@mdi/js'
 import { useAppStore } from '../stores/app'
 
@@ -23,6 +24,7 @@ const navigation = [
   { name: 'entities', title: '角色列表', icon: mdiAccountGroupOutline },
   { name: 'buffTimer', title: 'Buff通知', icon: mdiBellRingOutline },
   { name: 'farm', title: '塔汀农场', icon: mdiSproutOutline },
+  { name: 'equipment', title: '装备耐久', icon: mdiTshirtCrew },
 ]
 
 const activePage = computed(() => dpsTabs.has(appStore.activeTab) ? 'dps' : appStore.activeTab)

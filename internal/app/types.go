@@ -13,9 +13,15 @@ const (
 	opcodeCharacterData     = 0x5209
 	opcodeItemNotice        = 0x5274
 	opcodeEntitiesAppear    = 0x5334
-	opcodeEntityProperty    = 0x7532
-	opcodeEntityRemove      = 0x520d
-	opcodeCombatAction      = 0x7926
+	opcodeEntityProperty           = 0x7532
+	opcodeItemDetail               = 0x5be0
+	opcodeItemInfoUpdate           = 0x5bd4 // 物品信息刷新（含 pocket）
+	opcodeItemMoveUpdate           = 0x59e0 // 物品移动/换装（含 pocket + 耐久）
+	opcodeItemPocketMove           = 0x59de // 手动拖拽：单件 from→to
+	opcodeItemPocketSwap           = 0x59df // 手动拖拽：两件互换/对移
+	opcodeItemDurabilityUpdate     = 0x5bd5
+	opcodeEntityRemove             = 0x520d
+	opcodeCombatAction             = 0x7926
 	opcodeEffectDamage      = 0x9093
 	opcodeEffectDelayed     = 0x9095 // 原文0x9094修改为0x9095兼容星辰与连击
 	opcodeConditionUpdate   = 0xa028
@@ -97,12 +103,62 @@ type EntityInfo struct {
 	OwnerID         uint64   `json:"ownerId"`         // 主人ID（宠物/傀儡）
 	AddedAt         int64    `json:"-"`               // 添加时间戳（内部使用）
 	// 生命值相关
-	HP         float32 `json:"hp"`         // 当前生命值
-	MaxHP      float32 `json:"maxHp"`      // 最大生命值
-	MP         float32 `json:"mp"`         // 当前魔法值
-	MaxMP      float32 `json:"maxMp"`      // 最大魔法值
-	Stamina    float32 `json:"stamina"`    // 当前耐力值
-	MaxStamina float32 `json:"maxStamina"` // 最大耐力值
+	HP         float32         `json:"hp"`         // 当前生命值
+	MaxHP      float32         `json:"maxHp"`      // 最大生命值
+	MP         float32         `json:"mp"`         // 当前魔法值
+	MaxMP      float32         `json:"maxMp"`      // 最大魔法值
+	Stamina    float32         `json:"stamina"`    // 当前耐力值
+	MaxStamina float32         `json:"maxStamina"` // 最大耐力值
+	Equipments []EquipmentInfo `json:"equipments"`
+}
+
+// EquipmentInfo 是角色出现包中可可靠解析的装备公共信息。
+type EquipmentInfo struct {
+	PocketType         uint32             `json:"pocketType"`
+	ItemID             uint32             `json:"itemId"`
+	InstanceID         uint64             `json:"instanceId,omitempty"`
+	Name               string             `json:"name,omitempty"`
+	Description        string             `json:"description,omitempty"`
+	Icon               string             `json:"icon,omitempty"`
+	Color1             uint32             `json:"color1"`
+	Color2             uint32             `json:"color2"`
+	Color3             uint32             `json:"color3"`
+	Color4             uint32             `json:"color4"`
+	Color5             uint32             `json:"color5"`
+	Color6             uint32             `json:"color6"`
+	Color7             uint32             `json:"color7"`
+	Amount             uint16             `json:"amount"`
+	DetailAvailable    bool               `json:"detailAvailable,omitempty"`
+	DurabilityValue    *float32           `json:"durabilityValue,omitempty"`
+	DurabilityMax      *float32           `json:"durabilityMax,omitempty"`
+	DurabilityRaw      *uint32            `json:"durabilityRaw,omitempty"`
+	PreviousDurability *float32           `json:"previousDurability,omitempty"`
+	DurabilityDelta    *float32           `json:"durabilityDelta,omitempty"`
+	DurabilityHistory  []DurabilitySample `json:"durabilityHistory,omitempty"`
+	DetailCapturedAt   int64              `json:"detailCapturedAt,omitempty"`
+	Quality            *int               `json:"quality,omitempty"`
+	RepairCount        *int               `json:"repairCount,omitempty"`
+	RepairBaseValue    *float32           `json:"repairBaseValue,omitempty"`
+	MaxWear            *int               `json:"maxWear,omitempty"`
+	MakerName          string             `json:"makerName,omitempty"`
+	Defense            *int               `json:"defense,omitempty"`
+	Protection         *int               `json:"protection,omitempty"`
+	MagicDefense       *float32           `json:"magicDefense,omitempty"`
+	MagicProtection    *float32           `json:"magicProtection,omitempty"`
+	AttackMin          *int               `json:"attackMin,omitempty"`
+	UpgradeEntries     []string           `json:"upgradeEntries,omitempty"`
+	SpecialEntries     []string           `json:"specialEntries,omitempty"`
+	StatEntries        []string           `json:"statEntries,omitempty"`
+	EnchantEntries     []string           `json:"enchantEntries,omitempty"`
+	ReforgeEntries     []string           `json:"reforgeEntries,omitempty"`
+	EgoEntries         []string           `json:"egoEntries,omitempty"`
+	RawAttributes      string             `json:"rawAttributes,omitempty"`
+}
+
+type DurabilitySample struct {
+	At    int64   `json:"at"`
+	Value float32 `json:"value"`
+	Raw   uint32  `json:"raw"`
 }
 
 // DamageStats 伤害统计 - 按攻击者
@@ -256,12 +312,14 @@ type PCEntityInfo struct {
 	GuildName       string   `json:"guildName"`       // 公会名称
 	OwnerID         uint64   `json:"ownerId"`         // 主人ID（宠物/傀儡）
 	// 生命值相关
-	HP         float32 `json:"hp"`         // 当前生命值
-	MaxHP      float32 `json:"maxHp"`      // 最大生命值
-	MP         float32 `json:"mp"`         // 当前魔法值
-	MaxMP      float32 `json:"maxMp"`      // 最大魔法值
-	Stamina    float32 `json:"stamina"`    // 当前耐力值
-	MaxStamina float32 `json:"maxStamina"` // 最大耐力值
+	HP         float32         `json:"hp"`         // 当前生命值
+	MaxHP      float32         `json:"maxHp"`      // 最大生命值
+	MP         float32         `json:"mp"`         // 当前魔法值
+	MaxMP      float32         `json:"maxMp"`      // 最大魔法值
+	Stamina    float32         `json:"stamina"`    // 当前耐力值
+	MaxStamina float32         `json:"maxStamina"` // 最大耐力值
+	Equipments []EquipmentInfo `json:"equipments"`
+	LastSeenAt int64           `json:"lastSeenAt"`
 }
 
 // SelfInfo 玩家自身信息

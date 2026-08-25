@@ -665,6 +665,16 @@ export async function getEventLogs(limit = 100, filter = 'all'): Promise<EventLo
 }
 
 /**
+ * 获取自己的装备栏耐久观察状态
+ */
+export async function getSelfEquipmentState(): Promise<SelfEquipmentState> {
+  if (!isWailsReady()) {
+    return { ready: false, slots: [] }
+  }
+  return window.go.app.App.GetSelfEquipmentState()
+}
+
+/**
  * 获取所有 PC 实体
  */
 export async function getAllPCEntities(): Promise<EntityInfo[]> {

@@ -9,6 +9,7 @@ import TimelineView from '../views/TimelineView.vue'
 import EntitiesView from '../views/EntitiesView.vue'
 import BuffTimerView from '../views/BuffTimerView.vue'
 import FarmView from '../views/FarmView.vue'
+import EquipmentView from '../views/EquipmentView.vue'
 
 const appStore = useAppStore()
 const dpsTabs = [
@@ -45,6 +46,7 @@ const isDpsPage = computed(() => dpsTabs.some(tab => tab.name === appStore.activ
       <EntitiesView v-else-if="appStore.activeTab === 'entities'" />
       <BuffTimerView v-else-if="appStore.activeTab === 'buffTimer'" />
       <FarmView v-else-if="appStore.activeTab === 'farm'" />
+      <EquipmentView v-else-if="appStore.activeTab === 'equipment'" />
     </div>
   </div>
 </template>

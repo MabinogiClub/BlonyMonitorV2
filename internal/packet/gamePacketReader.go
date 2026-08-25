@@ -118,6 +118,12 @@ var knownGameOpcodes = map[uint32]bool{
 	0x52d1:  true, // 演奏停止
 	0x8ca0:  true, // 副本名称包
 	0x5209:  true, // 背包数据
+	0x5be0:  true, // 装备详情
+	0x5bd5:  true, // 装备耐久更新
+	0x5bd4:  true, // 物品信息刷新
+	0x59e0:  true, // 物品移动/换装
+	0x59de:  true, // 手动拖拽换装
+	0x59df:  true, // 手动拖拽互换
 	0x6988:  true, // 技能使用事件
 }
 
