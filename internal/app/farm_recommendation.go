@@ -153,11 +153,22 @@ type farmRecommendationManager struct {
 	captureStartedAt     time.Time
 	captureBytes         int64
 	captureFile          *os.File
-	pendingStorageItemID uint32
-	pendingStorageItemAt time.Time
+	pendingStorageItems  []farmPendingStorageItem
+	storageItemInstances map[uint64]farmStorageItemInstance
 	seenCraftStarts      map[string]bool
 	lastRanks            map[int]int
 	deliveryRanks        map[int]int
+}
+
+type farmPendingStorageItem struct {
+	ItemID uint32
+	At     time.Time
+}
+
+type farmStorageItemInstance struct {
+	ItemID uint32
+	Amount int
+	Pocket uint32
 }
 
 func farmRecommendationDataPath() string {
@@ -445,23 +456,30 @@ func parseFarmDeliveryPayload(message packet.Message, recipeIndex int) ([]FarmDe
 	return orders, index, true
 }
 
-func parseFarmStorageCharacterData(message packet.Message) (map[string]int, bool) {
+func parseFarmStorageCharacterData(message packet.Message) (map[string]int, map[uint64]farmStorageItemInstance, bool) {
 	if len(message) < 4 || message[1].Type() != packet.MessageElemTypeLong || message[3].Type() != packet.MessageElemTypeString {
-		return nil, false
+		return nil, nil, false
 	}
 
 	inventory := make(map[string]int)
-	for _, elem := range message {
+	instances := make(map[uint64]farmStorageItemInstance)
+	for index, elem := range message {
 		if elem.Type() != packet.MessageElemTypeBin {
 			continue
 		}
 		item, err := packet.EntityItemReader(elem.Data().([]byte))
-		if err != nil || item.PocketType != farmStoragePocketType || !farmStorageItemIDSet[item.ItemId] {
+		if err != nil || !farmStorageItemIDSet[item.ItemId] {
 			continue
 		}
-		inventory[strconv.FormatUint(uint64(item.ItemId), 10)] += int(item.Amount)
+		if index > 0 && message[index-1].Type() == packet.MessageElemTypeLong {
+			instanceID := message[index-1].Data().(uint64)
+			instances[instanceID] = farmStorageItemInstance{ItemID: item.ItemId, Amount: int(item.Amount), Pocket: item.PocketType}
+		}
+		if item.PocketType == farmStoragePocketType {
+			inventory[strconv.FormatUint(uint64(item.ItemId), 10)] += int(item.Amount)
+		}
 	}
-	return inventory, true
+	return inventory, instances, true
 }
 
 func parseFarmStorageLevel(message packet.Message) (int, bool) {
@@ -546,12 +564,28 @@ func parseFarmItemNotice(message packet.Message) (uint32, bool) {
 	return notice.ItemID, true
 }
 
-func parseFarmStorageNoticeCount(message packet.Message) (int, bool) {
-	count, ok := farmMessageUint(message, 0)
-	if !ok || count == 0 || count > 10_000 {
-		return 0, false
+func parseFarmStorageNoticeCounts(message packet.Message) []int {
+	counts := make([]int, 0)
+	for _, elem := range message {
+		if elem.Type() != packet.MessageElemTypeString {
+			continue
+		}
+		text := elem.Data().(string)
+		start := strings.Index(text, "已将")
+		if start < 0 {
+			continue
+		}
+		start += len("已将")
+		end := strings.Index(text[start:], "个")
+		if end <= 0 {
+			continue
+		}
+		count, err := strconv.Atoi(text[start : start+end])
+		if err == nil && count > 0 && count <= 10_000 {
+			counts = append(counts, count)
+		}
 	}
-	return int(count), true
+	return counts
 }
 
 func updateInventoryFromFarmDeliveries(inventory map[string]int, previous, current []FarmDeliveryState, qualityIndexes []int) map[string]int {
@@ -609,34 +643,123 @@ func (m *farmRecommendationManager) syncInventoryDelta(pkt *packet.GamePacket) b
 	case opcodeItemNotice:
 		itemID, ok := parseFarmItemNotice(pkt.Msg)
 		if !ok {
-			m.mu.Lock()
-			m.pendingStorageItemID = 0
-			m.pendingStorageItemAt = time.Time{}
-			m.mu.Unlock()
 			return false
 		}
 		m.mu.Lock()
-		m.pendingStorageItemID = itemID
-		m.pendingStorageItemAt = pkt.At
+		m.pendingStorageItems = append(m.pendingStorageItems, farmPendingStorageItem{ItemID: itemID, At: pkt.At})
 		m.mu.Unlock()
 		return true
 	case opcodeFarmStorageNotice:
-		count, ok := parseFarmStorageNoticeCount(pkt.Msg)
-		if !ok {
+		counts := parseFarmStorageNoticeCounts(pkt.Msg)
+		if len(counts) == 0 {
 			return false
 		}
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		if !m.data.InventorySynced || m.pendingStorageItemID == 0 || pkt.At.Sub(m.pendingStorageItemAt) < 0 || pkt.At.Sub(m.pendingStorageItemAt) > 3*time.Second {
-			m.pendingStorageItemID = 0
-			m.pendingStorageItemAt = time.Time{}
+		valid := m.pendingStorageItems[:0]
+		for _, pending := range m.pendingStorageItems {
+			age := pkt.At.Sub(pending.At)
+			if age >= 0 && age <= 3*time.Second {
+				valid = append(valid, pending)
+			}
+		}
+		m.pendingStorageItems = valid
+		if !m.data.InventorySynced || len(m.pendingStorageItems) == 0 {
+			m.pendingStorageItems = nil
 			return true
 		}
-		key := strconv.FormatUint(uint64(m.pendingStorageItemID), 10)
-		m.data.Inventory[key] += count
-		m.pendingStorageItemID = 0
-		m.pendingStorageItemAt = time.Time{}
+		applied := min(len(counts), len(m.pendingStorageItems))
+		for index := 0; index < applied; index++ {
+			key := strconv.FormatUint(uint64(m.pendingStorageItems[index].ItemID), 10)
+			m.data.Inventory[key] += counts[index]
+		}
+		m.pendingStorageItems = nil
 		m.saveInventoryLocked(pkt.At)
+		return true
+	case opcodeItemInfoUpdate, opcodeItemMoveUpdate:
+		details := packet.ParseItemDetailPacket(pkt.Msg)
+		if len(details) == 0 {
+			return false
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if m.storageItemInstances == nil {
+			m.storageItemInstances = make(map[uint64]farmStorageItemInstance)
+		}
+		changed := false
+		for _, detail := range details {
+			if detail.InstanceID == 0 || detail.Item == nil || !farmStorageItemIDSet[detail.Item.ItemId] {
+				continue
+			}
+			current := farmStorageItemInstance{ItemID: detail.Item.ItemId, Amount: int(detail.Item.Amount), Pocket: detail.Item.PocketType}
+			previous, known := m.storageItemInstances[detail.InstanceID]
+			if m.data.InventorySynced {
+				switch {
+				case known && previous.Pocket == farmStoragePocketType && current.Pocket != farmStoragePocketType:
+					m.changeStorageItemLocked(previous.ItemID, -previous.Amount)
+					changed = true
+				case known && previous.Pocket != farmStoragePocketType && current.Pocket == farmStoragePocketType:
+					m.changeStorageItemLocked(current.ItemID, current.Amount)
+					changed = true
+				case !known && pkt.Op == opcodeItemMoveUpdate && current.Pocket != farmStoragePocketType:
+					// Splitting a stack out of storage creates a new ordinary-bag instance.
+					m.changeStorageItemLocked(current.ItemID, -current.Amount)
+					changed = true
+				}
+			}
+			m.storageItemInstances[detail.InstanceID] = current
+		}
+		if changed {
+			m.saveInventoryLocked(pkt.At)
+		}
+		return true
+	case opcodeItemPocketMove, opcodeItemPocketSwap:
+		moves := packet.ParseItemPocketMovePacket(pkt.Msg)
+		if len(moves) == 0 {
+			return false
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		changed := false
+		for _, move := range moves {
+			item, known := m.storageItemInstances[move.InstanceID]
+			if !known {
+				continue
+			}
+			if m.data.InventorySynced && move.FromPocket != farmStoragePocketType && move.ToPocket == farmStoragePocketType {
+				m.changeStorageItemLocked(item.ItemID, item.Amount)
+				changed = true
+			} else if m.data.InventorySynced && move.FromPocket == farmStoragePocketType && move.ToPocket != farmStoragePocketType {
+				m.changeStorageItemLocked(item.ItemID, -item.Amount)
+				changed = true
+			}
+			item.Pocket = move.ToPocket
+			m.storageItemInstances[move.InstanceID] = item
+		}
+		if changed {
+			m.saveInventoryLocked(pkt.At)
+		}
+		return true
+	case opcodeItemStackUpdate:
+		if len(pkt.Msg) < 3 || pkt.Msg[0].Type() != packet.MessageElemTypeLong || pkt.Msg[1].Type() != packet.MessageElemTypeShort || pkt.Msg[2].Type() != packet.MessageElemTypeInt {
+			return false
+		}
+		instanceID := pkt.Msg[0].Data().(uint64)
+		m.mu.Lock()
+		if item, known := m.storageItemInstances[instanceID]; known {
+			item.Amount = int(pkt.Msg[1].Data().(uint16))
+			item.Pocket = pkt.Msg[2].Data().(uint32)
+			m.storageItemInstances[instanceID] = item
+		}
+		m.mu.Unlock()
+		return true
+	case opcodeItemRemoveUpdate:
+		if len(pkt.Msg) < 1 || pkt.Msg[0].Type() != packet.MessageElemTypeLong {
+			return false
+		}
+		m.mu.Lock()
+		delete(m.storageItemInstances, pkt.Msg[0].Data().(uint64))
+		m.mu.Unlock()
 		return true
 	case opcodeFarmCropState:
 		state, consumed, ok := parseFarmCraftStart(pkt.Msg)
@@ -668,6 +791,14 @@ func (m *farmRecommendationManager) syncInventoryDelta(pkt *packet.GamePacket) b
 	}
 }
 
+func (m *farmRecommendationManager) changeStorageItemLocked(itemID uint32, delta int) {
+	key := strconv.FormatUint(uint64(itemID), 10)
+	m.data.Inventory[key] = max(0, m.data.Inventory[key]+delta)
+	if m.data.Inventory[key] == 0 {
+		delete(m.data.Inventory, key)
+	}
+}
+
 func farmInventoryStrings(inventory map[uint32]int) map[string]int {
 	result := make(map[string]int, len(inventory))
 	for itemID, count := range inventory {
@@ -684,7 +815,7 @@ func (m *farmRecommendationManager) syncPacket(pkt *packet.GamePacket) {
 		if err != nil || character.Id == 0 || !isPC(int(character.RaceId)) {
 			return
 		}
-		inventory, ok := parseFarmStorageCharacterData(pkt.Msg)
+		inventory, instances, ok := parseFarmStorageCharacterData(pkt.Msg)
 		if !ok {
 			return
 		}
@@ -699,8 +830,8 @@ func (m *farmRecommendationManager) syncPacket(pkt *packet.GamePacket) {
 		}
 		m.data.Inventory = inventory
 		m.data.InventorySynced = true
-		m.pendingStorageItemID = 0
-		m.pendingStorageItemAt = time.Time{}
+		m.storageItemInstances = instances
+		m.pendingStorageItems = nil
 		m.saveInventoryLocked(pkt.At)
 		m.mu.Unlock()
 		return
@@ -735,8 +866,7 @@ func (m *farmRecommendationManager) syncPacket(pkt *packet.GamePacket) {
 	if ordersSynced {
 		if pkt.Op == opcodeFarmDelivery && m.data.InventorySynced {
 			m.data.Inventory = updateInventoryFromFarmDeliveries(m.data.Inventory, m.data.Orders, orders, enabledFarmQualityIndexes(m.data))
-			m.pendingStorageItemID = 0
-			m.pendingStorageItemAt = time.Time{}
+			m.pendingStorageItems = nil
 		}
 		m.data.Orders = orders
 		m.data.OrdersSynced = true

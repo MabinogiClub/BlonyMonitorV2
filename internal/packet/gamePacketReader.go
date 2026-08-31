@@ -122,6 +122,8 @@ var knownGameOpcodes = map[uint32]bool{
 	0x5bd5:  true, // 装备耐久更新
 	0x5bd4:  true, // 物品信息刷新
 	0x59e0:  true, // 物品移动/换装
+	0x59e1:  true, // 物品合并/移除
+	0x59ee:  true, // 物品堆叠数量刷新
 	0x59de:  true, // 手动拖拽换装
 	0x59df:  true, // 手动拖拽互换
 	0x6988:  true, // 技能使用事件

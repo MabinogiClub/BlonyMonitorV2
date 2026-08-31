@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -411,12 +412,12 @@ func farmStorageCharacterData(items ...struct {
 		packet.NewMessageElemString(""),
 		packet.NewMessageElemInt(10001),
 	}
-	for _, value := range items {
+	for index, value := range items {
 		data := make([]byte, 80)
 		binary.LittleEndian.PutUint32(data[0:], farmStoragePocketType)
 		binary.LittleEndian.PutUint32(data[4:], value.itemID)
 		binary.LittleEndian.PutUint16(data[36:], value.amount)
-		message = append(message, packet.NewMessageElemBin(data))
+		message = append(message, packet.NewMessageElemLong(uint64(10_000+index)), packet.NewMessageElemBin(data))
 	}
 	return message
 }
@@ -646,6 +647,74 @@ func TestFarmRecommendationAddsCollectedCraftProduct(t *testing.T) {
 
 	if mgr.data.Inventory["5041006"] != 2 {
 		t.Fatalf("inventory after collecting craft product = %#v", mgr.data.Inventory)
+	}
+}
+
+func TestFarmRecommendationRestoresAllMaterialsWhenCraftIsCancelled(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
+	mgr := &farmRecommendationManager{data: defaultFarmRecommendationData()}
+	mgr.data.Inventory = map[string]int{"5040996": 12, "5040997": 5, "5040998": 40}
+	mgr.data.InventorySynced = true
+	now := time.Now()
+	for index, itemID := range []uint32{5_040_997, 5_040_996, 5_040_998} {
+		mgr.recordPacket(&packet.GamePacket{Op: opcodeItemNotice, At: now.Add(time.Duration(index) * time.Millisecond), Msg: packet.Message{
+			packet.NewMessageElemString(fmt.Sprintf("<xml type='item' classid='%d' />", itemID)),
+			packet.NewMessageElemInt(1500),
+		}})
+	}
+	mgr.recordPacket(&packet.GamePacket{Op: opcodeFarmStorageNotice, At: now.Add(10 * time.Millisecond), Msg: packet.Message{
+		packet.NewMessageElemInt(3),
+		packet.NewMessageElemInt(3),
+		packet.NewMessageElemString("已将4个塔汀农场普通秋葵存入储存库。"),
+		packet.NewMessageElemString("已将4个塔汀农场普通黑莓存入储存库。"),
+		packet.NewMessageElemString("已将8个塔汀农场普通茉莉存入储存库。"),
+	}})
+
+	if mgr.data.Inventory["5040996"] != 16 || mgr.data.Inventory["5040997"] != 9 || mgr.data.Inventory["5040998"] != 48 {
+		t.Fatalf("inventory after cancellation = %#v", mgr.data.Inventory)
+	}
+}
+
+func TestFarmRecommendationTracksStorageWithdrawalAndDeposit(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
+	mgr := &farmRecommendationManager{data: defaultFarmRecommendationData()}
+	mgr.data.Inventory = map[string]int{"5041001": 22}
+	mgr.data.InventorySynced = true
+	mgr.storageItemInstances = map[uint64]farmStorageItemInstance{
+		200: {ItemID: 5_041_001, Amount: 22, Pocket: farmStoragePocketType},
+	}
+	now := time.Now()
+	withdrawn := farmItemDetailMessage(100, 1, 5_041_001, 10)
+	mgr.recordPacket(&packet.GamePacket{Op: opcodeItemMoveUpdate, At: now, Msg: withdrawn})
+	mgr.recordPacket(&packet.GamePacket{Op: opcodeItemInfoUpdate, At: now.Add(time.Millisecond), Msg: withdrawn})
+	if mgr.data.Inventory["5041001"] != 12 {
+		t.Fatalf("inventory after withdrawal = %#v", mgr.data.Inventory)
+	}
+
+	mgr.recordPacket(&packet.GamePacket{Op: opcodeItemPocketMove, At: now.Add(2 * time.Millisecond), Msg: packet.Message{
+		packet.NewMessageElemLong(100),
+		packet.NewMessageElemInt(1),
+		packet.NewMessageElemInt(farmStoragePocketType),
+		packet.NewMessageElemByte(2),
+		packet.NewMessageElemByte(0),
+		packet.NewMessageElemByte(0),
+	}})
+	if mgr.data.Inventory["5041001"] != 22 {
+		t.Fatalf("inventory after deposit = %#v", mgr.data.Inventory)
+	}
+}
+
+func farmItemDetailMessage(instanceID uint64, pocket, itemID uint32, amount uint16) packet.Message {
+	publicData := make([]byte, 80)
+	binary.LittleEndian.PutUint32(publicData[0:], pocket)
+	binary.LittleEndian.PutUint32(publicData[4:], itemID)
+	binary.LittleEndian.PutUint16(publicData[36:], amount)
+	return packet.Message{
+		packet.NewMessageElemLong(instanceID),
+		packet.NewMessageElemByte(2),
+		packet.NewMessageElemBin(publicData),
+		packet.NewMessageElemBin(make([]byte, 144)),
+		packet.NewMessageElemString(""),
 	}
 }
 

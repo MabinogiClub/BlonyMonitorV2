@@ -2,36 +2,38 @@ package app
 
 // 游戏数据包操作码
 const (
-	opcodeFarmCropState     = 0x52d2
-	opcodeFarmEntityList    = 0x2138d
-	opcodeFarmSummary       = 0x2138e
-	opcodeFarmSnapshot      = 0x21394
-	opcodeFarmDelivery      = 0x21398
-	opcodeFarmStorageNotice = 0x213a6
-	opcodeFarmEnergy        = 0x2139c
-	opcodeEntityAppear      = 0x520c
-	opcodeCharacterData     = 0x5209
-	opcodeItemNotice        = 0x5274
-	opcodeEntitiesAppear    = 0x5334
-	opcodeEntityProperty           = 0x7532
-	opcodeItemDetail               = 0x5be0
-	opcodeItemInfoUpdate           = 0x5bd4 // 物品信息刷新（含 pocket）
-	opcodeItemMoveUpdate           = 0x59e0 // 物品移动/换装（含 pocket + 耐久）
-	opcodeItemPocketMove           = 0x59de // 手动拖拽：单件 from→to
-	opcodeItemPocketSwap           = 0x59df // 手动拖拽：两件互换/对移
-	opcodeItemDurabilityUpdate     = 0x5bd5
-	opcodeEntityRemove             = 0x520d
-	opcodeCombatAction             = 0x7926
-	opcodeEffectDamage      = 0x9093
-	opcodeEffectDelayed     = 0x9095 // 原文0x9094修改为0x9095兼容星辰与连击
-	opcodeConditionUpdate   = 0xa028
-	opcodeSetFinisher       = 0x7921
-	opcodeDungeonInfo       = 0x9470 // 地下城信息
-	opcodeMapChange         = 0x6599 // 地图切换
-	opcodeChineseName       = 0x526d // 中文名称包
-	opcodePerformanceStart  = 0x52d0 // 演奏开始
-	opcodePerformanceStop   = 0x52d1 // 演奏停止
-	opcodeInstanceName      = 0x8ca0 // 副本名称包
+	opcodeFarmCropState        = 0x52d2
+	opcodeFarmEntityList       = 0x2138d
+	opcodeFarmSummary          = 0x2138e
+	opcodeFarmSnapshot         = 0x21394
+	opcodeFarmDelivery         = 0x21398
+	opcodeFarmStorageNotice    = 0x213a6
+	opcodeFarmEnergy           = 0x2139c
+	opcodeEntityAppear         = 0x520c
+	opcodeCharacterData        = 0x5209
+	opcodeItemNotice           = 0x5274
+	opcodeEntitiesAppear       = 0x5334
+	opcodeEntityProperty       = 0x7532
+	opcodeItemDetail           = 0x5be0
+	opcodeItemInfoUpdate       = 0x5bd4 // 物品信息刷新（含 pocket）
+	opcodeItemMoveUpdate       = 0x59e0 // 物品移动/换装（含 pocket + 耐久）
+	opcodeItemRemoveUpdate     = 0x59e1 // 物品合并/移除
+	opcodeItemStackUpdate      = 0x59ee // 堆叠数量刷新（instance + amount + pocket）
+	opcodeItemPocketMove       = 0x59de // 手动拖拽：单件 from→to
+	opcodeItemPocketSwap       = 0x59df // 手动拖拽：两件互换/对移
+	opcodeItemDurabilityUpdate = 0x5bd5
+	opcodeEntityRemove         = 0x520d
+	opcodeCombatAction         = 0x7926
+	opcodeEffectDamage         = 0x9093
+	opcodeEffectDelayed        = 0x9095 // 原文0x9094修改为0x9095兼容星辰与连击
+	opcodeConditionUpdate      = 0xa028
+	opcodeSetFinisher          = 0x7921
+	opcodeDungeonInfo          = 0x9470 // 地下城信息
+	opcodeMapChange            = 0x6599 // 地图切换
+	opcodeChineseName          = 0x526d // 中文名称包
+	opcodePerformanceStart     = 0x52d0 // 演奏开始
+	opcodePerformanceStop      = 0x52d1 // 演奏停止
+	opcodeInstanceName         = 0x8ca0 // 副本名称包
 )
 
 const (
