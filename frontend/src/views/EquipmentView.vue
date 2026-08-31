@@ -20,6 +20,10 @@ function slot(pocket: number): SelfEquipmentSlot | undefined {
   return slotMap.value.get(pocket)
 }
 
+function weaponOneOffhand(): SelfEquipmentSlot | undefined {
+  return slot(12) || slot(14)
+}
+
 function formatDetail(value: number | undefined | null): string {
   if (value === undefined || value === null || !Number.isFinite(value)) return '--'
   return Number(value.toFixed(3)).toString()
@@ -67,13 +71,16 @@ function durabilityTone(item?: SelfEquipmentSlot): string {
   return 'dur-crit'
 }
 
-function slotClass(pocket: number) {
-  const item = slot(pocket)
+function equipmentSlotClass(item?: SelfEquipmentSlot) {
   const tone = durabilityTone(item)
   return {
     filled: !!item?.itemId,
     [tone]: !!tone,
   }
+}
+
+function slotClass(pocket: number) {
+  return equipmentSlotClass(slot(pocket))
 }
 
 const recentChanges = computed(() => {
@@ -160,11 +167,11 @@ onUnmounted(() => {
                 <span class="slot-dur">{{ formatPair(slot(10)) }}</span>
                 <span v-if="formatDelta(slot(10)?.durabilityDelta)" class="slot-delta">{{ formatDelta(slot(10)?.durabilityDelta) }}</span>
               </div>
-              <div class="slot nested" :class="slotClass(12)">
+              <div class="slot nested" :class="equipmentSlotClass(weaponOneOffhand())">
                 <span class="slot-part">副手</span>
-                <span class="slot-name">{{ slot(12)?.name || '空' }}</span>
-                <span class="slot-dur">{{ formatPair(slot(12)) }}</span>
-                <span v-if="formatDelta(slot(12)?.durabilityDelta)" class="slot-delta">{{ formatDelta(slot(12)?.durabilityDelta) }}</span>
+                <span class="slot-name">{{ weaponOneOffhand()?.name || '空' }}</span>
+                <span class="slot-dur">{{ formatPair(weaponOneOffhand()) }}</span>
+                <span v-if="formatDelta(weaponOneOffhand()?.durabilityDelta)" class="slot-delta">{{ formatDelta(weaponOneOffhand()?.durabilityDelta) }}</span>
               </div>
             </div>
 

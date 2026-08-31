@@ -20,6 +20,7 @@ var selfEquipmentPockets = map[uint32]string{
 	11: "武器II·主手",
 	12: "武器I·副手",
 	13: "武器II·副手",
+	14: "武器I·副手",
 	16: "左侧首饰",
 	17: "右侧首饰",
 }

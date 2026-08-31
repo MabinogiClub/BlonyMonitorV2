@@ -17,6 +17,7 @@ internal/config/.env
 *.log
 *.pcapng
 .gocache/
+/tools/__pycache__/
 /tmp/
 .idea/
 .DS_Store

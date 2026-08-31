@@ -329,5 +329,47 @@ func TestSelfEquipmentManualDragUsesPocketMove(t *testing.T) {
 	}
 }
 
+func TestSelfEquipmentIncludesWeaponOneAmmoPocket(t *testing.T) {
+	a := NewApp()
 
+	public := make([]byte, 80)
+	binary.LittleEndian.PutUint32(public[0:], 14)
+	binary.LittleEndian.PutUint32(public[4:], 1420001)
+	extended := make([]byte, 144)
+	binary.LittleEndian.PutUint32(extended[16:], 10000)
+	binary.LittleEndian.PutUint32(extended[20:], 10000)
 
+	a.handleSelfInventoryPacket(&packet.GamePacket{
+		At: time.UnixMilli(1000),
+		Msg: packet.Message{
+			packet.NewMessageElemByte(1),
+			packet.NewMessageElemLong(4503599638666428),
+			packet.NewMessageElemByte(2),
+			packet.NewMessageElemString("Flandre"),
+			packet.NewMessageElemString(""),
+			packet.NewMessageElemString(""),
+			packet.NewMessageElemInt(10001),
+			packet.NewMessageElemLong(22518906351513680),
+			packet.NewMessageElemByte(2),
+			packet.NewMessageElemBin(public),
+			packet.NewMessageElemBin(extended),
+			packet.NewMessageElemString(""),
+		},
+	})
+
+	state := a.GetSelfEquipmentState()
+	for i := range state.Slots {
+		slot := state.Slots[i]
+		if slot.PocketType != 14 {
+			continue
+		}
+		if slot.ItemID != 1420001 || slot.SlotLabel != "武器I·副手" {
+			t.Fatalf("weapon I ammo slot = %#v", slot)
+		}
+		if slot.DurabilityValue == nil || *slot.DurabilityValue != 10 {
+			t.Fatalf("weapon I ammo durability = %#v", slot.DurabilityValue)
+		}
+		return
+	}
+	t.Fatal("weapon I ammo pocket missing")
+}
