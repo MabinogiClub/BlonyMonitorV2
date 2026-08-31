@@ -4,6 +4,7 @@ import SvgIcon from '@jamescoyle/vue-icon'
 import {
   mdiAccountGroupOutline,
   mdiBellRingOutline,
+  mdiBagPersonalOutline,
   mdiCogOutline,
   mdiHome,
   mdiSproutOutline,
@@ -25,6 +26,7 @@ const navigation = [
   { name: 'buffTimer', title: 'Buff通知', icon: mdiBellRingOutline },
   { name: 'farm', title: '塔汀农场', icon: mdiSproutOutline },
   { name: 'equipment', title: '装备耐久', icon: mdiTshirtCrew },
+  { name: 'inventory', title: '背包管理', icon: mdiBagPersonalOutline },
 ]
 
 const activePage = computed(() => dpsTabs.has(appStore.activeTab) ? 'dps' : appStore.activeTab)

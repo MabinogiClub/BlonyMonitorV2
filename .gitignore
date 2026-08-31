@@ -37,3 +37,7 @@ build/README-DIAGNOSTIC.txt
 build/README-NPCAP-FIX-TEST.txt
 /.tmp-go-cache/
 /.codex/
+# Local inventory snapshots contain user data and must never be committed.
+inventory.db
+inventory.db-wal
+inventory.db-shm

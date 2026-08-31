@@ -674,6 +674,13 @@ export async function getSelfEquipmentState(): Promise<SelfEquipmentState> {
   return window.go.app.App.GetSelfEquipmentState()
 }
 
+export async function getInventoryState(): Promise<InventoryState> {
+  if (!isWailsReady()) {
+    return { databasePath: '', rows: [], holders: [] }
+  }
+  return await window.go.app.App.GetInventoryState() as InventoryState
+}
+
 /**
  * 获取所有 PC 实体
  */

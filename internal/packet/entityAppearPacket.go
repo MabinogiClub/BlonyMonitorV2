@@ -591,6 +591,28 @@ func parseEntityOwnerID(msg Message) (uint64, bool) {
 		}
 		return window[7].Data().(uint64), true
 	}
+	// Current summoned-pet layout. The owner is repeated elsewhere in the
+	// packet, but this local signature is stable in observed CN packets.
+	for i := 0; i+signatureLength <= len(msg); i++ {
+		window := msg[i : i+signatureLength]
+		if window[0].Type() != MessageElemTypeByte || window[0].Data().(uint8) != 9 ||
+			window[1].Type() != MessageElemTypeByte || window[1].Data().(uint8) != 0 ||
+			window[2].Type() != MessageElemTypeLong ||
+			window[3].Type() != MessageElemTypeByte || window[3].Data().(uint8) != 1 ||
+			window[4].Type() != MessageElemTypeLong ||
+			window[5].Type() != MessageElemTypeFloat ||
+			window[6].Type() != MessageElemTypeInt ||
+			window[7].Type() != MessageElemTypeLong ||
+			window[8].Type() != MessageElemTypeByte || window[8].Data().(uint8) != 2 ||
+			window[9].Type() != MessageElemTypeByte || window[9].Data().(uint8) != 0 ||
+			window[10].Type() != MessageElemTypeFloat {
+			continue
+		}
+		ownerID := window[7].Data().(uint64)
+		if ownerID != 0 {
+			return ownerID, true
+		}
+	}
 	return 0, false
 }
 

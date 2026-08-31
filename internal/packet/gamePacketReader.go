@@ -118,6 +118,9 @@ var knownGameOpcodes = map[uint32]bool{
 	0x52d1:  true, // 演奏停止
 	0x8ca0:  true, // 副本名称包
 	0x5209:  true, // 背包数据
+	0x7212:  true, // 银行完整快照
+	0x96ca:  true, // 美容室完整快照
+	0xa43d:  true, // 商城栏完整快照
 	0x5be0:  true, // 装备详情
 	0x5bd5:  true, // 装备耐久更新
 	0x5bd4:  true, // 物品信息刷新
@@ -128,6 +131,9 @@ var knownGameOpcodes = map[uint32]bool{
 	0x59df:  true, // 手动拖拽互换
 	0x6988:  true, // 技能使用事件
 }
+
+// 0x906f only announces a friend-summoned pet ID. It deliberately stays out
+// of the monitored opcode set because it carries neither identity nor inventory.
 
 // hasKnownGameOpcode 检查数据包是否包含已知的游戏opcode
 func hasKnownGameOpcode(data []byte) bool {

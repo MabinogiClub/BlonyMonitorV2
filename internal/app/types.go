@@ -34,6 +34,9 @@ const (
 	opcodePerformanceStart     = 0x52d0 // 演奏开始
 	opcodePerformanceStop      = 0x52d1 // 演奏停止
 	opcodeInstanceName         = 0x8ca0 // 副本名称包
+	opcodeBankInventory        = 0x7212
+	opcodeDressingRoom         = 0x96ca
+	opcodeCashInventory        = 0xa43d
 )
 
 const (

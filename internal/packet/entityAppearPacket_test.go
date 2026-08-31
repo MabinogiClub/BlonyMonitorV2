@@ -35,7 +35,7 @@ func TestParseEntityOwnerIDFromShiftedSummonLayout(t *testing.T) {
 	}
 }
 
-func TestParseEntityOwnerIDIgnoresObservedPetLayout(t *testing.T) {
+func TestParseEntityOwnerIDFromObservedPetLayout(t *testing.T) {
 	msg := Message{
 		NewMessageElemByte(9),
 		NewMessageElemByte(0),
@@ -50,8 +50,8 @@ func TestParseEntityOwnerIDIgnoresObservedPetLayout(t *testing.T) {
 		NewMessageElemFloat(0.42),
 	}
 
-	if ownerID, ok := parseEntityOwnerID(msg); ok {
-		t.Fatalf("parseEntityOwnerID() = (%d, true), want no owner", ownerID)
+	if ownerID, ok := parseEntityOwnerID(msg); !ok || ownerID != testSummonOwnerID {
+		t.Fatalf("parseEntityOwnerID() = (%d, %v), want (%d, true)", ownerID, ok, testSummonOwnerID)
 	}
 }
 

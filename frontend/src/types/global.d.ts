@@ -49,6 +49,7 @@ interface GoApp {
   GetEventLogs(limit: number, filter: string): Promise<EventLog[]>
   GetAllPCEntities(): Promise<EntityInfo[]>
   GetSelfEquipmentState(): Promise<SelfEquipmentState>
+  GetInventoryState(): Promise<InventoryState>
   GetAllCreatures(): Promise<CreatureInfo[]>
   Clear(): Promise<void>
   ClearAndSave(): Promise<void>
@@ -77,17 +78,6 @@ interface GoApp {
   GetCurrentDungeon(): Promise<DungeonInfo | null>
   // 玩家自身 API
   GetSelfInfo(): Promise<SelfInfo | null>
-  // 背包 API
-  GetInventories(): Promise<Record<string, InventoryInfo>>
-  GetInventory(characterName: string): Promise<InventoryInfo | null>
-  ClearInventories(): Promise<void>
-  // 背包数据库 API
-  GetInventoriesFromDB(): Promise<any[]>
-  GetInventoriesByCharacterFromDB(characterName: string): Promise<any[]>
-  GetInventoriesByTypeFromDB(backpackType: string): Promise<any[]>
-  GetInventoryFromDB(characterName: string, backpackType: string, backpackIndex: number): Promise<any>
-  DeleteInventoryFromDB(characterName: string, backpackType: string, backpackIndex: number): Promise<void>
-  DeleteCharacterInventoriesFromDB(characterName: string): Promise<void>
   // 时间轴 API
   GetPlayerTimeline(playerId: string): Promise<PlayerTimeline>
   // Buff 定时器 API
@@ -521,47 +511,33 @@ interface SelfInfo {
 /**
  * 背包信息类型
  */
-interface InventoryInfo {
-  characterName: string
-  backpacks: BackpackInfo[]
+interface InventoryRow {
+  itemId: number
+  name: string
+  amount: number
+  holderId: string
+  holderType: 'character' | 'pet' | 'account'
+  holderName: string
+  ownerCharacterId?: string
+  ownerCharacterName?: string
+  container: 'backpack' | 'bank' | 'gacha' | 'dressing' | 'cash'
+  subLocation?: string
   updatedAt: number
 }
 
-/**
- * 单个背包信息类型
- */
-interface BackpackInfo {
-  width: number
-  height: number
-  itemCount: number
-  items: InventoryItem[]
+interface InventoryHolder {
+  id: string
+  type: 'character' | 'pet' | 'account'
+  name: string
+  ownerCharacterId?: string
+  ownerCharacterName?: string
+  updatedAt: number
 }
 
-/**
- * 背包物品类型
- */
-interface InventoryItem {
-  itemId: number
-  itemName: string
-  quantity: number
-  x: number
-  y: number
-  width: number
-  height: number
-  colorR: number
-  colorG: number
-  colorB: number
-  durability: number
-  reinforce: number
-  refine: number
-  rotation: number
-  identified: boolean
-  cursed: boolean
-  sealed: boolean
-  enchantLvl: number
-  elemental: number
-  effects?: Record<string, any>
-  slotCount: number
+interface InventoryState {
+  databasePath: string
+  rows: InventoryRow[]
+  holders: InventoryHolder[]
 }
 
 /**

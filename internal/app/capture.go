@@ -384,6 +384,16 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 		}
 		a.restorePersistentConditions(characterData)
 		a.handleSelfInventoryPacket(pkt)
+		a.handleInventoryCharacterPacket(pkt, characterData)
+
+	case opcodeBankInventory:
+		a.handleInventoryBankPacket(pkt)
+
+	case opcodeDressingRoom:
+		a.handleInventoryDressingRoomPacket(pkt)
+
+	case opcodeCashInventory:
+		a.handleInventoryCashPacket(pkt)
 
 	case opcodeItemDetail:
 		a.handleItemDetailPacket(pkt)
@@ -404,6 +414,7 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 		}
 		if entity != nil && len(entity.Name) > 0 && entity.Name[0] != '_' {
 			a.addEntity(entity)
+			a.handleInventoryPetOwner(entity, pkt.At.UnixMilli())
 		}
 
 	case opcodeEntitiesAppear:
@@ -414,6 +425,7 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 		for _, entity := range entities {
 			if entity != nil && len(entity.Name) > 0 && entity.Name[0] != '_' {
 				a.addEntity(entity)
+				a.handleInventoryPetOwner(entity, pkt.At.UnixMilli())
 			}
 		}
 

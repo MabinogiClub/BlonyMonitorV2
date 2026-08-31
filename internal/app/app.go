@@ -12,6 +12,7 @@ import (
 
 	"blonymonitorv2/db"
 	"blonymonitorv2/internal/config"
+	"blonymonitorv2/internal/inventory"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -129,6 +130,7 @@ type App struct {
 	battlefieldShockStates      map[string]*battlefieldShockState
 	battlefieldShockGeneration  uint64
 	analysisLog                 *analysisLogController
+	inventoryStore              *inventory.Store
 	onHide                      func()
 }
 
@@ -202,6 +204,12 @@ func (a *App) Startup(ctx context.Context) {
 	a.farmRecommendationMgr = newFarmRecommendationManager()
 
 	db.InitDB()
+	if store, err := inventory.Open(""); err != nil {
+		logger.Printf("[Inventory] open database failed: %v", err)
+	} else {
+		a.inventoryStore = store
+		logger.Printf("[Inventory] database ready")
+	}
 
 	runtime.WindowSetAlwaysOnTop(ctx, a.alwaysOnTop)
 
@@ -217,6 +225,11 @@ func (a *App) Shutdown(ctx context.Context) {
 	a.stopAnalysisLog()
 	if a.farmRecommendationMgr != nil {
 		a.farmRecommendationMgr.close()
+	}
+	if a.inventoryStore != nil {
+		if err := a.inventoryStore.Close(); err != nil {
+			logger.Printf("[Inventory] close database failed: %v", err)
+		}
 	}
 	if a.cancel != nil {
 		a.cancel()
