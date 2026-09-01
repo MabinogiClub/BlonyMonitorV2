@@ -38,7 +38,13 @@ const isDpsPage = computed(() => dpsTabs.some(tab => tab.name === appStore.activ
       </button>
     </div>
 
-    <div class="tab-content-wrapper" :class="{ 'history-tab-content': appStore.activeTab === 'history' }">
+    <div
+      class="tab-content-wrapper"
+      :class="{
+        'history-tab-content': appStore.activeTab === 'history',
+        'inventory-tab-content': appStore.activeTab === 'inventory',
+      }"
+    >
       <HomeView v-if="appStore.activeTab === 'home'" />
       <DamageView v-else-if="appStore.activeTab === 'bySkill'" />
       <TakenView v-else-if="appStore.activeTab === 'taken'" />
@@ -59,6 +65,7 @@ const isDpsPage = computed(() => dpsTabs.some(tab => tab.name === appStore.activ
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   overflow: visible;
   background: rgba(20, 20, 20, 0.8);
 }
@@ -110,6 +117,7 @@ const isDpsPage = computed(() => dpsTabs.some(tab => tab.name === appStore.activ
 .tab-content-wrapper {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   padding: 6px;
   background: transparent;
@@ -117,6 +125,12 @@ const isDpsPage = computed(() => dpsTabs.some(tab => tab.name === appStore.activ
   &.history-tab-content {
     overflow: hidden;
     padding: 4px 6px;
+  }
+
+  &.inventory-tab-content {
+    min-width: 0;
+    overflow: hidden;
+    box-sizing: border-box;
   }
 
   &:has(.home-view) {

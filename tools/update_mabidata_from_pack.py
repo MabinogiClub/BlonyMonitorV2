@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from collections import defaultdict
 import io
 import re
 import shutil
@@ -15,6 +16,7 @@ import sqlite3
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Callable
 
 
 LT_RE = re.compile(r"^_LT\[.+\.(\d+)\]$")
@@ -64,6 +66,97 @@ def unique_rows(paths: list[Path], tag: str, key: str) -> dict[str, dict[str, st
                 # Later files are more specific (for example itemDB_Weapon).
                 rows[value] = dict(node.attrib)
     return rows
+
+
+def item_features(path: Path, locale: str) -> dict[str, set[str]]:
+    """Return the feature names assigned to each item ID for one region."""
+    features: dict[str, set[str]] = defaultdict(set)
+    if not path.exists():
+        return features
+    region = parse_xml(path).find(locale.lower())
+    if region is None:
+        return features
+    for node in region.iter("itemInfo"):
+        item_id = node.attrib.get("ItemID")
+        feature = node.attrib.get("feature")
+        if item_id and feature:
+            features[item_id].add(feature)
+    return features
+
+
+def item_locale_score(value: str, target: str) -> int | None:
+    """Rank an item Locale for target, or return None when it is excluded."""
+    raw = (value or "").strip().lower()
+    target = target.lower()
+    if not raw:
+        return 0
+
+    tokens = [token.strip() for token in re.split(r"[;,|]", raw) if token.strip()]
+    positives = {token for token in tokens if not token.startswith("!")}
+    negatives = {token[1:] for token in tokens if token.startswith("!")}
+    if target in negatives:
+        return None
+    if positives:
+        return 2 if target in positives else None
+    return 1
+
+
+def pick_item_row(
+    candidates: list[dict[str, str]],
+    enabled_features: set[str] | None,
+    target_locale: str,
+    has_localized_name: Callable[[dict[str, str]], bool] | None = None,
+) -> dict[str, str]:
+    """Pick the item definition used by a regional client.
+
+    Feature-specific definitions named by FeaturesCheckList win first. Without
+    a matching feature, preserve the client's later-definition-wins behavior.
+    Locale ranks candidates so a China-specific row cannot be overwritten by a
+    later Korea/USA definition.
+    """
+    applicable = [
+        (score, index, row)
+        for index, row in enumerate(candidates)
+        if (score := item_locale_score(row.get("Locale", ""), target_locale)) is not None
+    ]
+    if not applicable:
+        applicable = [(0, index, row) for index, row in enumerate(candidates)]
+
+    def best(entries: list[tuple[int, int, dict[str, str]]]) -> dict[str, str]:
+        locale_score = max(entry[0] for entry in entries)
+        same_locale = [entry for entry in entries if entry[0] == locale_score]
+        if has_localized_name is not None:
+            localized_entries = [entry for entry in same_locale if has_localized_name(entry[2])]
+            if localized_entries:
+                same_locale = localized_entries
+        return max(same_locale, key=lambda entry: entry[1])[2]
+
+    if enabled_features:
+        matching = [entry for entry in applicable if entry[2].get("feature") in enabled_features]
+        if matching:
+            return best(matching)
+
+    return best(applicable)
+
+
+def unique_item_rows(
+    paths: list[Path],
+    features: dict[str, set[str]],
+    target_locale: str,
+    has_localized_name: Callable[[dict[str, str]], bool] | None = None,
+) -> dict[str, dict[str, str]]:
+    candidates: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for path in paths:
+        if not path.exists():
+            continue
+        for node in parse_xml(path).iter("Mabi_Item"):
+            item_id = node.attrib.get("ID")
+            if item_id:
+                candidates[item_id].append(dict(node.attrib))
+    return {
+        item_id: pick_item_row(rows, features.get(item_id), target_locale, has_localized_name)
+        for item_id, rows in candidates.items()
+    }
 
 
 def skill_icons(pack_data: Path, old: sqlite3.Connection, rows: dict[str, dict[str, str]]) -> dict[int, str]:
@@ -138,8 +231,15 @@ def build(source: Path, target: Path) -> dict[str, int]:
         dungeon_local = merged_localized("dungeondb")
         minimap_local = merged_localized("minimapinfo")
 
+        target_locale = "china"
         item_paths = sorted(dbdir.glob("*ItemDB*.xml"), key=lambda p: p.name.lower())
-        items = unique_rows(item_paths, "Mabi_Item", "ID")
+        features = item_features(dbdir / "FeaturesCheckList.xml", target_locale)
+        items = unique_item_rows(
+            item_paths,
+            features,
+            target_locale,
+            lambda row: bool(localized(row.get("Text_Name1", ""), item_local).strip()),
+        )
         item_rows = []
         for raw_id, attrs in items.items():
             try:

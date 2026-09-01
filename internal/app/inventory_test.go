@@ -55,6 +55,8 @@ func TestBankSnapshotUsesAccountAndTab(t *testing.T) {
 	defer store.Close()
 	app := NewApp()
 	app.inventoryStore = store
+	app.selfId = "character-1"
+	app.selfName = "角色1"
 
 	message := packet.Message{
 		packet.NewMessageElemByte(1),
@@ -72,7 +74,33 @@ func TestBankSnapshotUsesAccountAndTab(t *testing.T) {
 	app.handleInventoryBankPacket(&packet.GamePacket{Msg: message})
 	state := app.GetInventoryState()
 	if len(state.Rows) != 1 || state.Rows[0].HolderType != "account" ||
+		state.Rows[0].ScannedByID != "character-1" || state.Rows[0].ScannedByName != "角色1" ||
 		state.Rows[0].SubLocation != "角色1" || state.Rows[0].Container != inventoryContainerBank {
+		t.Fatalf("rows = %#v", state.Rows)
+	}
+}
+
+func TestDressingRoomSnapshotUsesCurrentCharacter(t *testing.T) {
+	store, err := inventory.Open(filepath.Join(t.TempDir(), "inventory.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	app := NewApp()
+	app.inventoryStore = store
+	app.selfId = "character-2"
+	app.selfName = "角色2"
+
+	message := packet.Message{
+		packet.NewMessageElemByte(1),
+		packet.NewMessageElemString("account-name"),
+	}
+	message = append(message, inventoryTestRecord(4, 2, 104, 1)...)
+	app.handleInventoryDressingRoomPacket(&packet.GamePacket{Msg: message})
+	state := app.GetInventoryState()
+	if len(state.Rows) != 1 || state.Rows[0].ScannedByID != "character-2" ||
+		state.Rows[0].ScannedByName != "角色2" ||
+		state.Rows[0].Container != inventoryContainerDressing {
 		t.Fatalf("rows = %#v", state.Rows)
 	}
 }
@@ -120,5 +148,11 @@ func TestIncompleteFriendPetAppearanceDoesNotChangeOwner(t *testing.T) {
 	if len(state.Holders) != 1 || state.Holders[0].OwnerCharacterID != "1" ||
 		state.Holders[0].OwnerCharacterName != "角色1" {
 		t.Fatalf("friend summon changed owner: %#v", state.Holders)
+	}
+}
+
+func TestInventoryItemNameKeepsCachedFallbackForUnknownItem(t *testing.T) {
+	if got := inventoryItemName(^uint32(0), "cached name"); got != "cached name" {
+		t.Fatalf("inventoryItemName() = %q, want cached name", got)
 	}
 }

@@ -28,6 +28,15 @@ func inventoryCapturedAt(pkt *packet.GamePacket) int64 {
 	return time.Now().UnixMilli()
 }
 
+func inventoryItemName(itemID uint32, fallback string) string {
+	if info := db.GetItemInfo(int(itemID)); info != nil {
+		if name := strings.TrimSpace(info.DisplayName()); name != "" {
+			return name
+		}
+	}
+	return fallback
+}
+
 func inventoryItems(records []packet.InventoryItemRecord) []inventory.Item {
 	items := make([]inventory.Item, 0, len(records))
 	names := make(map[uint32]string)
@@ -37,9 +46,7 @@ func inventoryItems(records []packet.InventoryItemRecord) []inventory.Item {
 		}
 		name, known := names[record.Item.ItemId]
 		if !known {
-			if info := db.GetItemInfo(int(record.Item.ItemId)); info != nil {
-				name = info.DisplayName()
-			}
+			name = inventoryItemName(record.Item.ItemId, "")
 			if name == "" {
 				name = "物品 #" + strconv.FormatUint(uint64(record.Item.ItemId), 10)
 			}
@@ -124,14 +131,17 @@ func (a *App) handleInventoryBankPacket(pkt *packet.GamePacket) {
 	if account == "" || tab == "" {
 		return
 	}
+	scannedByID, scannedByName := a.currentInventoryCharacter()
 	a.replaceInventorySnapshots(inventory.Snapshot{
-		HolderID:    "account:" + account,
-		HolderType:  "account",
-		HolderName:  "账号共享",
-		Container:   inventoryContainerBank,
-		SubLocation: tab,
-		CapturedAt:  inventoryCapturedAt(pkt),
-		Items:       inventoryItems(packet.ParseInventoryItemRecords(pkt.Msg)),
+		HolderID:      "account:" + account,
+		HolderType:    "account",
+		HolderName:    "账号共享",
+		Container:     inventoryContainerBank,
+		SubLocation:   tab,
+		ScannedByID:   scannedByID,
+		ScannedByName: scannedByName,
+		CapturedAt:    inventoryCapturedAt(pkt),
+		Items:         inventoryItems(packet.ParseInventoryItemRecords(pkt.Msg)),
 	})
 }
 
@@ -143,14 +153,23 @@ func (a *App) handleInventoryDressingRoomPacket(pkt *packet.GamePacket) {
 	if account == "" {
 		return
 	}
+	scannedByID, scannedByName := a.currentInventoryCharacter()
 	a.replaceInventorySnapshots(inventory.Snapshot{
-		HolderID:   "account:" + account,
-		HolderType: "account",
-		HolderName: "账号共享",
-		Container:  inventoryContainerDressing,
-		CapturedAt: inventoryCapturedAt(pkt),
-		Items:      inventoryItems(packet.ParseInventoryItemRecords(pkt.Msg)),
+		HolderID:      "account:" + account,
+		HolderType:    "account",
+		HolderName:    "账号共享",
+		Container:     inventoryContainerDressing,
+		ScannedByID:   scannedByID,
+		ScannedByName: scannedByName,
+		CapturedAt:    inventoryCapturedAt(pkt),
+		Items:         inventoryItems(packet.ParseInventoryItemRecords(pkt.Msg)),
 	})
+}
+
+func (a *App) currentInventoryCharacter() (string, string) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.selfId, a.selfName
 }
 
 func (a *App) holderIdentity(id string) (string, string) {
@@ -211,6 +230,9 @@ func (a *App) GetInventoryState() inventory.State {
 	if err != nil {
 		logger.Printf("[Inventory] read state failed: %v", err)
 		return inventory.State{Rows: []inventory.Row{}, Holders: []inventory.Holder{}}
+	}
+	for index := range state.Rows {
+		state.Rows[index].Name = inventoryItemName(state.Rows[index].ItemID, state.Rows[index].Name)
 	}
 	return state
 }

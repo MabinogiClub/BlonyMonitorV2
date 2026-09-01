@@ -520,6 +520,8 @@ interface InventoryRow {
   holderName: string
   ownerCharacterId?: string
   ownerCharacterName?: string
+  scannedById?: string
+  scannedByName?: string
   container: 'backpack' | 'bank' | 'gacha' | 'dressing' | 'cash'
   subLocation?: string
   updatedAt: number

@@ -21,12 +21,25 @@ const containerLabels: Record<string, string> = {
   cash: '商城栏',
 }
 
+function subjectType(row: InventoryRow): string {
+  return row.holderType === 'account' ? 'character' : row.holderType
+}
+
+function subjectID(row: InventoryRow): string {
+  return row.holderType === 'account' ? (row.scannedById || row.holderId) : row.holderId
+}
+
+function subjectName(row: InventoryRow): string {
+  return row.holderType === 'account' ? (row.scannedByName || '未记录角色') : (row.holderName || row.holderId)
+}
+
 const holderOptions = computed(() => {
   const seen = new Map<string, { id: string; label: string }>()
   for (const row of state.value.rows || []) {
-    if (holderType.value !== 'all' && row.holderType !== holderType.value) continue
-    if (!seen.has(row.holderId)) {
-      seen.set(row.holderId, { id: row.holderId, label: row.holderName || row.holderId })
+    if (holderType.value !== 'all' && subjectType(row) !== holderType.value) continue
+    const id = subjectID(row)
+    if (!seen.has(id)) {
+      seen.set(id, { id, label: subjectName(row) })
     }
   }
   return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
@@ -35,9 +48,9 @@ const holderOptions = computed(() => {
 const filteredRows = computed(() => {
   const term = query.value.trim().toLocaleLowerCase()
   return (state.value.rows || []).filter((row) => {
-    if (holderType.value !== 'all' && row.holderType !== holderType.value) return false
+    if (holderType.value !== 'all' && subjectType(row) !== holderType.value) return false
     if (container.value !== 'all' && row.container !== container.value) return false
-    if (holderID.value !== 'all' && row.holderId !== holderID.value) return false
+    if (holderID.value !== 'all' && subjectID(row) !== holderID.value) return false
     if (!term) return true
     return row.name.toLocaleLowerCase().includes(term) || String(row.itemId).includes(term)
   })
@@ -112,7 +125,6 @@ onUnmounted(() => {
         <option value="all">全部主体</option>
         <option value="character">角色</option>
         <option value="pet">宠物</option>
-        <option value="account">账号共享</option>
       </select>
 
       <select v-model="container" aria-label="存放位置">
@@ -154,8 +166,8 @@ onUnmounted(() => {
         </div>
         <span class="amount">{{ row.amount.toLocaleString() }}</span>
         <div class="holder-cell">
-          <span>{{ row.holderName }}</span>
-          <span class="secondary">{{ holderTypeLabel(row.holderType) }}</span>
+          <span>{{ subjectName(row) }}</span>
+          <span class="secondary">{{ row.holderType === 'account' ? '当前角色' : holderTypeLabel(row.holderType) }}</span>
         </div>
         <span>{{ row.holderType === 'pet' ? (row.ownerCharacterName || '未记录') : '--' }}</span>
         <div class="location-cell">
@@ -183,10 +195,14 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .inventory-view {
+  width: 100%;
   height: 100%;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
   color: #ddd;
 }
 
@@ -283,7 +299,13 @@ select {
 .list-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.inventory-grid > * {
+  min-width: 0;
 }
 
 .inventory-row {
@@ -362,7 +384,13 @@ select {
   }
 
   .inventory-grid {
-    min-width: 780px;
+    grid-template-columns: minmax(130px, 2fr) minmax(48px, 0.5fr) minmax(90px, 1fr) minmax(90px, 0.9fr);
+    column-gap: 6px;
+  }
+
+  .inventory-grid > :nth-child(4),
+  .inventory-grid > :nth-child(6) {
+    display: none;
   }
 }
 </style>

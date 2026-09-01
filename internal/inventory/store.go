@@ -23,6 +23,7 @@ type Item struct {
 type Snapshot struct {
 	HolderID, HolderType, HolderName string
 	Container, SubLocation           string
+	ScannedByID, ScannedByName       string
 	CapturedAt                       int64
 	Items                            []Item
 }
@@ -36,6 +37,8 @@ type Row struct {
 	HolderName         string `json:"holderName"`
 	OwnerCharacterID   string `json:"ownerCharacterId,omitempty"`
 	OwnerCharacterName string `json:"ownerCharacterName,omitempty"`
+	ScannedByID        string `json:"scannedById,omitempty"`
+	ScannedByName      string `json:"scannedByName,omitempty"`
 	Container          string `json:"container"`
 	SubLocation        string `json:"subLocation,omitempty"`
 	UpdatedAt          int64  `json:"updatedAt"`
@@ -108,7 +111,8 @@ CREATE TABLE IF NOT EXISTS holders (
 );
 CREATE TABLE IF NOT EXISTS snapshots (
  id INTEGER PRIMARY KEY AUTOINCREMENT, holder_id TEXT NOT NULL, container TEXT NOT NULL,
- sub_location TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL,
+ sub_location TEXT NOT NULL DEFAULT '', scanned_by_id TEXT NOT NULL DEFAULT '',
+ scanned_by_name TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL,
  UNIQUE(holder_id, container, sub_location), FOREIGN KEY(holder_id) REFERENCES holders(holder_id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS items (
@@ -119,6 +123,41 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE INDEX IF NOT EXISTS idx_inventory_items_item_id ON items(item_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_items_name ON items(name);
 `)
+	if err != nil {
+		return err
+	}
+	if err := ensureColumn(s.db, "snapshots", "scanned_by_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	return ensureColumn(s.db, "snapshots", "scanned_by_name", "TEXT NOT NULL DEFAULT ''")
+}
+
+func ensureColumn(db *sql.DB, table, column, definition string) error {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, primaryKey int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == column {
+			found = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = db.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition)
 	return err
 }
 
@@ -161,10 +200,12 @@ updated_at=excluded.updated_at`, snapshot.HolderID, snapshot.HolderType, snapsho
 	if err != nil {
 		return fmt.Errorf("upsert inventory holder: %w", err)
 	}
-	_, err = tx.Exec(`INSERT INTO snapshots(holder_id, container, sub_location, updated_at)
-VALUES(?, ?, ?, ?)
-ON CONFLICT(holder_id, container, sub_location) DO UPDATE SET updated_at=excluded.updated_at`,
-		snapshot.HolderID, snapshot.Container, snapshot.SubLocation, snapshot.CapturedAt)
+	_, err = tx.Exec(`INSERT INTO snapshots(holder_id, container, sub_location, scanned_by_id, scanned_by_name, updated_at)
+VALUES(?, ?, ?, ?, ?, ?)
+ON CONFLICT(holder_id, container, sub_location) DO UPDATE SET
+scanned_by_id=excluded.scanned_by_id, scanned_by_name=excluded.scanned_by_name, updated_at=excluded.updated_at`,
+		snapshot.HolderID, snapshot.Container, snapshot.SubLocation,
+		snapshot.ScannedByID, snapshot.ScannedByName, snapshot.CapturedAt)
 	if err != nil {
 		return fmt.Errorf("upsert inventory snapshot: %w", err)
 	}
@@ -229,9 +270,11 @@ func (s *Store) State() (State, error) {
 	holderRows.Close()
 
 	rows, err := s.db.Query(`SELECT i.item_id, i.name, SUM(i.amount), h.holder_id, h.holder_type, h.name,
-h.owner_character_id, h.owner_character_name, sn.container, sn.sub_location, sn.updated_at
+h.owner_character_id, h.owner_character_name, sn.scanned_by_id, sn.scanned_by_name,
+sn.container, sn.sub_location, sn.updated_at
 FROM items i JOIN snapshots sn ON sn.id=i.snapshot_id JOIN holders h ON h.holder_id=sn.holder_id
-GROUP BY i.item_id, i.name, h.holder_id, h.holder_type, h.name, h.owner_character_id, h.owner_character_name, sn.container, sn.sub_location, sn.updated_at`)
+GROUP BY i.item_id, i.name, h.holder_id, h.holder_type, h.name, h.owner_character_id,
+h.owner_character_name, sn.scanned_by_id, sn.scanned_by_name, sn.container, sn.sub_location, sn.updated_at`)
 	if err != nil {
 		return state, err
 	}
@@ -239,7 +282,8 @@ GROUP BY i.item_id, i.name, h.holder_id, h.holder_type, h.name, h.owner_characte
 	for rows.Next() {
 		var row Row
 		if err := rows.Scan(&row.ItemID, &row.Name, &row.Amount, &row.HolderID, &row.HolderType, &row.HolderName,
-			&row.OwnerCharacterID, &row.OwnerCharacterName, &row.Container, &row.SubLocation, &row.UpdatedAt); err != nil {
+			&row.OwnerCharacterID, &row.OwnerCharacterName, &row.ScannedByID, &row.ScannedByName,
+			&row.Container, &row.SubLocation, &row.UpdatedAt); err != nil {
 			return state, err
 		}
 		state.Rows = append(state.Rows, row)
