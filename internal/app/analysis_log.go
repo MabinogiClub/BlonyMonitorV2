@@ -52,17 +52,7 @@ type analysisLogController struct {
 }
 
 func analysisLogDirectory() string {
-	// MABI_WORK_DIR is used by tests and portable development builds.
-	if dir := os.Getenv("MABI_WORK_DIR"); dir != "" {
-		return dir
-	}
-	if exe, err := os.Executable(); err == nil {
-		return filepath.Dir(exe)
-	}
-	if cwd, err := os.Getwd(); err == nil {
-		return cwd
-	}
-	return "."
+	return ensureUserDataDirectory()
 }
 
 func analysisLogPath() string {

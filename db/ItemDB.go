@@ -1,5 +1,7 @@
 package db
 
+import "strings"
+
 // ItemInfo 是客户端物品数据库中用于装备面板的基础信息。
 type ItemInfo struct {
 	ID          int    `db:"ID"`
@@ -28,4 +30,18 @@ func (item *ItemInfo) DisplayName() string {
 		return item.NameLocal
 	}
 	return item.NameEN
+}
+
+// GetEnchantName resolves an OptionSet/enchant ID when the generated data
+// database contains the optional OptionSet table. Older databases simply
+// return an empty string and callers can retain the numeric ID.
+func GetEnchantName(id int) string {
+	if DB == nil || id <= 0 {
+		return ""
+	}
+	var name string
+	if err := DB.Get(&name, "SELECT LocalName FROM OptionSet WHERE ID = ? LIMIT 1", id); err == nil {
+		return strings.TrimSpace(name)
+	}
+	return ""
 }

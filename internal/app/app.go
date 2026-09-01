@@ -25,12 +25,7 @@ func init() {
 		return
 	}
 
-	exePath, err := os.Executable()
-	if err != nil {
-		logger = log.New(os.Stdout, "overlay ", log.LstdFlags|log.Lshortfile)
-		return
-	}
-	logPath := filepath.Join(filepath.Dir(exePath), "overlay.log")
+	logPath := filepath.Join(ensureUserDataDirectory(), "overlay.log")
 
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
@@ -174,6 +169,7 @@ func NewApp() *App {
 // Startup ???????
 func (a *App) Startup(ctx context.Context) {
 	a.ctx, a.cancel = context.WithCancel(ctx)
+	migrateLegacyUserData()
 	if loadAnalysisLogEnabled() {
 		if err := a.startAnalysisLog(); err != nil {
 			logger.Printf("[AnalysisLog] 启动失败: %v", err)

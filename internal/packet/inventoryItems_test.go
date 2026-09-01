@@ -20,3 +20,25 @@ func TestParseInventoryItemRecords(t *testing.T) {
 		t.Fatalf("records = %#v", records)
 	}
 }
+
+func TestParseInventoryItemRecordsKeepsInstanceAttributes(t *testing.T) {
+	publicData := make([]byte, 80)
+	binary.LittleEndian.PutUint32(publicData[4:], 62059)
+	extendedData := make([]byte, 144)
+	binary.LittleEndian.PutUint16(extendedData[60:], 21608)
+	binary.LittleEndian.PutUint16(extendedData[62:], 31696)
+	records := ParseInventoryItemRecords(Message{
+		NewMessageElemLong(456),
+		NewMessageElemByte(2),
+		NewMessageElemBin(publicData),
+		NewMessageElemBin(extendedData),
+		NewMessageElemString("ENPFIX:4:21638;"),
+		NewMessageElemString("LSOW:s:Flandre;"),
+	})
+	if len(records) != 1 || records[0].Attributes != "ENPFIX:4:21638;LSOW:s:Flandre;" {
+		t.Fatalf("records = %#v", records)
+	}
+	if len(records[0].ExtendedData) != 144 || binary.LittleEndian.Uint16(records[0].ExtendedData[60:]) != 21608 {
+		t.Fatalf("extended data = %x", records[0].ExtendedData)
+	}
+}

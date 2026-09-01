@@ -31,6 +31,7 @@ type Snapshot struct {
 type Row struct {
 	ItemID             uint32 `json:"itemId"`
 	Name               string `json:"name"`
+	EnchantName        string `json:"enchantName,omitempty"`
 	Amount             int    `json:"amount"`
 	PocketType         uint32 `json:"pocketType"`
 	HolderID           string `json:"holderId"`

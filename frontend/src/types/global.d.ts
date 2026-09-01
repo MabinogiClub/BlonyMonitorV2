@@ -56,6 +56,7 @@ interface GoApp {
   GetCleanedTargetsList(): Promise<string[]>
   ReadCleanedTargetFileFull(fileName: string): Promise<HistoryFileData | HistoryTarget[] | { error: string }>
   GetSaveDir(): Promise<string>
+  OpenSaveDir(): Promise<void>
   SetClickThrough(enabled: boolean): Promise<void>
   GetClickThrough(): Promise<boolean>
   SetOpacity(opacity: number): Promise<void>
@@ -514,7 +515,9 @@ interface SelfInfo {
 interface InventoryRow {
   itemId: number
   name: string
+  enchantName?: string
   amount: number
+  pocketType: number
   holderId: string
   holderType: 'character' | 'pet' | 'account'
   holderName: string

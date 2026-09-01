@@ -738,6 +738,14 @@ export async function getSaveDir(): Promise<string> {
 }
 
 /**
+ * 在系统文件管理器中打开战斗记录保存目录
+ */
+export async function openSaveDir(): Promise<void> {
+  if (!isWailsReady()) return
+  return window.go.app.App.OpenSaveDir()
+}
+
+/**
  * 退出应用
  */
 export function quit(): void {

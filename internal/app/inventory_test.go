@@ -5,8 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"blonymonitorv2/db"
 	"blonymonitorv2/internal/inventory"
 	"blonymonitorv2/internal/packet"
+
+	"github.com/jmoiron/sqlx"
 )
 
 func inventoryTestRecord(instanceID uint64, pocket, itemID uint32, amount uint16) packet.Message {
@@ -177,5 +180,48 @@ func TestIncompleteFriendPetAppearanceDoesNotChangeOwner(t *testing.T) {
 func TestInventoryItemNameKeepsCachedFallbackForUnknownItem(t *testing.T) {
 	if got := inventoryItemName(^uint32(0), "cached name"); got != "cached name" {
 		t.Fatalf("inventoryItemName() = %q, want cached name", got)
+	}
+}
+
+func TestInventoryDisplayNameIncludesEnchantPrefixesAndScrollName(t *testing.T) {
+	testDB, err := sqlx.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testDB.Exec(`CREATE TABLE OptionSet (ID INTEGER, LocalName TEXT);
+CREATE TABLE ItemDB (ID INTEGER, Text_Name0 TEXT, Text_Name1 TEXT, Text_Desc1 TEXT, File_InvImage TEXT);
+INSERT INTO OptionSet VALUES (21132, '老练的'), (31690, '兔猿人'), (21638, '安乐');
+INSERT INTO ItemDB VALUES
+  (2110113, 'Fresh Baristar Hat', '清新的咖啡师帽子', '', ''),
+  (2210006, 'Bliain Ender''s Intense Circlet for Women', '布里安恩德斯激情锁环(女款)', '', '');`); err != nil {
+		t.Fatal(err)
+	}
+	previousDB := db.DB
+	db.DB = testDB
+	t.Cleanup(func() {
+		db.DB = previousDB
+		_ = testDB.Close()
+	})
+
+	extended := make([]byte, 144)
+	binary.LittleEndian.PutUint16(extended[60:], 21132)
+	binary.LittleEndian.PutUint16(extended[62:], 31690)
+	if got := inventoryDisplayName(2210006, "布里安恩德斯激情锁环(女款)", extended, ""); got != "老练的 兔猿人 布里安恩德斯激情锁环(女款)" {
+		t.Fatalf("equipment name = %q", got)
+	}
+	if got := inventoryDisplayName(62059, "专用魔法释放卷轴", nil, "ENPFIX:4:21638;"); got != "专用魔法释放卷轴 - 安乐" {
+		t.Fatalf("scroll name = %q", got)
+	}
+	if got := inventoryStateItemName(2110113, "Fresh Baristar Hat"); got != "清新的咖啡师帽子" {
+		t.Fatalf("old English name = %q", got)
+	}
+	if got := inventoryStateItemName(2110113, "安乐 清新的咖啡师帽子"); got != "安乐 清新的咖啡师帽子" {
+		t.Fatalf("instance name = %q", got)
+	}
+	if got := inventoryEnchantName(2210006, "老练的 兔猿人 布里安恩德斯激情锁环(女款)"); got != "老练的 兔猿人" {
+		t.Fatalf("enchant name = %q", got)
+	}
+	if got := inventoryEnchantName(62059, "专用魔法释放卷轴 - 安乐"); got != "" {
+		t.Fatalf("scroll enchant name = %q", got)
 	}
 }

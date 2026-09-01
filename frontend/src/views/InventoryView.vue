@@ -13,12 +13,6 @@ const holderID = ref('all')
 const page = ref(1)
 const pageSize = 200
 
-const queryTerms = computed(() => query.value
-  .split(/[\s,，]+/)
-  .map(term => term.trim().toLocaleLowerCase())
-  .filter(Boolean)
-  .slice(0, 5))
-
 const containerLabels: Record<string, string> = {
   backpack: '背包',
   bank: '银行',
@@ -53,13 +47,21 @@ const holderOptions = computed(() => {
 })
 
 const filteredRows = computed(() => {
+  // Read query directly here so every input change invalidates the complete
+  // filtering result, including after an earlier multi-keyword search.
+  const queryTerms = query.value
+    .split(/[\s,，]+/)
+    .map(term => term.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 5)
+
   return (state.value.rows || []).filter((row) => {
     if (holderType.value !== 'all' && subjectType(row) !== holderType.value) return false
     if (container.value !== 'all' && row.container !== container.value) return false
     if (holderID.value !== 'all' && subjectID(row) !== holderID.value) return false
-    if (queryTerms.value.length === 0) return true
-    const searchable = `${row.name} ${row.itemId}`.toLocaleLowerCase()
-    return queryTerms.value.every(term => searchable.includes(term))
+    if (queryTerms.length === 0) return true
+    const searchable = `${row.name} ${row.itemId}`.toLowerCase()
+    return queryTerms.every(term => searchable.includes(term))
   })
 })
 
@@ -167,9 +169,14 @@ onUnmounted(() => {
 
     <div class="list-body" role="table" aria-label="背包物品列表">
       <div v-if="!loading && visibleRows.length === 0" class="empty-state">暂无物品数据</div>
-      <div v-for="row in visibleRows" :key="`${row.itemId}-${row.holderId}-${row.container}-${row.subLocation || ''}`" class="inventory-row inventory-grid" role="row">
+      <div v-for="row in visibleRows" :key="`${row.itemId}-${row.name}-${row.pocketType}-${row.holderId}-${row.container}-${row.subLocation || ''}`" class="inventory-row inventory-grid" role="row">
         <div class="item-cell">
-          <span class="item-name">{{ row.name }}</span>
+          <span class="item-name">
+            <template v-if="row.enchantName">
+              <span class="enchant-name">{{ row.enchantName }}</span>{{ row.name.slice(row.enchantName.length) }}
+            </template>
+            <template v-else>{{ row.name }}</template>
+          </span>
           <span class="item-id">#{{ row.itemId }}</span>
         </div>
         <span class="amount">{{ row.amount.toLocaleString() }}</span>
@@ -341,6 +348,10 @@ select {
   color: #f0f0f0;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.enchant-name {
+  color: #52b9ff;
 }
 
 .item-id,

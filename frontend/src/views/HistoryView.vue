@@ -10,12 +10,15 @@ import { formatNumber, formatDuration, getDisplayName, BAR_CLASSES } from '../co
 import { useHistoryChart } from '../composables/useHistoryChart'
 import SkillDetailItem from '../components/SkillDetailItem.vue'
 import BuffCoveragePanel from '../components/BuffCoveragePanel.vue'
+import SvgIcon from '@jamescoyle/vue-icon'
+import { mdiFolderOpen, mdiRefresh } from '@mdi/js'
 
 const appStore = useAppStore()
 
 const fileList = ref<string[]>([])
 const saveDir = ref('')
 const refreshing = ref(false)
+const openingSaveDir = ref(false)
 const selectedFile = ref('')
 const targets = ref<HistoryTarget[]>([])
 const loading = ref(false)
@@ -193,6 +196,18 @@ function isExpanded(attackerId: string): boolean {
   return expandedAttackers.value.has(attackerId)
 }
 
+async function openSaveDirectory() {
+  if (openingSaveDir.value) return
+  openingSaveDir.value = true
+  try {
+    await api.openSaveDir()
+  } catch (e) {
+    console.error('Failed to open history storage directory:', e)
+  } finally {
+    openingSaveDir.value = false
+  }
+}
+
 function getPlayerBuffCoverage(attackerId: string): PlayerBuffCoverage | undefined {
   return selectedTarget.value?.buffCoverage?.find(player => player.playerId === attackerId)
 }
@@ -368,14 +383,24 @@ onUnmounted(() => {
     <aside class="file-panel">
       <div class="panel-header">
         <div class="panel-title">历史文件</div>
-        <button
-          class="refresh-btn"
-          title="刷新列表"
-          :disabled="refreshing"
-          @click="loadFileList"
-        >
-          ↻
-        </button>
+        <div class="panel-actions">
+          <button
+            class="refresh-btn"
+            title="打开存储目录"
+            :disabled="openingSaveDir"
+            @click="openSaveDirectory"
+          >
+            <svg-icon type="mdi" :path="mdiFolderOpen" :size="15" />
+          </button>
+          <button
+            class="refresh-btn"
+            title="刷新列表"
+            :disabled="refreshing"
+            @click="loadFileList"
+          >
+            <svg-icon type="mdi" :path="mdiRefresh" :size="15" />
+          </button>
+        </div>
       </div>
       <div v-if="saveDir" class="save-dir-hint" :title="saveDir">
         {{ saveDir }}
@@ -435,6 +460,12 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 4px;
   margin-bottom: 4px;
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
 }
 
 .panel-title {

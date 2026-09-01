@@ -64,11 +64,7 @@ type BossHPExport struct {
 }
 
 func (a *App) saveDir() string {
-	exePath, err := os.Executable()
-	if err != nil {
-		return "save"
-	}
-	return filepath.Join(filepath.Dir(exePath), "save")
+	return filepath.Join(ensureUserDataDirectory(), "save")
 }
 
 func cloneSortedSkillHitRecords(records []SkillHitRecord) []SkillHitRecord {

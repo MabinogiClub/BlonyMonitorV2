@@ -230,6 +230,7 @@ def build(source: Path, target: Path) -> dict[str, int]:
         race_local = merged_localized("race")
         dungeon_local = merged_localized("dungeondb")
         minimap_local = merged_localized("minimapinfo")
+        option_local = merged_localized("optionset")
 
         target_locale = "china"
         item_paths = sorted(dbdir.glob("*ItemDB*.xml"), key=lambda p: p.name.lower())
@@ -254,6 +255,24 @@ def build(source: Path, target: Path) -> dict[str, int]:
                 ))
             except ValueError:
                 continue
+
+        option_rows = []
+        option_path = dbdir / "OptionSet.xml"
+        if option_path.exists():
+            for node in parse_xml(option_path).iter("OptionSet"):
+                try:
+                    option_id = int(node.attrib.get("ID", "0"))
+                except ValueError:
+                    continue
+                if option_id <= 0:
+                    continue
+                # LocalName2 is the suffix display form when present; it is
+                # normally identical to LocalName but matches the client UI.
+                option_name = localized(node.attrib.get("LocalName2", ""), option_local)
+                if not option_name:
+                    option_name = localized(node.attrib.get("LocalName", ""), option_local)
+                if option_name:
+                    option_rows.append((option_id, option_name))
 
         skill_nodes = unique_rows([dbdir / "Skill" / "SkillInfo.xml"], "Skill", "SkillID")
         old_skills = old
@@ -320,6 +339,10 @@ def build(source: Path, target: Path) -> dict[str, int]:
             ID INTEGER PRIMARY KEY, Text_Name0 TEXT, Text_Name1 TEXT,
             Text_Desc1 TEXT, File_InvImage TEXT, Inv_XSize INTEGER, Inv_YSize INTEGER
         )""", item_rows, 7)
+        replace_table(old, "OptionSet", """CREATE TABLE OptionSet (
+            ID INTEGER NOT NULL, LocalName TEXT NOT NULL
+        )""", option_rows, 2)
+        old.execute("CREATE INDEX idx_optionset_id ON OptionSet(ID)")
         replace_table(old, "SkillInfo", """CREATE TABLE SkillInfo (
             SkillID INTEGER PRIMARY KEY, SkillEngName TEXT, SkillLocalName TEXT,
             SkillDesc TEXT, ImageData TEXT
@@ -344,6 +367,7 @@ def build(source: Path, target: Path) -> dict[str, int]:
         shutil.copy2(temp_db, target)
         return {
             "ItemDB": len(item_rows),
+            "OptionSet": len(option_rows),
             "SkillInfo": len(skill_rows),
             "Race": len(race_rows),
             "CharacterCondition": len(condition_rows),

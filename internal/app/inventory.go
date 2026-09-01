@@ -1,7 +1,9 @@
 package app
 
 import (
+	"encoding/binary"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +14,55 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+var enchantAttributeRE = regexp.MustCompile(`(?:^|;)(?:ENPFIX|ENSFIX):[^:;]*:([0-9]+)`)
+
+func inventoryDisplayName(itemID uint32, base string, extendedData []byte, attributes string) string {
+	name := base
+	if strings.TrimSpace(name) == "" {
+		name = "物品 #" + strconv.FormatUint(uint64(itemID), 10)
+	}
+	parts := make([]string, 0, 2)
+	// Equipment snapshots carry the prefix and suffix OptionSet IDs as two
+	// uint16 values at offsets 60 and 62 of their 144-byte extended data.
+	if len(extendedData) >= 64 {
+		for _, offset := range []int{60, 62} {
+			if enchant := db.GetEnchantName(int(binary.LittleEndian.Uint16(extendedData[offset:]))); enchant != "" && !slicesContains(parts, enchant) {
+				parts = append(parts, enchant)
+			}
+		}
+	}
+	// Enchant scrolls store their represented enchant in the attribute string.
+	// ENPFIX is the prefix enchant and ENSFIX is the suffix enchant.
+	for _, match := range enchantAttributeRE.FindAllStringSubmatch(attributes, -1) {
+		if len(match) != 2 {
+			continue
+		}
+		id, err := strconv.Atoi(match[1])
+		if err != nil {
+			continue
+		}
+		if enchant := db.GetEnchantName(id); enchant != "" && !slicesContains(parts, enchant) {
+			parts = append(parts, enchant)
+		}
+	}
+	if len(parts) == 0 {
+		return name
+	}
+	if itemID == 62005 || itemID == 62059 {
+		return name + " - " + strings.Join(parts, "/")
+	}
+	return strings.Join(parts, " ") + " " + name
+}
+
+func slicesContains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
 
 const (
 	inventoryContainerBackpack = "backpack"
@@ -39,6 +90,43 @@ func inventoryItemName(itemID uint32, fallback string) string {
 	return fallback
 }
 
+func inventoryStateItemName(itemID uint32, stored string) string {
+	info := db.GetItemInfo(int(itemID))
+	if info == nil {
+		return stored
+	}
+	current := strings.TrimSpace(info.DisplayName())
+	if current == "" {
+		return stored
+	}
+	stored = strings.TrimSpace(stored)
+	// Snapshots from before instance names were supported contain either the
+	// database's English or localized base name. Refresh both to the current
+	// localized definition, while retaining names extended with enchant data.
+	if stored == "" || strings.HasPrefix(stored, "物品 #") ||
+		stored == strings.TrimSpace(info.NameEN) || stored == strings.TrimSpace(info.NameLocal) {
+		return current
+	}
+	return stored
+}
+
+func inventoryEnchantName(itemID uint32, name string) string {
+	// Enchant scroll titles describe the scroll itself; only color attached
+	// enchant names on equipment, matching the in-game item title treatment.
+	if itemID == 62005 || itemID == 62059 {
+		return ""
+	}
+	base := inventoryItemName(itemID, "")
+	if base == "" {
+		return ""
+	}
+	prefix, found := strings.CutSuffix(strings.TrimSpace(name), " "+base)
+	if !found {
+		return ""
+	}
+	return strings.TrimSpace(prefix)
+}
+
 func inventoryItems(records []packet.InventoryItemRecord) []inventory.Item {
 	items := make([]inventory.Item, 0, len(records))
 	names := make(map[uint32]string)
@@ -58,6 +146,7 @@ func inventoryItems(records []packet.InventoryItemRecord) []inventory.Item {
 		if amount <= 0 {
 			amount = 1
 		}
+		name = inventoryDisplayName(record.Item.ItemId, name, record.ExtendedData, record.Attributes)
 		items = append(items, inventory.Item{
 			InstanceID: record.InstanceID,
 			ItemID:     record.Item.ItemId,
@@ -244,7 +333,8 @@ func (a *App) GetInventoryState() inventory.State {
 		return inventory.State{Rows: []inventory.Row{}, Holders: []inventory.Holder{}}
 	}
 	for index := range state.Rows {
-		state.Rows[index].Name = inventoryItemName(state.Rows[index].ItemID, state.Rows[index].Name)
+		state.Rows[index].Name = inventoryStateItemName(state.Rows[index].ItemID, state.Rows[index].Name)
+		state.Rows[index].EnchantName = inventoryEnchantName(state.Rows[index].ItemID, state.Rows[index].Name)
 		if state.Rows[index].Container == inventoryContainerBackpack && state.Rows[index].PocketType == inventoryCurrencyPocket {
 			state.Rows[index].Container = inventoryContainerCurrency
 		}

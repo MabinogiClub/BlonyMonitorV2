@@ -145,21 +145,12 @@ func resolveSoundDir() string {
 }
 
 func buffOrderFilePath() string {
-	candidates := make([]string, 0, 3)
+	candidates := make([]string, 0, 2)
 	if workDir := os.Getenv("MABI_WORK_DIR"); workDir != "" {
 		candidates = append(candidates, filepath.Join(workDir, "buff_order.json"))
 	}
-	if exePath, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exePath), "buff_order.json"))
-	}
-	if cwd, err := os.Getwd(); err == nil && cwd != "" {
-		candidates = append(candidates, filepath.Join(cwd, "buff_order.json"))
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(filepath.Dir(path)); err == nil {
-			return path
-		}
+	if os.Getenv("MABI_WORK_DIR") == "" {
+		candidates = append(candidates, filepath.Join(ensureUserDataDirectory(), "buff_order.json"))
 	}
 	if len(candidates) > 0 {
 		return candidates[0]
@@ -209,6 +200,10 @@ func (m *BuffTimerManager) saveBuffOrder() error {
 	path := buffOrderFilePath()
 	data, err := json.Marshal(m.buffOrder)
 	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		logger.Printf("[BuffTimer] 创建排序配置目录失败: %v", err)
 		return err
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
@@ -475,11 +470,11 @@ func prepareWavPlayback(audioFile string, volume int) ([]byte, time.Duration, er
 	}
 
 	var (
-		audioFormat uint16
+		audioFormat   uint16
 		bitsPerSample uint16
-		byteRate uint32
-		dataOffset int
-		dataLength int
+		byteRate      uint32
+		dataOffset    int
+		dataLength    int
 	)
 	for offset := 12; offset+8 <= len(audioData); {
 		chunkSize := int(binary.LittleEndian.Uint32(audioData[offset+4 : offset+8]))
