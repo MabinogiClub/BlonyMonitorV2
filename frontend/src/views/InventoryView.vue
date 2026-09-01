@@ -12,6 +12,8 @@ const container = ref('all')
 const holderID = ref('all')
 const page = ref(1)
 const pageSize = 200
+let inventoryLoadInFlight: Promise<void> | null = null
+let inventoryRefreshQueued = false
 
 const containerLabels: Record<string, string> = {
   backpack: '背包',
@@ -97,15 +99,28 @@ function formatTime(value: number): string {
 }
 
 async function loadInventory() {
-  loading.value = true
-  try {
-    state.value = await api.getInventoryState()
-    if (page.value > pageCount.value) page.value = pageCount.value
-  } catch (error) {
-    console.error('加载背包数据失败:', error)
-  } finally {
-    loading.value = false
-  }
+	if (inventoryLoadInFlight) {
+		inventoryRefreshQueued = true
+		return inventoryLoadInFlight
+	}
+	loading.value = true
+	const load = (async () => {
+		try {
+			state.value = await api.getInventoryState()
+			if (page.value > pageCount.value) page.value = pageCount.value
+		} catch (error) {
+			console.error('加载背包数据失败:', error)
+		} finally {
+			loading.value = false
+			inventoryLoadInFlight = null
+			if (inventoryRefreshQueued) {
+				inventoryRefreshQueued = false
+				void loadInventory()
+			}
+		}
+	})()
+	inventoryLoadInFlight = load
+	return load
 }
 
 function handleInventoryUpdated() {

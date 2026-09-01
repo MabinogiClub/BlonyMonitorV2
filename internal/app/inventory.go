@@ -91,7 +91,10 @@ func inventoryItemName(itemID uint32, fallback string) string {
 }
 
 func inventoryStateItemName(itemID uint32, stored string) string {
-	info := db.GetItemInfo(int(itemID))
+	return inventoryStateItemNameWithInfo(stored, db.GetItemInfo(int(itemID)))
+}
+
+func inventoryStateItemNameWithInfo(stored string, info *db.ItemInfo) string {
 	if info == nil {
 		return stored
 	}
@@ -111,12 +114,15 @@ func inventoryStateItemName(itemID uint32, stored string) string {
 }
 
 func inventoryEnchantName(itemID uint32, name string) string {
+	return inventoryEnchantNameWithBase(itemID, name, inventoryItemName(itemID, ""))
+}
+
+func inventoryEnchantNameWithBase(itemID uint32, name, base string) string {
 	// Enchant scroll titles describe the scroll itself; only color attached
 	// enchant names on equipment, matching the in-game item title treatment.
 	if itemID == 62005 || itemID == 62059 {
 		return ""
 	}
-	base := inventoryItemName(itemID, "")
 	if base == "" {
 		return ""
 	}
@@ -332,11 +338,22 @@ func (a *App) GetInventoryState() inventory.State {
 		logger.Printf("[Inventory] read state failed: %v", err)
 		return inventory.State{Rows: []inventory.Row{}, Holders: []inventory.Holder{}}
 	}
+	itemIDs := make([]uint32, 0, len(state.Rows))
+	for _, row := range state.Rows {
+		itemIDs = append(itemIDs, row.ItemID)
+	}
+	itemInfoCache := db.GetItemInfoBatch(itemIDs)
 	for index := range state.Rows {
-		state.Rows[index].Name = inventoryStateItemName(state.Rows[index].ItemID, state.Rows[index].Name)
-		state.Rows[index].EnchantName = inventoryEnchantName(state.Rows[index].ItemID, state.Rows[index].Name)
+		row := &state.Rows[index]
+		info := itemInfoCache[row.ItemID]
+		row.Name = inventoryStateItemNameWithInfo(row.Name, info)
+		base := ""
+		if info != nil {
+			base = strings.TrimSpace(info.DisplayName())
+		}
+		row.EnchantName = inventoryEnchantNameWithBase(row.ItemID, row.Name, base)
 		if state.Rows[index].Container == inventoryContainerBackpack && state.Rows[index].PocketType == inventoryCurrencyPocket {
-			state.Rows[index].Container = inventoryContainerCurrency
+			row.Container = inventoryContainerCurrency
 		}
 	}
 	return state

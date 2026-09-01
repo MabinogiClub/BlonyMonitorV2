@@ -1,6 +1,9 @@
 package db
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // ItemInfo 是客户端物品数据库中用于装备面板的基础信息。
 type ItemInfo struct {
@@ -20,6 +23,50 @@ func GetItemInfo(id int) *ItemInfo {
 		return nil
 	}
 	return &item
+}
+
+// GetItemInfoBatch loads item definitions with bounded IN queries. SQLite has
+// a limit on bind parameters, so callers can safely pass large inventories.
+func GetItemInfoBatch(ids []uint32) map[uint32]*ItemInfo {
+	result := make(map[uint32]*ItemInfo, len(ids))
+	if DB == nil || len(ids) == 0 {
+		return result
+	}
+	unique := make([]uint32, 0, len(ids))
+	seen := make(map[uint32]struct{}, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+
+	const batchSize = 500
+	for start := 0; start < len(unique); start += batchSize {
+		end := start + batchSize
+		if end > len(unique) {
+			end = len(unique)
+		}
+		args := make([]any, end-start)
+		placeholders := make([]string, end-start)
+		for index, id := range unique[start:end] {
+			args[index] = id
+			placeholders[index] = "?"
+		}
+		var items []ItemInfo
+		query := fmt.Sprintf("SELECT ID, Text_Name0, Text_Name1, Text_Desc1, File_InvImage FROM ItemDB WHERE ID IN (%s)", strings.Join(placeholders, ","))
+		if err := DB.Select(&items, query, args...); err != nil {
+			continue
+		}
+		for index := range items {
+			result[uint32(items[index].ID)] = &items[index]
+		}
+	}
+	return result
 }
 
 func (item *ItemInfo) DisplayName() string {

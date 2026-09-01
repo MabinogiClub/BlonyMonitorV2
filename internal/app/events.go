@@ -12,6 +12,21 @@ func (a *App) restorePersistentConditions(characterData *packet.CharacterDataPac
 	}
 
 	entityID := strconv.FormatUint(characterData.Id, 10)
+	// 0x5209 is also emitted for pets/summons. Once the local character is
+	// known, a different packet ID must never replace it. When an appearance
+	// record is available, use its ownership/type metadata as an additional
+	// guard against a pet packet whose character fields resemble a PC.
+	a.mu.RLock()
+	knownSelfID := a.selfId
+	entity, entityKnown := a.entities[entityID]
+	a.mu.RUnlock()
+	if knownSelfID != "" && knownSelfID != entityID {
+		return
+	}
+	if entityKnown && (entity.OwnerID != 0 || !entity.IsPC) {
+		return
+	}
+
 	a.setSelfInfo(entityID, characterData.Name)
 	for _, condition := range characterData.Conditions {
 		if condition == nil || !isChannelPersistentStatus(condition.CCId) || condition.Duration <= 0 {
