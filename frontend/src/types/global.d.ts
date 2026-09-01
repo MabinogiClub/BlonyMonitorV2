@@ -224,6 +224,7 @@ interface TakenStats {
   appearedAt?: number
   endedAt?: number
   buffCoverage?: PlayerBuffCoverage[]
+  targetBuffCoverage?: PlayerBuffCoverage
 }
 
 interface BuffDetailValue {

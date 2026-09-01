@@ -2,6 +2,7 @@ package app
 
 // 游戏数据包操作码
 const (
+	opcodeServerTimeSync       = 0x213f0
 	opcodeFarmCropState        = 0x52d2
 	opcodeFarmEntityList       = 0x2138d
 	opcodeFarmSummary          = 0x2138e
@@ -207,16 +208,17 @@ type AttackerWithSkills struct {
 
 // TargetDamageStats 受到伤害统计 - 按目标
 type TargetDamageStats struct {
-	ID           string               `json:"id"`
-	Name         string               `json:"name"`
-	TotalDamage  float64              `json:"totalDamage"`
-	DPS          float64              `json:"dps"`      // 每秒受到伤害
-	Duration     float64              `json:"duration"` // 存活时间（秒）
-	Attackers    []AttackerWithSkills `json:"attackers"`
-	Status       string               `json:"status"` // 状态: active(战斗中), idle(空闲), dead(死亡)
-	AppearedAt   int64                `json:"appearedAt"`
-	EndedAt      int64                `json:"endedAt"`
-	BuffCoverage []PlayerBuffCoverage `json:"buffCoverage,omitempty"`
+	ID                 string               `json:"id"`
+	Name               string               `json:"name"`
+	TotalDamage        float64              `json:"totalDamage"`
+	DPS                float64              `json:"dps"`      // 每秒受到伤害
+	Duration           float64              `json:"duration"` // 存活时间（秒）
+	Attackers          []AttackerWithSkills `json:"attackers"`
+	Status             string               `json:"status"` // 状态: active(战斗中), idle(空闲), dead(死亡)
+	AppearedAt         int64                `json:"appearedAt"`
+	EndedAt            int64                `json:"endedAt"`
+	BuffCoverage       []PlayerBuffCoverage `json:"buffCoverage,omitempty"`
+	TargetBuffCoverage *PlayerBuffCoverage  `json:"targetBuffCoverage,omitempty"`
 }
 
 // ChartDataPoint 图表数据点

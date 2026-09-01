@@ -30,6 +30,15 @@ func TestBuildBattleUploadExtensionWithoutChangingLegacyTargets(t *testing.T) {
 				}},
 			}},
 		}},
+		TargetBuffCoverage: &PlayerBuffCoverage{
+			PlayerID:   "boss-1",
+			PlayerName: "Boss",
+			Buffs: []BuffCoverage{{
+				ConditionID:     1164,
+				ConditionName:   "防御/保护减少",
+				CoveragePercent: 50,
+			}},
+		},
 	}}}
 
 	payload := buildBattleUploadPayload(data)
@@ -43,11 +52,14 @@ func TestBuildBattleUploadExtensionWithoutChangingLegacyTargets(t *testing.T) {
 	if buffUpload.SchemaVersion != buffMonitorUploadSchemaVersion {
 		t.Fatalf("schema version = %d", buffUpload.SchemaVersion)
 	}
-	if len(buffUpload.Definitions) != len(monitoredStatusOrder) {
-		t.Fatalf("definitions = %d, want %d", len(buffUpload.Definitions), len(monitoredStatusOrder))
+	if len(buffUpload.Definitions) != len(monitoredStatusOrder)+len(targetMonitoredStatusOrder) {
+		t.Fatalf("definitions = %d, want %d", len(buffUpload.Definitions), len(monitoredStatusOrder)+len(targetMonitoredStatusOrder))
 	}
 	if len(buffUpload.Targets) != 1 || len(buffUpload.Targets[0].Players) != 1 {
 		t.Fatalf("buff targets missing: %+v", buffUpload.Targets)
+	}
+	if buffUpload.Targets[0].Target == nil || buffUpload.Targets[0].Target.PlayerID != "boss-1" {
+		t.Fatalf("target buff coverage missing: %+v", buffUpload.Targets[0].Target)
 	}
 	segment := buffUpload.Targets[0].Players[0].Buffs[0].Segments[0]
 	if segment.RawDetail != "MCMBAMAX:f:50;" {

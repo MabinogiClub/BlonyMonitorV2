@@ -619,19 +619,21 @@ func (a *App) GetDamageTaken() []TargetDamageStats {
 				isSelf: attackerID == a.selfId,
 			}
 		}
-		buffCoverage := a.buildBuffCoverageUnsafe(targetStat.firstHit, endTime, participants)
+		targetDisplayName := formatDisplayName(targetId, targetStat.name, targetStat.raceId, targetStat.isPC)
+		buffCoverage, targetBuffCoverage := a.buildBuffCoverageForTargetUnsafe(targetStat.firstHit, endTime, targetId, targetDisplayName, participants, targetStat.name)
 
 		result = append(result, TargetDamageStats{
-			ID:           targetId,
-			Name:         formatDisplayName(targetId, targetStat.name, targetStat.raceId, targetStat.isPC),
-			TotalDamage:  targetTotal,
-			DPS:          dps,
-			Duration:     duration,
-			Attackers:    attackers,
-			Status:       status,
-			AppearedAt:   targetStat.firstHit,
-			EndedAt:      endTime,
-			BuffCoverage: buffCoverage,
+			ID:                 targetId,
+			Name:               formatDisplayName(targetId, targetStat.name, targetStat.raceId, targetStat.isPC),
+			TotalDamage:        targetTotal,
+			DPS:                dps,
+			Duration:           duration,
+			Attackers:          attackers,
+			Status:             status,
+			AppearedAt:         targetStat.firstHit,
+			EndedAt:            endTime,
+			BuffCoverage:       buffCoverage,
+			TargetBuffCoverage: targetBuffCoverage,
 		})
 	}
 

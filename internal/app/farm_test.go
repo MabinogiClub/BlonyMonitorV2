@@ -485,6 +485,7 @@ func TestFarmQualityThresholds(t *testing.T) {
 }
 
 func TestFarmSpecialNotificationOnceAndSwitch(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	now := time.Now()
@@ -519,6 +520,7 @@ func TestFarmSpecialNotificationOnceAndSwitch(t *testing.T) {
 }
 
 func TestFarmReadyNotificationDebouncesForThirtySeconds(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
 	now := time.Now()
 	raw := farmRawMilliseconds(now.Add(-13 * time.Minute))

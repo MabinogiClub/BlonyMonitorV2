@@ -262,6 +262,18 @@ func (m *FarmManager) HandlePacket(pkt *packet.GamePacket) {
 	changed := false
 	specialDetected := false
 	switch pkt.Op {
+	case opcodeServerTimeSync:
+		if len(pkt.Msg) > 0 && pkt.Msg[0].Type() == packet.MessageElemTypeLong {
+			serverRawMS := int64(pkt.Msg[0].Data().(uint64))
+			serverWall := dotNetMillisecondsToWallTime(serverRawMS, pkt.At.Location())
+			offset := pkt.At.Sub(serverWall)
+			if offset >= -30*time.Second && offset <= 30*time.Second {
+				m.mu.Lock()
+				m.clockOffset = offset
+				m.clockSamples = 1
+				m.mu.Unlock()
+			}
+		}
 	case opcodeFarmCropState:
 		changed, specialDetected = m.handleCropState(pkt)
 	case opcodeFarmEntityList:

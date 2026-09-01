@@ -167,6 +167,8 @@ onUnmounted(() => {
         </div>
       </div>
       
+      <BuffCoveragePanel :player="targetDetail.targetBuffCoverage" />
+
       <!-- 提示信息 -->
       <div style="margin: 8px 0; padding: 6px 8px; background: rgba(40, 40, 40, 0.8); border-radius: 4px; font-size: 11px; color: #aaa;">
         对 {{ getDisplayName(targetDetail.id, targetDetail.name) }} 造成伤害的所有来源：

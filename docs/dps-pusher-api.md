@@ -381,7 +381,7 @@ Endpoint 由 `BLONY_ANNOUNCEMENT_ENDPOINT` 注入。客户端每次启动时发�
     "buffMonitor": {
       "schemaVersion": 1,
       "definitions": [ /* 客户端当前监控的全部 Buff 定义 */ ],
-      "targets": [ /* 各目标下的玩家 Buff 覆盖率、分段与原始详情 */ ]
+      "targets": [ /* 各目标下的玩家与目标 Buff 覆盖率、分段与原始详情 */ ]
     }
   }
 }
@@ -390,6 +390,10 @@ Endpoint 由 `BLONY_ANNOUNCEMENT_ENDPOINT` 注入。客户端每次启动时发�
 上传仍只有一个 `file`。`targets[]` 中不重复放置 `buffCoverage`，旧服务端可忽略未知的
 `extensions` 根字段；新服务端从 `extensions.buffMonitor` 读取完整 Buff 数据。整个 gzip
 文件统一参与 `contentSha256` 和 HMAC 签名，因此伤害数据与 Buff 数据使用同一份完整性校验。
+
+`extensions.buffMonitor.targets[]` 中，`players` 保存玩家 Buff 覆盖率，`target`（可选）保存
+目标自身的 Buff/Debuff 覆盖率。目标覆盖率仅对客户端配置的指定 Boss/测试木头人生成，且只
+统计目标状态列表中的覆盖率，不包含强度统计。
 
 ### 客户端上传前过滤规则
 

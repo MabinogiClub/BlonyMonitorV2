@@ -281,6 +281,8 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <BuffCoveragePanel :player="selectedTarget.targetBuffCoverage" />
+
         <div class="history-hint">
           对 {{ getDisplayName(selectedTarget.targetId || selectedTarget.id, selectedTarget.targetName || selectedTarget.name) }} 造成伤害的所有来源
         </div>

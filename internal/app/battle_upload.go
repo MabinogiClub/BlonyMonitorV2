@@ -37,6 +37,7 @@ type buffMonitorDefinition struct {
 type targetBuffMonitorUpload struct {
 	TargetID string               `json:"targetId"`
 	Players  []PlayerBuffCoverage `json:"players"`
+	Target   *PlayerBuffCoverage  `json:"target,omitempty"`
 }
 
 type buffMonitorUpload struct {
@@ -114,6 +115,7 @@ func buildLegacyBattleUploadData(data SaveFileData) SaveFileData {
 	for index := range targets {
 		// Keep the legacy target shape stable. Buff data lives in the root extension.
 		targets[index].BuffCoverage = nil
+		targets[index].TargetBuffCoverage = nil
 	}
 	return SaveFileData{Targets: targets}
 }
@@ -121,21 +123,29 @@ func buildLegacyBattleUploadData(data SaveFileData) SaveFileData {
 func buildBuffMonitorUpload(data SaveFileData) buffMonitorUpload {
 	buffTargets := make([]targetBuffMonitorUpload, 0, len(data.Targets))
 	for _, target := range data.Targets {
-		if len(target.BuffCoverage) > 0 {
+		if len(target.BuffCoverage) > 0 || target.TargetBuffCoverage != nil {
 			buffTargets = append(buffTargets, targetBuffMonitorUpload{
 				TargetID: target.TargetID,
 				Players:  target.BuffCoverage,
+				Target:   target.TargetBuffCoverage,
 			})
 		}
 	}
 
-	definitions := make([]buffMonitorDefinition, 0, len(monitoredStatusOrder))
+	definitions := make([]buffMonitorDefinition, 0, len(monitoredStatusOrder)+len(targetMonitoredStatusOrder))
 	for _, conditionID := range monitoredStatusOrder {
 		definitions = append(definitions, buffMonitorDefinition{
 			ConditionID:   conditionID,
 			ConditionName: monitoredStatusNames[conditionID],
 			IconID:        statusIconIDs[conditionID],
 			StrengthField: statusStrengthFields[conditionID],
+		})
+	}
+	for _, conditionID := range targetMonitoredStatusOrder {
+		definitions = append(definitions, buffMonitorDefinition{
+			ConditionID:   conditionID,
+			ConditionName: targetMonitoredStatusNames[conditionID],
+			IconID:        statusIconIDs[conditionID],
 		})
 	}
 

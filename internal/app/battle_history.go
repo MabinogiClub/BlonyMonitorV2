@@ -42,17 +42,18 @@ type attackerExport struct {
 }
 
 type targetExport struct {
-	TargetID     string               `json:"targetId"`
-	TargetName   string               `json:"targetName"`
-	TotalDamage  float64              `json:"totalDamage"`
-	DPS          float64              `json:"dps"`
-	Duration     float64              `json:"duration"`
-	Attackers    []attackerExport     `json:"attackers"`
-	CleanedAt    int64                `json:"cleanedAt"`
-	AppearedAt   int64                `json:"appearedAt"`
-	DeathTime    int64                `json:"deathTime,omitempty"`
-	BossHP       *BossHPExport        `json:"bossHP,omitempty"`
-	BuffCoverage []PlayerBuffCoverage `json:"buffCoverage,omitempty"`
+	TargetID           string               `json:"targetId"`
+	TargetName         string               `json:"targetName"`
+	TotalDamage        float64              `json:"totalDamage"`
+	DPS                float64              `json:"dps"`
+	Duration           float64              `json:"duration"`
+	Attackers          []attackerExport     `json:"attackers"`
+	CleanedAt          int64                `json:"cleanedAt"`
+	AppearedAt         int64                `json:"appearedAt"`
+	DeathTime          int64                `json:"deathTime,omitempty"`
+	BossHP             *BossHPExport        `json:"bossHP,omitempty"`
+	BuffCoverage       []PlayerBuffCoverage `json:"buffCoverage,omitempty"`
+	TargetBuffCoverage *PlayerBuffCoverage  `json:"targetBuffCoverage,omitempty"`
 }
 
 // BossHPExport Boss HP 时间线导出。
@@ -324,7 +325,8 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 				participants[attacker.ID] = buffParticipant{name: attacker.Name, isSelf: attacker.ID == a.selfId}
 			}
 		}
-		buffCoverage := a.buildBuffCoverageUnsafe(targetFirstHit, endTime, participants)
+		targetDisplayName := formatDisplayName(id, stat.name, stat.raceId, stat.isPC)
+		buffCoverage, targetBuffCoverage := a.buildBuffCoverageForTargetUnsafe(targetFirstHit, endTime, id, targetDisplayName, participants, stat.name)
 
 		var targetBossHP *BossHPExport
 		if records, ok := a.bossHPHistory[id]; ok && len(records) > 0 {
@@ -351,17 +353,18 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 		}
 
 		result = append(result, targetExport{
-			TargetID:     id,
-			TargetName:   formatDisplayName(id, stat.name, stat.raceId, stat.isPC),
-			TotalDamage:  targetTotal,
-			DPS:          targetDps,
-			Duration:     float64(duration),
-			Attackers:    attackers,
-			CleanedAt:    now,
-			AppearedAt:   targetFirstHit,
-			DeathTime:    deathTime,
-			BossHP:       targetBossHP,
-			BuffCoverage: buffCoverage,
+			TargetID:           id,
+			TargetName:         formatDisplayName(id, stat.name, stat.raceId, stat.isPC),
+			TotalDamage:        targetTotal,
+			DPS:                targetDps,
+			Duration:           float64(duration),
+			Attackers:          attackers,
+			CleanedAt:          now,
+			AppearedAt:         targetFirstHit,
+			DeathTime:          deathTime,
+			BossHP:             targetBossHP,
+			BuffCoverage:       buffCoverage,
+			TargetBuffCoverage: targetBuffCoverage,
 		})
 	}
 
@@ -472,7 +475,8 @@ func (a *App) buildTargetExport() []targetExport {
 				participants[attacker.ID] = buffParticipant{name: attacker.Name, isSelf: attacker.ID == a.selfId}
 			}
 		}
-		buffCoverage := a.buildBuffCoverageUnsafe(stat.firstHit, endTime, participants)
+		targetDisplayName := formatDisplayName(id, stat.name, stat.raceId, stat.isPC)
+		buffCoverage, targetBuffCoverage := a.buildBuffCoverageForTargetUnsafe(stat.firstHit, endTime, id, targetDisplayName, participants, stat.name)
 
 		var targetBossHP *BossHPExport
 		if records, ok := a.bossHPHistory[id]; ok && len(records) > 0 {
@@ -497,17 +501,18 @@ func (a *App) buildTargetExport() []targetExport {
 		}
 
 		result = append(result, targetExport{
-			TargetID:     id,
-			TargetName:   formatDisplayName(id, stat.name, stat.raceId, stat.isPC),
-			TotalDamage:  stat.total,
-			DPS:          targetDps,
-			Duration:     float64(duration),
-			Attackers:    attackers,
-			CleanedAt:    now,
-			AppearedAt:   stat.firstHit,
-			DeathTime:    stat.deathTime,
-			BossHP:       targetBossHP,
-			BuffCoverage: buffCoverage,
+			TargetID:           id,
+			TargetName:         formatDisplayName(id, stat.name, stat.raceId, stat.isPC),
+			TotalDamage:        stat.total,
+			DPS:                targetDps,
+			Duration:           float64(duration),
+			Attackers:          attackers,
+			CleanedAt:          now,
+			AppearedAt:         stat.firstHit,
+			DeathTime:          stat.deathTime,
+			BossHP:             targetBossHP,
+			BuffCoverage:       buffCoverage,
+			TargetBuffCoverage: targetBuffCoverage,
 		})
 	}
 

@@ -3,12 +3,15 @@ package app
 import (
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"blonymonitorv2/internal/packet"
 )
 
-var monitoredStatusOrder = []uint32{515, 516, 914, 915, 680, 192, 193, 681, 194, 1225, 63, 1121, 1150, 1023, 1033, battlefieldShockStatusID}
+var monitoredStatusOrder = []uint32{515, 516, 914, 915, 680, 192, 193, 681, 194, 1225, 63, 1121, 1150, 1023, 1033, 1035, 1036, 1037, battlefieldShockStatusID}
+
+var targetMonitoredStatusOrder = []uint32{1164, 1165, 1166, 211, 392, 504, 1012, 1004, 912, 913, 803, 464, 465, 1063, 1138, 1026, 10001, 10002}
 
 var monitoredStatusNames = map[uint32]string{
 	515:                      "状态支援",
@@ -26,7 +29,31 @@ var monitoredStatusNames = map[uint32]string{
 	1150:                     "炼金术伤害增加",
 	1023:                     "月亮",
 	1033:                     "星星",
+	1035:                     "日",
+	1036:                     "月",
+	1037:                     "月蚀",
 	battlefieldShockStatusID: "战场的震慑",
+}
+
+var targetMonitoredStatusNames = map[uint32]string{
+	1164:  "防御/保护减少",
+	1165:  "魔法防御/魔法保护减少",
+	1166:  "增加受到的伤害",
+	211:   "骨龙 恶魔的疾走",
+	392:   "闪电风暴",
+	504:   "雷霆咆哮",
+	1012:  "防御，保护减少",
+	1004:  "锐利之眼",
+	912:   "喵咪的奔袭",
+	913:   "喵咪的奔袭",
+	803:   "崩坏波动",
+	464:   "结冰状态",
+	465:   "结冰状态",
+	1063:  "倒塌的屏障",
+	1138:  "三叶草印记",
+	1026:  "倒吊者",
+	10001: "减少物理防御和保护的魔法阵",
+	10002: "减少魔法防御和保护魔法阵",
 }
 
 var statusStrengthFields = map[uint32]string{
@@ -108,7 +135,10 @@ type buffParticipant struct {
 }
 
 func isMonitoredStatus(conditionID uint32) bool {
-	_, ok := monitoredStatusNames[conditionID]
+	if _, ok := monitoredStatusNames[conditionID]; ok {
+		return true
+	}
+	_, ok := targetMonitoredStatusNames[conditionID]
 	return ok
 }
 
@@ -270,7 +300,80 @@ func (a *App) resetStatusHistoryUnsafe(at int64) {
 	a.activeStatusIntervals = active
 }
 
+func splitTargetBuffCoverage(coverage []PlayerBuffCoverage, targetID string) ([]PlayerBuffCoverage, *PlayerBuffCoverage) {
+	for index, entry := range coverage {
+		if entry.PlayerID != targetID {
+			continue
+		}
+		remaining := make([]PlayerBuffCoverage, 0, len(coverage)-1)
+		remaining = append(remaining, coverage[:index]...)
+		remaining = append(remaining, coverage[index+1:]...)
+		return remaining, &entry
+	}
+	return coverage, nil
+}
+
+var targetBuffCoverageNames = map[string]struct{}{
+	"枯木之佩塔克":          {},
+	"布隆塔纳斯":           {},
+	"雷内恩的米耶尔":         {},
+	"雷内恩的米耶尔:悔恨":      {},
+	"如凯莱赫般坚固的木头人":     {},
+	"如伊鲁夏般坚固的木头人":     {},
+	"如塔赫杜因盖尔塔般坚固的木头人": {},
+	"如女妖王般坚固的木头人":     {},
+	"如浣熊般弱的木头人":       {},
+}
+
+func shouldMonitorTargetBuffCoverage(targetName string) bool {
+	name := strings.TrimSpace(targetName)
+	if _, ok := targetBuffCoverageNames[name]; ok {
+		return true
+	}
+
+	// History names may include the display suffix (for example
+	// "雷内恩的米耶尔 #6240" or "雷内恩的米耶尔(506240)"). Match only
+	// those explicit suffix boundaries so similarly prefixed monsters stay out.
+	for _, marker := range []string{" #", "("} {
+		if index := strings.Index(name, marker); index > 0 {
+			_, ok := targetBuffCoverageNames[strings.TrimSpace(name[:index])]
+			if ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (a *App) buildBuffCoverageForTargetUnsafe(start, end int64, targetID, targetName string, participants map[string]buffParticipant, aliases ...string) ([]PlayerBuffCoverage, *PlayerBuffCoverage) {
+	playerCoverage := a.buildBuffCoverageUnsafe(start, end, participants)
+	monitoredTarget := shouldMonitorTargetBuffCoverage(targetName)
+	if !monitoredTarget {
+		for _, alias := range aliases {
+			if shouldMonitorTargetBuffCoverage(alias) {
+				monitoredTarget = true
+				break
+			}
+		}
+	}
+	if !monitoredTarget {
+		return playerCoverage, nil
+	}
+	targetParticipants := make(map[string]buffParticipant, len(participants)+1)
+	for id, participant := range participants {
+		targetParticipants[id] = participant
+	}
+	targetParticipants[targetID] = buffParticipant{name: targetName}
+	coverage := a.buildBuffCoverageWithStatusesUnsafe(start, end, targetParticipants, targetMonitoredStatusOrder, targetMonitoredStatusNames, nil)
+	var targetCoverage *PlayerBuffCoverage
+	_, targetCoverage = splitTargetBuffCoverage(coverage, targetID)
+	return playerCoverage, targetCoverage
+}
 func (a *App) buildBuffCoverageUnsafe(start, end int64, participants map[string]buffParticipant) []PlayerBuffCoverage {
+	return a.buildBuffCoverageWithStatusesUnsafe(start, end, participants, monitoredStatusOrder, monitoredStatusNames, statusStrengthFields)
+}
+
+func (a *App) buildBuffCoverageWithStatusesUnsafe(start, end int64, participants map[string]buffParticipant, statusOrder []uint32, statusNames map[uint32]string, strengthFields map[uint32]string) []PlayerBuffCoverage {
 	if a.analysisLoggingEnabled() {
 		coverageStarted := time.Now()
 		defer func() { a.recordBuffCoverage(time.Since(coverageStarted)) }()
@@ -364,13 +467,13 @@ func (a *App) buildBuffCoverageUnsafe(start, end int64, participants map[string]
 	battleSeconds := float64(end-start) / float64(timePrecisionScale)
 	result := make([]PlayerBuffCoverage, 0, len(players))
 	for playerID, participant := range players {
-		buffs := make([]BuffCoverage, 0, len(monitoredStatusOrder))
-		for _, conditionID := range monitoredStatusOrder {
+		buffs := make([]BuffCoverage, 0, len(statusOrder))
+		for _, conditionID := range statusOrder {
 			coverage := BuffCoverage{
 				ConditionID:   conditionID,
-				ConditionName: monitoredStatusNames[conditionID],
+				ConditionName: statusNames[conditionID],
 				IconID:        statusIconIDs[conditionID],
-				StrengthField: statusStrengthFields[conditionID],
+				StrengthField: strengthFields[conditionID],
 			}
 			if aggregate := aggregates[playerID][conditionID]; aggregate != nil {
 				coverage.ActiveSeconds = aggregate.seconds

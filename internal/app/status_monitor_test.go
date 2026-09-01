@@ -18,6 +18,9 @@ func TestBossStatusMonitorIncludesAdditionalBuffs(t *testing.T) {
 		915:                      "喵咪的恩赐（魔法）",
 		1023:                     "月亮",
 		1033:                     "星星",
+		1035:                     "日",
+		1036:                     "月",
+		1037:                     "月蚀",
 		1121:                     "魔法攻击强化",
 		1150:                     "炼金术伤害增加",
 		battlefieldShockStatusID: "战场的震慑",
@@ -283,5 +286,100 @@ func TestConnectionChangeSignalWorksBehindSharedProxyEndpoint(t *testing.T) {
 	}
 	if _, _, changed := a.observeServerConnection("127.0.0.1", 11020, true, 200); !changed {
 		t.Fatal("TCP connection change must be honored even when the proxy endpoint is unchanged")
+	}
+}
+
+func TestSplitTargetBuffCoverage(t *testing.T) {
+	coverage := []PlayerBuffCoverage{
+		{PlayerID: "player", PlayerName: "Player"},
+		{PlayerID: "boss", PlayerName: "Boss"},
+	}
+
+	players, target := splitTargetBuffCoverage(coverage, "boss")
+	if target == nil || target.PlayerName != "Boss" {
+		t.Fatalf("target coverage = %+v, want Boss", target)
+	}
+	if len(players) != 1 || players[0].PlayerID != "player" {
+		t.Fatalf("player coverage = %+v, want only player", players)
+	}
+}
+
+func TestTargetBuffCoverageAllowlist(t *testing.T) {
+	allowed := []string{
+		"枯木之佩塔克",
+		"布隆塔纳斯",
+		"雷内恩的米耶尔",
+		"雷内恩的米耶尔:悔恨",
+		"如凯莱赫般坚固的木头人",
+		"如伊鲁夏般坚固的木头人",
+		"如塔赫杜因盖尔塔般坚固的木头人",
+		"如女妖王般坚固的木头人",
+		"如浣熊般弱的木头人",
+	}
+	for _, name := range allowed {
+		if !shouldMonitorTargetBuffCoverage(name) {
+			t.Errorf("target %q should be monitored", name)
+		}
+	}
+	for _, name := range []string{
+		"雷内恩的米耶尔 #6240",
+		"雷内恩的米耶尔(506240)",
+		"雷内恩的米耶尔:悔恨 #6240",
+	} {
+		if !shouldMonitorTargetBuffCoverage(name) {
+			t.Errorf("formatted target %q should be monitored", name)
+		}
+	}
+	if shouldMonitorTargetBuffCoverage("普通怪物") {
+		t.Fatal("unlisted target should not be monitored")
+	}
+}
+
+func TestTargetBuffCoverageUsesTargetStatusSetWithoutStrength(t *testing.T) {
+	a := NewApp()
+	a.mu.Lock()
+	a.recordStatusConditionUnsafe(2, 680, true, "", map[string]packet.ConditionDetailValue{
+		"MCMBAMAX": {Type: "f", Value: "50"},
+	}, 100)
+	a.recordStatusConditionUnsafe(2, 680, false, "", nil, 300)
+	a.recordStatusConditionUnsafe(1, 1164, true, "", map[string]packet.ConditionDetailValue{
+		"MCMBAMAX": {Type: "f", Value: "50"},
+	}, 100)
+	a.recordStatusConditionUnsafe(1, 1164, false, "", nil, 300)
+	players, target := a.buildBuffCoverageForTargetUnsafe(100, 600, "1", "枯木之佩塔克", map[string]buffParticipant{
+		"2": {name: "Player", isSelf: true},
+	})
+	a.mu.Unlock()
+
+	if len(players) != 1 || players[0].PlayerID != "2" || target == nil {
+		t.Fatalf("unexpected target coverage split: players=%+v target=%+v", players, target)
+	}
+	if findBuffCoverage(t, players[0], 680).CoveragePercent != 40 {
+		t.Fatal("player coverage must keep the player status set")
+	}
+	if len(target.Buffs) != len(targetMonitoredStatusOrder) {
+		t.Fatalf("target buff count = %d, want %d", len(target.Buffs), len(targetMonitoredStatusOrder))
+	}
+	coverage := findBuffCoverage(t, *target, 1164)
+	if coverage.CoveragePercent != 40 || coverage.ActiveSeconds != 2 {
+		t.Fatalf("unexpected target coverage: %+v", coverage)
+	}
+	if coverage.StrengthField != "" || coverage.AverageStrength != nil || coverage.MinStrength != nil || coverage.MaxStrength != nil {
+		t.Fatalf("target coverage must omit strength: %+v", coverage)
+	}
+	for _, buff := range target.Buffs {
+		if buff.ConditionID == 680 {
+			t.Fatal("player-only status must not appear in target coverage")
+		}
+	}
+}
+
+func TestTargetBuffCoverageAcceptsRawNameAlias(t *testing.T) {
+	a := NewApp()
+	a.mu.Lock()
+	_, target := a.buildBuffCoverageForTargetUnsafe(100, 600, "1", "种族显示名 #6240", map[string]buffParticipant{}, "雷内恩的米耶尔")
+	a.mu.Unlock()
+	if target == nil {
+		t.Fatal("raw target name alias should enable target coverage")
 	}
 }
