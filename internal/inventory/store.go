@@ -32,6 +32,7 @@ type Row struct {
 	ItemID             uint32 `json:"itemId"`
 	Name               string `json:"name"`
 	Amount             int    `json:"amount"`
+	PocketType         uint32 `json:"pocketType"`
 	HolderID           string `json:"holderId"`
 	HolderType         string `json:"holderType"`
 	HolderName         string `json:"holderName"`
@@ -269,11 +270,11 @@ func (s *Store) State() (State, error) {
 	}
 	holderRows.Close()
 
-	rows, err := s.db.Query(`SELECT i.item_id, i.name, SUM(i.amount), h.holder_id, h.holder_type, h.name,
+	rows, err := s.db.Query(`SELECT i.item_id, i.name, SUM(i.amount), i.pocket_type, h.holder_id, h.holder_type, h.name,
 h.owner_character_id, h.owner_character_name, sn.scanned_by_id, sn.scanned_by_name,
 sn.container, sn.sub_location, sn.updated_at
 FROM items i JOIN snapshots sn ON sn.id=i.snapshot_id JOIN holders h ON h.holder_id=sn.holder_id
-GROUP BY i.item_id, i.name, h.holder_id, h.holder_type, h.name, h.owner_character_id,
+GROUP BY i.item_id, i.name, i.pocket_type, h.holder_id, h.holder_type, h.name, h.owner_character_id,
 h.owner_character_name, sn.scanned_by_id, sn.scanned_by_name, sn.container, sn.sub_location, sn.updated_at`)
 	if err != nil {
 		return state, err
@@ -281,7 +282,7 @@ h.owner_character_name, sn.scanned_by_id, sn.scanned_by_name, sn.container, sn.s
 	defer rows.Close()
 	for rows.Next() {
 		var row Row
-		if err := rows.Scan(&row.ItemID, &row.Name, &row.Amount, &row.HolderID, &row.HolderType, &row.HolderName,
+		if err := rows.Scan(&row.ItemID, &row.Name, &row.Amount, &row.PocketType, &row.HolderID, &row.HolderType, &row.HolderName,
 			&row.OwnerCharacterID, &row.OwnerCharacterName, &row.ScannedByID, &row.ScannedByName,
 			&row.Container, &row.SubLocation, &row.UpdatedAt); err != nil {
 			return state, err

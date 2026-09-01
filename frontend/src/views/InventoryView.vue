@@ -13,12 +13,19 @@ const holderID = ref('all')
 const page = ref(1)
 const pageSize = 200
 
+const queryTerms = computed(() => query.value
+  .split(/[\s,，]+/)
+  .map(term => term.trim().toLocaleLowerCase())
+  .filter(Boolean)
+  .slice(0, 5))
+
 const containerLabels: Record<string, string> = {
   backpack: '背包',
   bank: '银行',
   gacha: '抽蛋栏',
   dressing: '美容室',
   cash: '商城栏',
+  currency: '货币保管盒',
 }
 
 function subjectType(row: InventoryRow): string {
@@ -46,13 +53,13 @@ const holderOptions = computed(() => {
 })
 
 const filteredRows = computed(() => {
-  const term = query.value.trim().toLocaleLowerCase()
   return (state.value.rows || []).filter((row) => {
     if (holderType.value !== 'all' && subjectType(row) !== holderType.value) return false
     if (container.value !== 'all' && row.container !== container.value) return false
     if (holderID.value !== 'all' && subjectID(row) !== holderID.value) return false
-    if (!term) return true
-    return row.name.toLocaleLowerCase().includes(term) || String(row.itemId).includes(term)
+    if (queryTerms.value.length === 0) return true
+    const searchable = `${row.name} ${row.itemId}`.toLocaleLowerCase()
+    return queryTerms.value.every(term => searchable.includes(term))
   })
 })
 
@@ -118,7 +125,7 @@ onUnmounted(() => {
     <header class="toolbar">
       <div class="search-control">
         <svg-icon type="mdi" :path="mdiMagnify" :size="16" />
-        <input v-model="query" type="search" placeholder="搜索物品名称或 ID" aria-label="搜索物品" />
+        <input v-model="query" type="search" placeholder="搜索物品名称或 ID（空格或逗号分隔）" aria-label="搜索物品" />
       </div>
 
       <select v-model="holderType" aria-label="主体类型">
@@ -134,6 +141,7 @@ onUnmounted(() => {
         <option value="gacha">抽蛋栏</option>
         <option value="dressing">美容室</option>
         <option value="cash">商城栏</option>
+        <option value="currency">货币保管盒</option>
       </select>
 
       <select v-model="holderID" aria-label="角色或宠物">

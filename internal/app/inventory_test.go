@@ -21,7 +21,7 @@ func inventoryTestRecord(instanceID uint64, pocket, itemID uint32, amount uint16
 	}
 }
 
-func TestCharacterSnapshotSplitsGachaFromBackpack(t *testing.T) {
+func TestCharacterSnapshotSplitsSpecialContainersFromBackpack(t *testing.T) {
 	store, err := inventory.Open(filepath.Join(t.TempDir(), "inventory.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -31,19 +31,42 @@ func TestCharacterSnapshotSplitsGachaFromBackpack(t *testing.T) {
 	app.inventoryStore = store
 
 	message := append(inventoryTestRecord(1, 23, 101, 2), inventoryTestRecord(2, 61, 102, 4)...)
+	message = append(message, inventoryTestRecord(3, inventoryCurrencyPocket, 103, 6)...)
 	app.handleInventoryCharacterPacket(&packet.GamePacket{Msg: message}, &packet.CharacterDataPacket{
 		Id: 1, Name: "角色1", RaceId: 10001,
 	})
 	state := app.GetInventoryState()
-	if len(state.Rows) != 2 {
+	if len(state.Rows) != 3 {
 		t.Fatalf("rows = %#v", state.Rows)
 	}
 	containers := map[uint32]string{}
 	for _, row := range state.Rows {
 		containers[row.ItemID] = row.Container
 	}
-	if containers[101] != inventoryContainerBackpack || containers[102] != inventoryContainerGacha {
+	if containers[101] != inventoryContainerBackpack || containers[102] != inventoryContainerGacha ||
+		containers[103] != inventoryContainerCurrency {
 		t.Fatalf("containers = %#v", containers)
+	}
+}
+
+func TestCurrencyPocketInExistingBackpackSnapshotIsReclassified(t *testing.T) {
+	store, err := inventory.Open(filepath.Join(t.TempDir(), "inventory.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.ReplaceSnapshots([]inventory.Snapshot{{
+		HolderID: "1", HolderType: "character", HolderName: "角色1", Container: inventoryContainerBackpack,
+		Items: []inventory.Item{{ItemID: 75891, Name: "贝特林高级印章", Amount: 1, PocketType: inventoryCurrencyPocket}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	app := NewApp()
+	app.inventoryStore = store
+
+	state := app.GetInventoryState()
+	if len(state.Rows) != 1 || state.Rows[0].Container != inventoryContainerCurrency {
+		t.Fatalf("rows = %#v", state.Rows)
 	}
 }
 

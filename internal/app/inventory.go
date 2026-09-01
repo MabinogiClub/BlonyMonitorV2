@@ -19,6 +19,8 @@ const (
 	inventoryContainerBank     = "bank"
 	inventoryContainerDressing = "dressing"
 	inventoryContainerCash     = "cash"
+	inventoryContainerCurrency = "currency"
+	inventoryCurrencyPocket    = 65
 )
 
 func inventoryCapturedAt(pkt *packet.GamePacket) int64 {
@@ -93,10 +95,17 @@ func (a *App) handleInventoryCharacterPacket(pkt *packet.GamePacket, character *
 	}
 	backpack := make([]packet.InventoryItemRecord, 0)
 	gacha := make([]packet.InventoryItemRecord, 0)
+	currency := make([]packet.InventoryItemRecord, 0)
 	for _, record := range packet.ParseInventoryItemRecords(pkt.Msg) {
-		if record.Item != nil && record.Item.PocketType == 61 {
+		if record.Item == nil {
+			continue
+		}
+		switch record.Item.PocketType {
+		case 61:
 			gacha = append(gacha, record)
-		} else {
+		case inventoryCurrencyPocket:
+			currency = append(currency, record)
+		default:
 			backpack = append(backpack, record)
 		}
 	}
@@ -112,7 +121,10 @@ func (a *App) handleInventoryCharacterPacket(pkt *packet.GamePacket, character *
 	gachaSnapshot := base
 	gachaSnapshot.Container = inventoryContainerGacha
 	gachaSnapshot.Items = inventoryItems(gacha)
-	a.replaceInventorySnapshots(backpackSnapshot, gachaSnapshot)
+	currencySnapshot := base
+	currencySnapshot.Container = inventoryContainerCurrency
+	currencySnapshot.Items = inventoryItems(currency)
+	a.replaceInventorySnapshots(backpackSnapshot, gachaSnapshot, currencySnapshot)
 }
 
 func stringMessageValue(msg packet.Message, index int) string {
@@ -233,6 +245,9 @@ func (a *App) GetInventoryState() inventory.State {
 	}
 	for index := range state.Rows {
 		state.Rows[index].Name = inventoryItemName(state.Rows[index].ItemID, state.Rows[index].Name)
+		if state.Rows[index].Container == inventoryContainerBackpack && state.Rows[index].PocketType == inventoryCurrencyPocket {
+			state.Rows[index].Container = inventoryContainerCurrency
+		}
 	}
 	return state
 }
