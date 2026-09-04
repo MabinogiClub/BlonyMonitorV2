@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"blonymonitorv2/db"
 	"blonymonitorv2/internal/packet"
 )
 
@@ -142,6 +143,19 @@ func isMonitoredStatus(conditionID uint32) bool {
 	return ok
 }
 
+// shouldRecordTargetStatusUnsafe limits the all-status capture path to the
+// explicitly configured boss targets. It is called while a.mu is held.
+func (a *App) shouldRecordTargetStatusUnsafe(entityID uint64) bool {
+	id := strconv.FormatUint(entityID, 10)
+	if entity := a.entities[id]; entity != nil && shouldMonitorTargetBuffCoverage(entity.Name) {
+		return true
+	}
+	if target := a.takenStats[id]; target != nil && shouldMonitorTargetBuffCoverage(target.name) {
+		return true
+	}
+	return shouldMonitorTargetBuffCoverage(a.getEntityNameUnsafe(id))
+}
+
 func extractStatusStrength(conditionID uint32, details map[string]packet.ConditionDetailValue) *float64 {
 	field := statusStrengthFields[conditionID]
 	if field == "" {
@@ -159,7 +173,7 @@ func extractStatusStrength(conditionID uint32, details map[string]packet.Conditi
 }
 
 func (a *App) recordStatusConditionUnsafe(entityID uint64, conditionID uint32, enabled bool, rawDetail string, details map[string]packet.ConditionDetailValue, at int64) {
-	if !isMonitoredStatus(conditionID) {
+	if !isMonitoredStatus(conditionID) && !a.shouldRecordTargetStatusUnsafe(entityID) {
 		return
 	}
 	if a.activeStatusIntervals == nil {
@@ -191,7 +205,7 @@ func (a *App) recordStatusConditionUnsafe(entityID uint64, conditionID uint32, e
 }
 
 func (a *App) ensureAppearedStatusUnsafe(entity *packet.EntityInfo, conditionID uint32, at int64) {
-	if entity == nil || !isMonitoredStatus(conditionID) {
+	if entity == nil || (!isMonitoredStatus(conditionID) && !shouldMonitorTargetBuffCoverage(entity.Name)) {
 		return
 	}
 	if a.activeStatusIntervals == nil {
@@ -326,7 +340,10 @@ var targetBuffCoverageNames = map[string]struct{}{
 }
 
 func shouldMonitorTargetBuffCoverage(targetName string) bool {
-	name := strings.TrimSpace(targetName)
+	// Entity names can use either ASCII or full-width punctuation depending on
+	// the packet/resource source. Keep the allowlist canonical while matching
+	// both forms.
+	name := strings.TrimSpace(strings.ReplaceAll(targetName, "：", ":"))
 	if _, ok := targetBuffCoverageNames[name]; ok {
 		return true
 	}
@@ -359,15 +376,65 @@ func (a *App) buildBuffCoverageForTargetUnsafe(start, end int64, targetID, targe
 	if !monitoredTarget {
 		return playerCoverage, nil
 	}
+	statusOrder, statusNames := a.targetStatusDefinitionsUnsafe(start, end, targetID)
 	targetParticipants := make(map[string]buffParticipant, len(participants)+1)
 	for id, participant := range participants {
 		targetParticipants[id] = participant
 	}
 	targetParticipants[targetID] = buffParticipant{name: targetName}
-	coverage := a.buildBuffCoverageWithStatusesUnsafe(start, end, targetParticipants, targetMonitoredStatusOrder, targetMonitoredStatusNames, nil)
+	coverage := a.buildBuffCoverageWithStatusesUnsafe(start, end, targetParticipants, statusOrder, statusNames, nil)
 	var targetCoverage *PlayerBuffCoverage
 	_, targetCoverage = splitTargetBuffCoverage(coverage, targetID)
 	return playerCoverage, targetCoverage
+}
+
+// targetStatusDefinitionsUnsafe returns the configured target statuses plus
+// every additional status observed on this monitored target in the battle
+// interval. The caller must hold a.mu.
+func (a *App) targetStatusDefinitionsUnsafe(start, end int64, targetID string) ([]uint32, map[uint32]string) {
+	order := append([]uint32(nil), targetMonitoredStatusOrder...)
+	seen := make(map[uint32]struct{}, len(order))
+	for _, conditionID := range order {
+		seen[conditionID] = struct{}{}
+	}
+	additional := make([]uint32, 0)
+	for _, interval := range a.statusIntervals {
+		if interval.EntityID != targetID {
+			continue
+		}
+		intervalEnd := interval.EndedAt
+		if intervalEnd == 0 || intervalEnd > end {
+			intervalEnd = end
+		}
+		if interval.StartedAt >= intervalEnd || intervalEnd <= start || interval.StartedAt >= end {
+			continue
+		}
+		if _, exists := seen[interval.ConditionID]; exists {
+			continue
+		}
+		seen[interval.ConditionID] = struct{}{}
+		additional = append(additional, interval.ConditionID)
+	}
+	sort.Slice(additional, func(i, j int) bool { return additional[i] < additional[j] })
+	order = append(order, additional...)
+	names := make(map[uint32]string, len(order))
+	for conditionID, name := range targetMonitoredStatusNames {
+		names[conditionID] = name
+	}
+	for _, conditionID := range additional {
+		if names[conditionID] == "" {
+			names[conditionID] = monitoredStatusNames[conditionID]
+		}
+		if names[conditionID] == "" {
+			if db.DB != nil {
+				names[conditionID] = a.getConditionNameUnsafe(conditionID)
+			}
+			if names[conditionID] == "" {
+				names[conditionID] = strconv.FormatUint(uint64(conditionID), 10)
+			}
+		}
+	}
+	return order, names
 }
 func (a *App) buildBuffCoverageUnsafe(start, end int64, participants map[string]buffParticipant) []PlayerBuffCoverage {
 	return a.buildBuffCoverageWithStatusesUnsafe(start, end, participants, monitoredStatusOrder, monitoredStatusNames, statusStrengthFields)
@@ -427,8 +494,10 @@ func (a *App) buildBuffCoverageWithStatusesUnsafe(start, end int64, participants
 			StartOffset:   float64(intervalStart-start) / float64(timePrecisionScale),
 			EndOffset:     float64(intervalEnd-start) / float64(timePrecisionScale),
 			ActiveSeconds: seconds,
-			Strength:      interval.Strength,
 			RawDetail:     interval.RawDetail,
+		}
+		if strengthFields[interval.ConditionID] != "" {
+			segment.Strength = interval.Strength
 		}
 		aggregate.segments = append(aggregate.segments, segment)
 		if interval.Strength != nil {
@@ -481,10 +550,12 @@ func (a *App) buildBuffCoverageWithStatusesUnsafe(start, end int64, participants
 				if coverage.CoveragePercent > 100 {
 					coverage.CoveragePercent = 100
 				}
-				coverage.MinStrength = aggregate.minStrength
-				coverage.MaxStrength = aggregate.maxStrength
+				if strengthFields[conditionID] != "" {
+					coverage.MinStrength = aggregate.minStrength
+					coverage.MaxStrength = aggregate.maxStrength
+				}
 				coverage.Segments = aggregate.segments
-				if aggregate.strengthSeconds > 0 {
+				if strengthFields[conditionID] != "" && aggregate.strengthSeconds > 0 {
 					average := aggregate.weightedStrength / aggregate.strengthSeconds
 					coverage.AverageStrength = &average
 				}

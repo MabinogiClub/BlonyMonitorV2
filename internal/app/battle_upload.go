@@ -133,8 +133,16 @@ func buildBuffMonitorUpload(data SaveFileData) buffMonitorUpload {
 	}
 
 	definitions := make([]buffMonitorDefinition, 0, len(monitoredStatusOrder)+len(targetMonitoredStatusOrder))
+	definitionIDs := make(map[uint32]struct{}, len(monitoredStatusOrder)+len(targetMonitoredStatusOrder))
+	appendDefinition := func(definition buffMonitorDefinition) {
+		if _, exists := definitionIDs[definition.ConditionID]; exists {
+			return
+		}
+		definitionIDs[definition.ConditionID] = struct{}{}
+		definitions = append(definitions, definition)
+	}
 	for _, conditionID := range monitoredStatusOrder {
-		definitions = append(definitions, buffMonitorDefinition{
+		appendDefinition(buffMonitorDefinition{
 			ConditionID:   conditionID,
 			ConditionName: monitoredStatusNames[conditionID],
 			IconID:        statusIconIDs[conditionID],
@@ -142,11 +150,24 @@ func buildBuffMonitorUpload(data SaveFileData) buffMonitorUpload {
 		})
 	}
 	for _, conditionID := range targetMonitoredStatusOrder {
-		definitions = append(definitions, buffMonitorDefinition{
+		appendDefinition(buffMonitorDefinition{
 			ConditionID:   conditionID,
 			ConditionName: targetMonitoredStatusNames[conditionID],
 			IconID:        statusIconIDs[conditionID],
 		})
+	}
+	for _, target := range data.Targets {
+		if target.TargetBuffCoverage == nil {
+			continue
+		}
+		for _, buff := range target.TargetBuffCoverage.Buffs {
+			appendDefinition(buffMonitorDefinition{
+				ConditionID:   buff.ConditionID,
+				ConditionName: buff.ConditionName,
+				IconID:        buff.IconID,
+				StrengthField: buff.StrengthField,
+			})
+		}
 	}
 
 	return buffMonitorUpload{

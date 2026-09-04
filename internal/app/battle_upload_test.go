@@ -37,6 +37,10 @@ func TestBuildBattleUploadExtensionWithoutChangingLegacyTargets(t *testing.T) {
 				ConditionID:     1164,
 				ConditionName:   "防御/保护减少",
 				CoveragePercent: 50,
+			}, {
+				ConditionID:     9999,
+				ConditionName:   "测试目标状态",
+				CoveragePercent: 25,
 			}},
 		},
 	}}}
@@ -52,8 +56,17 @@ func TestBuildBattleUploadExtensionWithoutChangingLegacyTargets(t *testing.T) {
 	if buffUpload.SchemaVersion != buffMonitorUploadSchemaVersion {
 		t.Fatalf("schema version = %d", buffUpload.SchemaVersion)
 	}
-	if len(buffUpload.Definitions) != len(monitoredStatusOrder)+len(targetMonitoredStatusOrder) {
-		t.Fatalf("definitions = %d, want %d", len(buffUpload.Definitions), len(monitoredStatusOrder)+len(targetMonitoredStatusOrder))
+	if len(buffUpload.Definitions) != len(monitoredStatusOrder)+len(targetMonitoredStatusOrder)+1 {
+		t.Fatalf("definitions = %d, want %d", len(buffUpload.Definitions), len(monitoredStatusOrder)+len(targetMonitoredStatusOrder)+1)
+	}
+	var foundAdditional bool
+	for _, definition := range buffUpload.Definitions {
+		if definition.ConditionID == 9999 && definition.ConditionName == "测试目标状态" {
+			foundAdditional = true
+		}
+	}
+	if !foundAdditional {
+		t.Fatal("additional target status definition was not uploaded")
 	}
 	if len(buffUpload.Targets) != 1 || len(buffUpload.Targets[0].Players) != 1 {
 		t.Fatalf("buff targets missing: %+v", buffUpload.Targets)

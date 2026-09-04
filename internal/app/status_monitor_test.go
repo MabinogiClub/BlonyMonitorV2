@@ -325,6 +325,7 @@ func TestTargetBuffCoverageAllowlist(t *testing.T) {
 		"雷内恩的米耶尔 #6240",
 		"雷内恩的米耶尔(506240)",
 		"雷内恩的米耶尔:悔恨 #6240",
+		"雷内恩的米耶尔：悔恨 #3871",
 	} {
 		if !shouldMonitorTargetBuffCoverage(name) {
 			t.Errorf("formatted target %q should be monitored", name)
@@ -381,5 +382,45 @@ func TestTargetBuffCoverageAcceptsRawNameAlias(t *testing.T) {
 	a.mu.Unlock()
 	if target == nil {
 		t.Fatal("raw target name alias should enable target coverage")
+	}
+}
+
+func TestTargetBuffCoverageIncludesAdditionalStatusesWithoutStrength(t *testing.T) {
+	a := NewApp()
+	a.mu.Lock()
+	a.entities["1"] = &EntityInfo{ID: "1", Name: "雷内恩的米耶尔：悔恨"}
+	a.recordStatusConditionUnsafe(1, 1035, true, "MCMBAMAX:f:50;", map[string]packet.ConditionDetailValue{
+		"MCMBAMAX": {Type: "f", Value: "50"},
+	}, 100)
+	a.recordStatusConditionUnsafe(1, 1035, false, "", nil, 300)
+	_, target := a.buildBuffCoverageForTargetUnsafe(100, 600, "1", "雷内恩的米耶尔：悔恨 #3871", nil)
+	a.mu.Unlock()
+
+	if target == nil {
+		t.Fatal("monitored boss should produce target coverage")
+	}
+	coverage := findBuffCoverage(t, *target, 1035)
+	if coverage.CoveragePercent != 40 || coverage.ActiveSeconds != 2 {
+		t.Fatalf("unexpected additional target status coverage: %+v", coverage)
+	}
+	if coverage.StrengthField != "" || coverage.AverageStrength != nil || coverage.MinStrength != nil || coverage.MaxStrength != nil {
+		t.Fatalf("target status strength must be omitted: %+v", coverage)
+	}
+	if len(coverage.Segments) != 1 || coverage.Segments[0].Strength != nil {
+		t.Fatalf("target status segment strength must be omitted: %+v", coverage.Segments)
+	}
+}
+
+func TestTargetStatusCaptureIsLimitedToMarkedBosses(t *testing.T) {
+	a := NewApp()
+	a.mu.Lock()
+	a.entities["1"] = &EntityInfo{ID: "1", Name: "枯木之佩塔克"}
+	a.entities["2"] = &EntityInfo{ID: "2", Name: "普通怪物"}
+	a.recordStatusConditionUnsafe(1, 9999, true, "", nil, 100)
+	a.recordStatusConditionUnsafe(2, 9998, true, "", nil, 100)
+	a.mu.Unlock()
+
+	if len(a.statusIntervals) != 1 || a.statusIntervals[0].EntityID != "1" || a.statusIntervals[0].ConditionID != 9999 {
+		t.Fatalf("unexpected all-status capture: %+v", a.statusIntervals)
 	}
 }
