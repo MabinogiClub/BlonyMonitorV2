@@ -4,7 +4,6 @@ import SvgIcon from '@jamescoyle/vue-icon'
 import {
   mdiAlertCircleOutline,
   mdiCheckCircleOutline,
-  mdiClockOutline,
   mdiDownload,
   mdiMessageAlertOutline,
   mdiOpenInNew,
@@ -26,8 +25,12 @@ const updateState = ref<UpdateState>('idle')
 const clockNow = ref(Date.now())
 let clockTimer: number | undefined
 
-// Calibrated against the in-game 10-minute display during three logins.
-const EIRIN_PHASE_OFFSET_MINUTES = -14
+const EIRIN_TIME_OFFSET_STORAGE_KEY = 'blony-monitor:eirin-time-offset-minutes'
+const DEFAULT_EIRIN_PHASE_OFFSET_MINUTES = -14
+const MIN_EIRIN_PHASE_OFFSET_MINUTES = -720
+const MAX_EIRIN_PHASE_OFFSET_MINUTES = 720
+
+const eirinPhaseOffsetMinutes = ref(DEFAULT_EIRIN_PHASE_OFFSET_MINUTES)
 
 const realTimeLabel = computed(() => {
   const now = new Date(clockNow.value)
@@ -40,10 +43,15 @@ const mabiTimeLabel = computed(() => {
   // The game clock runs 40 times faster than real time: one Eirin day is 36
   // real minutes. The +08:00 anchor matches the conversion used by ruawork.js.
   const cycleMinutes = Math.floor(((clockNow.value + 8 * 60 * 60 * 1000) % (36 * 60 * 1000)) / 1500)
-  const gameMinutes = (cycleMinutes + EIRIN_PHASE_OFFSET_MINUTES + 1440) % 1440
+  const gameMinutes = (cycleMinutes + eirinPhaseOffsetMinutes.value + 1440) % 1440
   const hour = Math.floor(gameMinutes / 60) % 24
   const minute = gameMinutes % 60
   return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0')
+})
+
+const eirinPhaseOffsetLabel = computed(() => {
+  const value = eirinPhaseOffsetMinutes.value
+  return value > 0 ? `+${value}` : String(value)
 })
 
 const currentVersionLabel = computed(() => {
@@ -104,6 +112,44 @@ function openExternal(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
+function normalizeEirinPhaseOffset(value: number) {
+  const roundedValue = Math.round(value)
+  if (!Number.isFinite(roundedValue)) return DEFAULT_EIRIN_PHASE_OFFSET_MINUTES
+  return Math.min(MAX_EIRIN_PHASE_OFFSET_MINUTES, Math.max(MIN_EIRIN_PHASE_OFFSET_MINUTES, roundedValue))
+}
+
+function readStoredEirinPhaseOffset() {
+  try {
+    const storedValue = window.localStorage.getItem(EIRIN_TIME_OFFSET_STORAGE_KEY)
+    if (storedValue === null) return DEFAULT_EIRIN_PHASE_OFFSET_MINUTES
+    return normalizeEirinPhaseOffset(Number(storedValue))
+  } catch {
+    return DEFAULT_EIRIN_PHASE_OFFSET_MINUTES
+  }
+}
+
+function writeStoredEirinPhaseOffset(value: number) {
+  try {
+    window.localStorage.setItem(EIRIN_TIME_OFFSET_STORAGE_KEY, String(value))
+  } catch {
+    // A restricted WebView may disable local storage; keep the runtime value.
+  }
+}
+
+function setEirinPhaseOffset(value: number, persist = true) {
+  const nextValue = normalizeEirinPhaseOffset(value)
+  eirinPhaseOffsetMinutes.value = nextValue
+  if (persist) writeStoredEirinPhaseOffset(nextValue)
+}
+
+function adjustEirinPhaseOffset(deltaMinutes: number) {
+  setEirinPhaseOffset(eirinPhaseOffsetMinutes.value + deltaMinutes)
+}
+
+function resetEirinPhaseOffset() {
+  setEirinPhaseOffset(DEFAULT_EIRIN_PHASE_OFFSET_MINUTES)
+}
+
 async function loadCurrentVersion() {
   try {
     currentVersion.value = await api.getClientVersion()
@@ -141,6 +187,7 @@ async function checkForUpdates() {
 }
 
 onMounted(() => {
+  setEirinPhaseOffset(readStoredEirinPhaseOffset(), false)
   clockTimer = window.setInterval(() => {
     clockNow.value = Date.now()
   }, 1000)
@@ -194,10 +241,6 @@ onBeforeUnmount(() => {
       </div>
 
       <section class="clock-panel" aria-label="时间换算">
-        <div class="clock-panel-heading">
-          <svg-icon type="mdi" :path="mdiClockOutline" :size="15" />
-          <span>时间</span>
-        </div>
         <div class="clock-values">
           <div class="clock-value">
             <span class="clock-label">爱琳时间</span>
@@ -209,7 +252,39 @@ onBeforeUnmount(() => {
             <strong>{{ realTimeLabel }}</strong>
           </div>
         </div>
-        <p class="clock-note">按 36 分钟 = 爱琳 24 小时换算；服务器显示可能存在少量校时差异。</p>
+        <div class="clock-offset-row">
+          <div class="clock-offset-control" aria-label="爱琳时间偏移微调">
+            <span class="clock-offset-label">偏移</span>
+            <button
+              type="button"
+              class="clock-offset-button"
+              title="爱琳时间减少 1 分钟"
+              @click="adjustEirinPhaseOffset(-1)"
+            >
+              −
+            </button>
+            <span class="clock-offset-value" aria-label="当前爱琳时间偏移">
+              {{ eirinPhaseOffsetLabel }}
+            </span>
+            <button
+              type="button"
+              class="clock-offset-button"
+              title="爱琳时间增加 1 分钟"
+              @click="adjustEirinPhaseOffset(1)"
+            >
+              +
+            </button>
+            <span class="clock-offset-unit">分</span>
+            <button
+              type="button"
+              class="clock-offset-reset"
+              title="恢复默认偏移"
+              @click="resetEirinPhaseOffset"
+            >
+              重置
+            </button>
+          </div>
+        </div>
       </section>
 
       <div class="version-row">
@@ -346,28 +421,19 @@ h1 {
   background: rgba(255, 255, 255, 0.035);
 }
 
-.clock-panel-heading {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: #a9d8f6;
-  font-size: 11px;
-  font-weight: 600;
-}
-
 .clock-values {
   display: flex;
-  align-items: center;
-  margin-top: 9px;
+  align-items: flex-start;
 }
 
 .clock-value {
   min-width: 0;
   flex: 1;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 5px;
 }
 
 .clock-label {
@@ -378,7 +444,7 @@ h1 {
 
 .clock-value strong {
   color: #f2f2f2;
-  font-size: 20px;
+  font-size: 23px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   letter-spacing: 0;
@@ -387,16 +453,76 @@ h1 {
 
 .clock-divider {
   width: 1px;
-  height: 22px;
+  align-self: center;
+  height: 38px;
   margin: 0 12px;
   background: rgba(255, 255, 255, 0.14);
 }
 
-.clock-note {
+.clock-offset-row {
+  display: flex;
+  justify-content: center;
   margin-top: 8px;
-  color: #737373;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.clock-offset-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #777;
   font-size: 10px;
-  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.clock-offset-label,
+.clock-offset-unit {
+  color: #777;
+}
+
+.clock-offset-button,
+.clock-offset-reset {
+  height: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 4px;
+  color: #b9dff8;
+  background: rgba(255, 255, 255, 0.055);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 18px;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+
+  &:hover {
+    border-color: rgba(144, 202, 249, 0.45);
+    background: rgba(144, 202, 249, 0.12);
+    color: #fff;
+  }
+}
+
+.clock-offset-button {
+  width: 20px;
+  padding: 0;
+}
+
+.clock-offset-reset {
+  padding: 0 6px;
+  color: #8f8f8f;
+}
+
+.clock-offset-value {
+  min-width: 34px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  color: #d8efff;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 10px;
+  line-height: 20px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .version-row {
@@ -462,8 +588,9 @@ h1 {
   .hero-content,
   .welcome-content { padding-right: 12px; padding-left: 12px; }
 
-  .clock-value { align-items: flex-start; flex-direction: column; gap: 2px; }
+  .clock-value { gap: 4px; }
   .clock-divider { margin-right: 8px; margin-left: 8px; }
+  .clock-offset-control { flex-wrap: wrap; }
 
   .version-row { align-items: flex-start; flex-direction: column; }
   .update-check { padding-left: 0; }
