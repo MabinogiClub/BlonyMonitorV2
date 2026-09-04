@@ -61,6 +61,46 @@ func TestFarmResourcePackets(t *testing.T) {
 	}
 }
 
+func TestFarmUsageCallbacksDetectPlantingOnceAndEnergyDecreaseOnly(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	now := time.Now()
+	raw := farmRawMilliseconds(now)
+	var plantCount int
+	var coinCost int64
+	var energySpent int
+	previousEnergy := -1
+	mgr := NewFarmManager(ctx, nil, nil, nil, FarmUsageCallbacks{
+		OnPlant: func(ownerID uint64, cropName string, cost int64, _ time.Time) {
+			if ownerID != 123 || cropName != "黑莓" {
+				t.Fatalf("plant identity = %d/%q", ownerID, cropName)
+			}
+			plantCount++
+			coinCost += cost
+		},
+		OnEnergy: func(_ uint64, energy int, _ time.Time) {
+			if previousEnergy >= 0 && energy < previousEnergy {
+				energySpent += previousEnergy - energy
+			}
+			previousEnergy = energy
+		},
+	})
+	xmlState := fmt.Sprintf(`<xml onwer="123" itemid="5041232" support="0" lmtime="%d" supportIndex="0" Special="false" starttime="%d" Fertility="false" fieldprop="456"/>`, raw, raw)
+	mgr.HandlePacket(farmCropPacket(now, 456, "seed", xmlState))
+	mgr.HandlePacket(farmCropPacket(now.Add(time.Second), 456, "seed", xmlState))
+	if plantCount != 1 || coinCost != 1200 {
+		t.Fatalf("plant usage = count:%d coins:%d", plantCount, coinCost)
+	}
+	for index, energy := range []uint32{80, 75, 90, 87} {
+		mgr.HandlePacket(&packet.GamePacket{At: now.Add(time.Duration(index+2) * time.Second), Op: opcodeFarmEnergy, Msg: packet.Message{
+			packet.NewMessageElemLong(123), packet.NewMessageElemInt(energy),
+		}})
+	}
+	if energySpent != 8 {
+		t.Fatalf("energy spent = %d, want 8", energySpent)
+	}
+}
+
 func TestFarmCropUpdatesAccelerationAndHarvest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

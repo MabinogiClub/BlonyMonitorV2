@@ -65,6 +65,44 @@ func TestFarmRecommendationFiltersExhaustedAndRanksActualKeys(t *testing.T) {
 	}
 }
 
+func TestFarmRecommendationNoMaterialsIgnoresCompletedMaterials(t *testing.T) {
+	mgr := syncedRecommendationManager(farmGoalCoins, FarmDeliveryState{DBKey: 26, RemainingDeliveries: 1, MaximumDeliveries: 5, CoinReward: 685})
+	mgr.data.Inventory = map[string]int{
+		"5041003": 2,
+		"5041007": 1,
+		"5041009": 1,
+		"5040996": 99,
+		"5040997": 99,
+		"5040998": 99,
+		"5041000": 99,
+		"5041001": 99,
+		"5041002": 99,
+	}
+	withMaterials := mgr.state(fullRecommendationFarmState()).Recommendations[0]
+	if withMaterials.RequiresCrafting || withMaterials.RequiresPlanting || withMaterials.EstimatedSeconds != 300 {
+		t.Fatalf("material-backed recommendation = %#v", withMaterials)
+	}
+	mgr.data.UseNoMaterials = true
+	farm := fullRecommendationFarmState()
+	farm.Plots[0] = FarmPlotState{Kind: "field", Unlocked: true, Planted: true, ItemID: 5_040_996, RemainingSeconds: 60}
+	withoutMaterials := mgr.state(farm).Recommendations[0]
+	if !withoutMaterials.RequiresCrafting || !withoutMaterials.RequiresPlanting {
+		t.Fatalf("no-material recommendation did not require full chain = %#v", withoutMaterials)
+	}
+	if withoutMaterials.EstimatedSeconds <= withMaterials.EstimatedSeconds || withoutMaterials.TargetPerHour >= withMaterials.TargetPerHour {
+		t.Fatalf("no-material ratio was not recalculated: with=%#v without=%#v", withMaterials, withoutMaterials)
+	}
+	blackberries := 0
+	for _, crop := range withoutMaterials.SuggestedCrops {
+		if crop.ItemID == 5_040_996 {
+			blackberries = crop.Count
+		}
+	}
+	if blackberries != 3 {
+		t.Fatalf("existing planted crop was reused in no-material mode: %#v", withoutMaterials.SuggestedCrops)
+	}
+}
+
 func TestFarmRecommendationAssumesRecipesUnlocked(t *testing.T) {
 	mgr := syncedRecommendationManager(farmGoalKeys,
 		FarmDeliveryState{DBKey: 29, RemainingDeliveries: 1, MaximumDeliveries: 5, KeyReward: 3},

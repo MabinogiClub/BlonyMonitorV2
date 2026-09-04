@@ -26,23 +26,24 @@ type farmCropDefinition struct {
 	Name            string
 	Kind            string
 	DurationSeconds int64
+	CoinCost        int64
 }
 
 var farmCropDefinitions = map[uint32]farmCropDefinition{
-	5_040_989: {Name: "黑莓", Kind: "field", DurationSeconds: 12 * 60},
-	5_041_232: {Name: "黑莓", Kind: "field", DurationSeconds: 12 * 60},
-	5_040_990: {Name: "秋葵", Kind: "field", DurationSeconds: 18 * 60},
-	5_041_233: {Name: "秋葵", Kind: "field", DurationSeconds: 18 * 60},
-	5_040_991: {Name: "茉莉", Kind: "field", DurationSeconds: 31*60 + 30},
-	5_041_234: {Name: "茉莉", Kind: "field", DurationSeconds: 31*60 + 30},
-	5_040_992: {Name: "红梨树", Kind: "redPear", DurationSeconds: 21*60 + 30},
-	5_041_235: {Name: "红梨树", Kind: "redPear", DurationSeconds: 21*60 + 30},
-	5_040_993: {Name: "橡胶树", Kind: "rubber", DurationSeconds: 24 * 60},
-	5_041_236: {Name: "橡胶树", Kind: "rubber", DurationSeconds: 24 * 60},
-	5_040_994: {Name: "蜘蛛古木", Kind: "spider", DurationSeconds: 16*60 + 30},
-	5_041_237: {Name: "蜘蛛古木", Kind: "spider", DurationSeconds: 16*60 + 30},
-	5_040_995: {Name: "石英矿脉", Kind: "quartz", DurationSeconds: 18 * 60},
-	5_041_238: {Name: "石英矿脉", Kind: "quartz", DurationSeconds: 18 * 60},
+	5_040_989: {Name: "黑莓", Kind: "field", DurationSeconds: 12 * 60, CoinCost: 1200},
+	5_041_232: {Name: "黑莓", Kind: "field", DurationSeconds: 12 * 60, CoinCost: 1200},
+	5_040_990: {Name: "秋葵", Kind: "field", DurationSeconds: 18 * 60, CoinCost: 1200},
+	5_041_233: {Name: "秋葵", Kind: "field", DurationSeconds: 18 * 60, CoinCost: 1200},
+	5_040_991: {Name: "茉莉", Kind: "field", DurationSeconds: 31*60 + 30, CoinCost: 1200},
+	5_041_234: {Name: "茉莉", Kind: "field", DurationSeconds: 31*60 + 30, CoinCost: 1200},
+	5_040_992: {Name: "红梨树", Kind: "redPear", DurationSeconds: 21*60 + 30, CoinCost: 5000},
+	5_041_235: {Name: "红梨树", Kind: "redPear", DurationSeconds: 21*60 + 30, CoinCost: 5000},
+	5_040_993: {Name: "橡胶树", Kind: "rubber", DurationSeconds: 24 * 60, CoinCost: 5000},
+	5_041_236: {Name: "橡胶树", Kind: "rubber", DurationSeconds: 24 * 60, CoinCost: 5000},
+	5_040_994: {Name: "蜘蛛古木", Kind: "spider", DurationSeconds: 16*60 + 30, CoinCost: 5000},
+	5_041_237: {Name: "蜘蛛古木", Kind: "spider", DurationSeconds: 16*60 + 30, CoinCost: 5000},
+	5_040_995: {Name: "石英矿脉", Kind: "quartz", DurationSeconds: 18 * 60, CoinCost: 5000},
+	5_041_238: {Name: "石英矿脉", Kind: "quartz", DurationSeconds: 18 * 60, CoinCost: 5000},
 }
 
 type farmSlotDefinition struct {
@@ -124,18 +125,37 @@ type FarmPlotState struct {
 
 // FarmState contains all data needed by the farm tab.
 type FarmState struct {
-	Enabled                    bool            `json:"enabled"`
-	ReadyNotificationEnabled   bool            `json:"readyNotificationEnabled"`
-	SpecialNotificationEnabled bool            `json:"specialNotificationEnabled"`
-	Fertility                  int             `json:"fertility"`
-	FertilityMax               int             `json:"fertilityMax"`
-	FertilityKnown             bool            `json:"fertilityKnown"`
-	Energy                     int             `json:"energy"`
-	EnergyMax                  int             `json:"energyMax"`
-	EnergyKnown                bool            `json:"energyKnown"`
-	Synced                     bool            `json:"synced"`
-	UpdatedAt                  int64           `json:"updatedAt"`
-	Plots                      []FarmPlotState `json:"plots"`
+	Enabled                    bool             `json:"enabled"`
+	ReadyNotificationEnabled   bool             `json:"readyNotificationEnabled"`
+	SpecialNotificationEnabled bool             `json:"specialNotificationEnabled"`
+	Fertility                  int              `json:"fertility"`
+	FertilityMax               int              `json:"fertilityMax"`
+	FertilityKnown             bool             `json:"fertilityKnown"`
+	Energy                     int              `json:"energy"`
+	EnergyMax                  int              `json:"energyMax"`
+	EnergyKnown                bool             `json:"energyKnown"`
+	Synced                     bool             `json:"synced"`
+	UpdatedAt                  int64            `json:"updatedAt"`
+	AccountID                  string           `json:"accountId"`
+	CoinsSpent                 int64            `json:"coinsSpent"`
+	EnergySpent                int64            `json:"energySpent"`
+	CropCounts                 map[string]int64 `json:"cropCounts"`
+	TodayCropCounts            map[string]int64 `json:"todayCropCounts"`
+	YesterdayCropCounts        map[string]int64 `json:"yesterdayCropCounts"`
+	DailyTrend                 []FarmDailyUsage `json:"dailyTrend"`
+	TodayCoinsSpent            int64            `json:"todayCoinsSpent"`
+	YesterdayCoinsSpent        int64            `json:"yesterdayCoinsSpent"`
+	TodayEnergySpent           int64            `json:"todayEnergySpent"`
+	YesterdayEnergySpent       int64            `json:"yesterdayEnergySpent"`
+	Plots                      []FarmPlotState  `json:"plots"`
+}
+
+// FarmDailyUsage is the usage summary for one farm statistics day (07:00-07:00 CST).
+type FarmDailyUsage struct {
+	Date        string           `json:"date"`
+	CoinsSpent  int64            `json:"coinsSpent"`
+	EnergySpent int64            `json:"energySpent"`
+	CropCounts  map[string]int64 `json:"cropCounts"`
 }
 
 type FarmManager struct {
@@ -163,9 +183,16 @@ type FarmManager struct {
 	onState                    func(FarmState)
 	onReady                    func(FarmPlotState)
 	onSpecial                  func(FarmPlotState)
+	onPlant                    func(ownerID uint64, cropName string, coinCost int64, at time.Time)
+	onEnergy                   func(ownerID uint64, energy int, at time.Time)
 }
 
-func NewFarmManager(ctx context.Context, onState func(FarmState), onReady func(FarmPlotState), onSpecial func(FarmPlotState)) *FarmManager {
+type FarmUsageCallbacks struct {
+	OnPlant  func(ownerID uint64, cropName string, coinCost int64, at time.Time)
+	OnEnergy func(ownerID uint64, energy int, at time.Time)
+}
+
+func NewFarmManager(ctx context.Context, onState func(FarmState), onReady func(FarmPlotState), onSpecial func(FarmPlotState), usageCallbacks ...FarmUsageCallbacks) *FarmManager {
 	settings := loadFarmSettings()
 	m := &FarmManager{
 		enabled:                    settings.Enabled,
@@ -180,6 +207,10 @@ func NewFarmManager(ctx context.Context, onState func(FarmState), onReady func(F
 		onState:                    onState,
 		onReady:                    onReady,
 		onSpecial:                  onSpecial,
+	}
+	if len(usageCallbacks) > 0 {
+		m.onPlant = usageCallbacks[0].OnPlant
+		m.onEnergy = usageCallbacks[0].OnEnergy
 	}
 	go m.run(ctx)
 	return m
@@ -377,12 +408,19 @@ func (m *FarmManager) handleFarmEnergy(pkt *packet.GamePacket) bool {
 		return false
 	}
 	energy := int(pkt.Msg[1].Data().(uint32))
+	var ownerID uint64
+	if pkt.Msg[0].Type() == packet.MessageElemTypeLong {
+		ownerID = pkt.Msg[0].Data().(uint64)
+	}
 	m.mu.Lock()
 	changed := !m.energyKnown || m.energy != energy
 	m.energy = energy
 	m.energyKnown = true
 	m.updatedAt = pkt.At
 	m.mu.Unlock()
+	if m.onEnergy != nil && ownerID != 0 {
+		m.onEnergy(ownerID, energy, pkt.At)
+	}
 	return changed
 }
 
@@ -644,10 +682,16 @@ func (m *FarmManager) handleCropState(pkt *packet.GamePacket) (bool, bool) {
 	if record.SlotID != 0 {
 		m.setEntitySlotLocked(pkt.Id, record.SlotID)
 	}
+	planting := phase == "seed" && (old == nil || record.StartRawMS != old.StartRawMS)
 	specialDetected := record.Special && !record.SpecialNotified && (old == nil || !old.Special)
 	m.crops[pkt.Id] = record
 	m.synced = true
 	m.updatedAt = pkt.At
+	if planting && m.onPlant != nil {
+		if definition, known := farmCropDefinitions[record.ItemID]; known {
+			m.onPlant(record.OwnerID, definition.Name, definition.CoinCost, pkt.At)
+		}
+	}
 	return true, specialDetected
 }
 

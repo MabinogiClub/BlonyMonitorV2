@@ -12,6 +12,7 @@ import (
 
 	"blonymonitorv2/db"
 	"blonymonitorv2/internal/config"
+	"blonymonitorv2/internal/farmstats"
 	"blonymonitorv2/internal/inventory"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -113,6 +114,9 @@ type App struct {
 	lastMapChangeAt             int64
 	selfId                      string
 	selfName                    string
+	accountID                   string
+	characterAccounts           map[string]string
+	farmEnergyByAccount         map[string]int
 	rankingConsentRequestMu     sync.Mutex
 	rankingConsentSyncKey       string
 	buffTimerMgr                *BuffTimerManager
@@ -126,6 +130,7 @@ type App struct {
 	battlefieldShockGeneration  uint64
 	analysisLog                 *analysisLogController
 	inventoryStore              *inventory.Store
+	farmStatsStore              *farmstats.Store
 	onHide                      func()
 }
 
@@ -161,6 +166,8 @@ func NewApp() *App {
 		selfEquipmentSlots:      make(map[uint32]SelfEquipmentSlot),
 		selfEquipmentByInstance: make(map[uint64]uint32),
 		selfEquipmentItemCache:  make(map[uint64]SelfEquipmentSlot),
+		characterAccounts:       make(map[string]string),
+		farmEnergyByAccount:     make(map[string]int),
 		opacity:                 100,
 		soundVolume:             defaultSoundVolume,
 	}
@@ -186,7 +193,7 @@ func (a *App) Startup(ctx context.Context) {
 	a.farmMgr = NewFarmManager(
 		a.ctx,
 		func(state FarmState) {
-			runtime.EventsEmit(a.ctx, "farm-state", state)
+			runtime.EventsEmit(a.ctx, "farm-state", a.decorateFarmState(state))
 		},
 		func(plot FarmPlotState) {
 			a.farmSoundPlayer.NotifyReady()
@@ -195,6 +202,14 @@ func (a *App) Startup(ctx context.Context) {
 		func(plot FarmPlotState) {
 			a.farmSoundPlayer.NotifySpecial()
 			runtime.EventsEmit(a.ctx, "farm-special", plot)
+		},
+		FarmUsageCallbacks{
+			OnPlant: func(ownerID uint64, cropName string, coinCost int64, at time.Time) {
+				a.recordFarmPlant(ownerID, cropName, coinCost, at)
+			},
+			OnEnergy: func(ownerID uint64, energy int, at time.Time) {
+				a.recordFarmEnergy(ownerID, energy, at)
+			},
 		},
 	)
 	a.farmRecommendationMgr = newFarmRecommendationManager()
@@ -205,6 +220,11 @@ func (a *App) Startup(ctx context.Context) {
 	} else {
 		a.inventoryStore = store
 		logger.Printf("[Inventory] database ready")
+	}
+	if store, err := farmstats.Open(""); err != nil {
+		logger.Printf("[Farm] open statistics database failed: %v", err)
+	} else {
+		a.farmStatsStore = store
 	}
 
 	runtime.WindowSetAlwaysOnTop(ctx, a.alwaysOnTop)
@@ -225,6 +245,11 @@ func (a *App) Shutdown(ctx context.Context) {
 	if a.inventoryStore != nil {
 		if err := a.inventoryStore.Close(); err != nil {
 			logger.Printf("[Inventory] close database failed: %v", err)
+		}
+	}
+	if a.farmStatsStore != nil {
+		if err := a.farmStatsStore.Close(); err != nil {
+			logger.Printf("[Farm] close statistics database failed: %v", err)
 		}
 	}
 	if a.cancel != nil {
@@ -364,6 +389,9 @@ func (a *App) GetSelfInfo() *SelfInfo {
 
 func (a *App) setSelfInfo(id, name string) {
 	a.mu.Lock()
+	if a.selfId != id {
+		a.accountID = a.characterAccounts[id]
+	}
 	a.selfId = id
 	a.selfName = name
 	a.mu.Unlock()
@@ -486,9 +514,9 @@ func (a *App) GetFarmState() FarmState {
 		for index, definition := range farmSlotDefinitions {
 			plots[index] = FarmPlotState{Index: index, Kind: definition.Kind, Label: definition.Label, Unlocked: true, Quality: "empty"}
 		}
-		return FarmState{FertilityMax: farmResourceMaximum, EnergyMax: farmResourceMaximum, Plots: plots}
+		return FarmState{FertilityMax: farmResourceMaximum, EnergyMax: farmResourceMaximum, CropCounts: map[string]int64{}, TodayCropCounts: map[string]int64{}, YesterdayCropCounts: map[string]int64{}, DailyTrend: []FarmDailyUsage{}, Plots: plots}
 	}
-	return a.farmMgr.State(time.Now())
+	return a.decorateFarmState(a.farmMgr.State(time.Now()))
 }
 
 // SetFarmMonitorEnabled controls farm reminders. Packet state continues to be synchronized while disabled.
@@ -497,7 +525,7 @@ func (a *App) SetFarmMonitorEnabled(enabled bool) FarmState {
 		return a.GetFarmState()
 	}
 	a.farmMgr.SetEnabled(enabled)
-	return a.farmMgr.State(time.Now())
+	return a.GetFarmState()
 }
 
 // SetFarmReadyNotificationEnabled controls mature crop notifications.
@@ -506,7 +534,7 @@ func (a *App) SetFarmReadyNotificationEnabled(enabled bool) FarmState {
 		return a.GetFarmState()
 	}
 	a.farmMgr.SetReadyNotificationEnabled(enabled)
-	return a.farmMgr.State(time.Now())
+	return a.GetFarmState()
 }
 
 // SetFarmSpecialNotificationEnabled controls special seed notifications.
@@ -515,7 +543,7 @@ func (a *App) SetFarmSpecialNotificationEnabled(enabled bool) FarmState {
 		return a.GetFarmState()
 	}
 	a.farmMgr.SetSpecialNotificationEnabled(enabled)
-	return a.farmMgr.State(time.Now())
+	return a.GetFarmState()
 }
 
 // GetFarmRecommendationState returns locally synchronized delivery recommendations.
@@ -544,6 +572,17 @@ func (a *App) SetFarmRecommendationMaterialQualities(normal, advanced, highest b
 	}
 	if err := a.farmRecommendationMgr.setMaterialQualities(normal, advanced, highest); err != nil {
 		logger.Printf("[FarmRecommendation] 保存材料品质偏好失败: %v", err)
+	}
+	return a.GetFarmRecommendationState()
+}
+
+// SetFarmRecommendationNoMaterials toggles a from-scratch recommendation calculation.
+func (a *App) SetFarmRecommendationNoMaterials(enabled bool) FarmRecommendationState {
+	if a.farmRecommendationMgr == nil {
+		return a.GetFarmRecommendationState()
+	}
+	if err := a.farmRecommendationMgr.setNoMaterials(enabled); err != nil {
+		logger.Printf("[FarmRecommendation] 切换无材料模式失败: %v", err)
 	}
 	return a.GetFarmRecommendationState()
 }

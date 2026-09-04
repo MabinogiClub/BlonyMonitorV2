@@ -20,6 +20,7 @@ const emptyState = (): FarmRecommendationState => ({
   useNormalMaterials: true,
   useAdvancedMaterials: false,
   useHighestMaterials: false,
+  useNoMaterials: false,
   dataReady: false,
   ordersSynced: false,
   inventorySynced: false,
@@ -150,6 +151,19 @@ async function setMaterialQuality(quality: 'normal' | 'advanced' | 'highest', en
   }
 }
 
+async function setNoMaterials(enabled: boolean) {
+  if (switchingMaterials.value) return
+  switchingMaterials.value = true
+  try {
+    recommendationState.value = await api.setFarmRecommendationNoMaterials(enabled)
+  } catch (error) {
+    console.error('切换无材料计算模式失败:', error)
+    await loadRecommendations(true)
+  } finally {
+    switchingMaterials.value = false
+  }
+}
+
 onMounted(async () => {
   await loadRecommendations()
   updateInterval = window.setInterval(() => loadRecommendations(true), 3000)
@@ -194,7 +208,7 @@ onUnmounted(() => {
           <input
             type="checkbox"
             :checked="recommendationState.useNormalMaterials"
-            :disabled="switchingMaterials"
+            :disabled="switchingMaterials || recommendationState.useNoMaterials"
             @change="setMaterialQuality('normal', ($event.target as HTMLInputElement).checked)"
           >
           <span>普通材料</span>
@@ -203,7 +217,7 @@ onUnmounted(() => {
           <input
             type="checkbox"
             :checked="recommendationState.useAdvancedMaterials"
-            :disabled="switchingMaterials"
+            :disabled="switchingMaterials || recommendationState.useNoMaterials"
             @change="setMaterialQuality('advanced', ($event.target as HTMLInputElement).checked)"
           >
           <span>高级材料</span>
@@ -212,10 +226,19 @@ onUnmounted(() => {
           <input
             type="checkbox"
             :checked="recommendationState.useHighestMaterials"
-            :disabled="switchingMaterials"
+            :disabled="switchingMaterials || recommendationState.useNoMaterials"
             @change="setMaterialQuality('highest', ($event.target as HTMLInputElement).checked)"
           >
           <span>最高级材料</span>
+        </label>
+        <label class="quality-option no-materials">
+          <input
+            type="checkbox"
+            :checked="recommendationState.useNoMaterials"
+            :disabled="switchingMaterials"
+            @change="setNoMaterials(($event.target as HTMLInputElement).checked)"
+          >
+          <span>不使用任何材料</span>
         </label>
       </div>
     </section>
@@ -448,6 +471,10 @@ onUnmounted(() => {
 
 .quality-option.highest {
   color: #e4c781;
+}
+
+.quality-option.no-materials {
+  color: #f0b36a;
 }
 
 .quality-option input:disabled {

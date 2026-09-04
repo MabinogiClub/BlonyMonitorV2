@@ -16,6 +16,7 @@ const emptyState = (): FarmRecommendationState => ({
   useNormalMaterials: true,
   useAdvancedMaterials: false,
   useHighestMaterials: false,
+  useNoMaterials: false,
   dataReady: false,
   ordersSynced: false,
   inventorySynced: false,

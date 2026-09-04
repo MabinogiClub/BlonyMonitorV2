@@ -97,6 +97,7 @@ interface GoApp {
   GetFarmRecommendationState(): Promise<FarmRecommendationState>
   SetFarmRecommendationGoal(goal: string): Promise<FarmRecommendationState>
   SetFarmRecommendationMaterialQualities(normal: boolean, advanced: boolean, highest: boolean): Promise<FarmRecommendationState>
+  SetFarmRecommendationNoMaterials(enabled: boolean): Promise<FarmRecommendationState>
   SetFarmRecommendationCaptureEnabled(enabled: boolean): Promise<FarmRecommendationState>
   GetNpcapStatus(): Promise<NpcapStatus>
   OpenNpcapDownloadPage(): Promise<void>
@@ -620,7 +621,25 @@ interface FarmState {
   energyKnown: boolean
   synced: boolean
   updatedAt: number
+  accountId: string
+  coinsSpent: number
+  energySpent: number
+  cropCounts: Record<string, number>
+  todayCropCounts: Record<string, number>
+  yesterdayCropCounts: Record<string, number>
+  dailyTrend: FarmDailyUsage[]
+  todayCoinsSpent: number
+  yesterdayCoinsSpent: number
+  todayEnergySpent: number
+  yesterdayEnergySpent: number
   plots: FarmPlotState[]
+}
+
+interface FarmDailyUsage {
+  date: string
+  coinsSpent: number
+  energySpent: number
+  cropCounts: Record<string, number>
 }
 
 interface FarmRecommendationAmount {
@@ -676,6 +695,7 @@ interface FarmRecommendationState {
   useNormalMaterials: boolean
   useAdvancedMaterials: boolean
   useHighestMaterials: boolean
+  useNoMaterials: boolean
   dataReady: boolean
   ordersSynced: boolean
   inventorySynced: boolean

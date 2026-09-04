@@ -239,6 +239,7 @@ func (a *App) handleInventoryBankPacket(pkt *packet.GamePacket) {
 		return
 	}
 	scannedByID, scannedByName := a.currentInventoryCharacter()
+	a.rememberFarmAccount(account, scannedByID)
 	a.replaceInventorySnapshots(inventory.Snapshot{
 		HolderID:      "account:" + account,
 		HolderType:    "account",
@@ -261,6 +262,7 @@ func (a *App) handleInventoryDressingRoomPacket(pkt *packet.GamePacket) {
 		return
 	}
 	scannedByID, scannedByName := a.currentInventoryCharacter()
+	a.rememberFarmAccount(account, scannedByID)
 	a.replaceInventorySnapshots(inventory.Snapshot{
 		HolderID:      "account:" + account,
 		HolderType:    "account",

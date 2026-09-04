@@ -65,6 +65,7 @@ type FarmRecommendationData struct {
 	UseNormalMaterials   bool                `json:"useNormalMaterials"`
 	UseAdvancedMaterials bool                `json:"useAdvancedMaterials"`
 	UseHighestMaterials  bool                `json:"useHighestMaterials"`
+	UseNoMaterials       bool                `json:"useNoMaterials"`
 	SyncedAt             int64               `json:"syncedAt,omitempty"`
 	OrdersSynced         bool                `json:"ordersSynced"`
 	InventorySynced      bool                `json:"inventorySynced"`
@@ -128,6 +129,7 @@ type FarmRecommendationState struct {
 	UseNormalMaterials     bool                       `json:"useNormalMaterials"`
 	UseAdvancedMaterials   bool                       `json:"useAdvancedMaterials"`
 	UseHighestMaterials    bool                       `json:"useHighestMaterials"`
+	UseNoMaterials         bool                       `json:"useNoMaterials"`
 	DataReady              bool                       `json:"dataReady"`
 	OrdersSynced           bool                       `json:"ordersSynced"`
 	InventorySynced        bool                       `json:"inventorySynced"`
@@ -217,6 +219,7 @@ func resetFarmRecommendationDataForCharacter(data FarmRecommendationData, charac
 	reset.UseNormalMaterials = data.UseNormalMaterials
 	reset.UseAdvancedMaterials = data.UseAdvancedMaterials
 	reset.UseHighestMaterials = data.UseHighestMaterials
+	reset.UseNoMaterials = data.UseNoMaterials
 	return reset
 }
 
@@ -257,6 +260,13 @@ func (m *farmRecommendationManager) setMaterialQualities(normal, advanced, highe
 	m.data.UseNormalMaterials = normal
 	m.data.UseAdvancedMaterials = advanced
 	m.data.UseHighestMaterials = highest
+	return m.saveLocked()
+}
+
+func (m *farmRecommendationManager) setNoMaterials(enabled bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data.UseNoMaterials = enabled
 	return m.saveLocked()
 }
 
@@ -1359,6 +1369,10 @@ func scheduleFarmJobs(loads []int64, jobs []int64) (int64, bool) {
 }
 
 func estimateFarmGrowth(needs map[uint32]int, farm FarmState) (int64, map[uint32]int, []string) {
+	return estimateFarmGrowthWithExistingCrops(needs, farm, true)
+}
+
+func estimateFarmGrowthWithExistingCrops(needs map[uint32]int, farm FarmState, useExistingCrops bool) (int64, map[uint32]int, []string) {
 	remaining := make(map[uint32]int, len(needs))
 	for itemID, count := range needs {
 		remaining[itemID] = count
@@ -1375,7 +1389,7 @@ func estimateFarmGrowth(needs map[uint32]int, farm FarmState) (int64, map[uint32
 		}
 		loadsByKind[plot.Kind] = append(loadsByKind[plot.Kind], load)
 		cropID := farmPlotCropID(plot)
-		if plot.Planted && remaining[cropID] > 0 {
+		if useExistingCrops && plot.Planted && remaining[cropID] > 0 {
 			remaining[cropID]--
 			completion = max(completion, load)
 		}
@@ -1511,6 +1525,9 @@ func (m *farmRecommendationManager) recommendLocked(farm FarmState) []FarmOrderR
 		}
 
 		inventory := exactFarmInventory(m.data.Inventory)
+		if m.data.UseNoMaterials {
+			inventory = make(map[uint32]int)
+		}
 		cropNeeds := make(map[uint32][]int)
 		productionNeeds := make(map[uint32]int)
 		craftByFactory := make(map[string]int64)
@@ -1551,7 +1568,7 @@ func (m *farmRecommendationManager) recommendLocked(farm FarmState) []FarmOrderR
 			}
 		}
 
-		growSeconds, plantNeeds, warnings := estimateFarmGrowth(plantNeeds, farm)
+		growSeconds, plantNeeds, warnings := estimateFarmGrowthWithExistingCrops(plantNeeds, farm, !m.data.UseNoMaterials)
 		var craftSeconds int64
 		for _, duration := range craftByFactory {
 			craftSeconds = max(craftSeconds, duration)
@@ -1798,12 +1815,20 @@ func (m *farmRecommendationManager) state(farm FarmState) FarmRecommendationStat
 	} else if !m.data.OrdersSynced && m.data.InventorySynced {
 		status = "请打开游戏内塔汀农场界面以刷新交货清单"
 	} else if dataReady {
-		status = "已根据当前订单和储存库生成推荐"
+		if m.data.UseNoMaterials {
+			status = "已按不使用任何材料（从零开始）生成推荐"
+		} else {
+			status = "已根据当前订单和储存库生成推荐"
+		}
 	}
 	recommendations := m.recommendLocked(farm)
+	plantingInventory := m.data.Inventory
+	if m.data.UseNoMaterials {
+		plantingInventory = map[string]int{}
+	}
 	plantingSuggestions, plantingProductions, plantingReferenceCount := farmPlantingSuggestions(
 		recommendations,
-		m.data.Inventory,
+		plantingInventory,
 		enabledFarmQualityIndexes(m.data),
 	)
 	return FarmRecommendationState{
@@ -1811,6 +1836,7 @@ func (m *farmRecommendationManager) state(farm FarmState) FarmRecommendationStat
 		UseNormalMaterials:     m.data.UseNormalMaterials,
 		UseAdvancedMaterials:   m.data.UseAdvancedMaterials,
 		UseHighestMaterials:    m.data.UseHighestMaterials,
+		UseNoMaterials:         m.data.UseNoMaterials,
 		DataReady:              dataReady,
 		OrdersSynced:           m.data.OrdersSynced,
 		InventorySynced:        m.data.InventorySynced,

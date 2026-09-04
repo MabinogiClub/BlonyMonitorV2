@@ -16,6 +16,7 @@ let previewFarmSpecialNotificationEnabled = true
 let previewFarmRecommendationGoal: 'keys' | 'coins' = 'keys'
 let previewFarmRecommendationCaptureEnabled = false
 let previewFarmMaterialQualities = { normal: true, advanced: false, highest: false }
+let previewFarmNoMaterials = false
 
 function previewFarmState(): FarmState {
   const slots: Array<Pick<FarmPlotState, 'kind' | 'label'>> = [
@@ -51,6 +52,22 @@ function previewFarmState(): FarmState {
     energyKnown: true,
     synced: true,
     updatedAt: Date.now(),
+    accountId: 'account:preview',
+    coinsSpent: 16800,
+    energySpent: 42,
+    todayCoinsSpent: 6200,
+    yesterdayCoinsSpent: 5000,
+    todayEnergySpent: 10,
+    yesterdayEnergySpent: 8,
+    cropCounts: { 黑莓: 4, 茉莉: 2, 红梨树: 1 },
+    todayCropCounts: { 黑莓: 4, 茉莉: 2, 红梨树: 1 },
+    yesterdayCropCounts: { 黑莓: 3, 茉莉: 3, 红梨树: 1 },
+    dailyTrend: Array.from({ length: 30 }, (_, index) => ({
+      date: new Date(Date.now() - (29 - index) * 86400000).toISOString().slice(0, 10),
+      coinsSpent: [0, 1200, 5000, 2400, 6200, 1200, 5000][index % 7],
+      energySpent: [0, 8, 12, 5, 10, 4, 7][index % 7],
+      cropCounts: { 黑莓: index % 5, 茉莉: index % 3 },
+    })),
     plots: slots.map((slot, index) => ({
       index,
       ...slot,
@@ -161,6 +178,7 @@ function previewFarmRecommendationState(): FarmRecommendationState {
     useNormalMaterials: previewFarmMaterialQualities.normal,
     useAdvancedMaterials: previewFarmMaterialQualities.advanced,
     useHighestMaterials: previewFarmMaterialQualities.highest,
+    useNoMaterials: previewFarmNoMaterials,
     dataReady: true,
     ordersSynced: true,
     inventorySynced: true,
@@ -254,6 +272,7 @@ function normalizeFarmRecommendationState(state: RawFarmRecommendationState): Fa
   return {
     ...state,
     goal: state.goal === 'coins' ? 'coins' : 'keys',
+    useNoMaterials: !!state.useNoMaterials,
     storageLevel: state.storageLevel || 0,
     storageUsed: state.storageUsed || 0,
     storageCapacity: state.storageCapacity || 0,
@@ -1033,6 +1052,14 @@ export async function setFarmRecommendationMaterialQualities(normal: boolean, ad
     return previewFarmRecommendationState()
   }
   return normalizeFarmRecommendationState(await window.go.app.App.SetFarmRecommendationMaterialQualities(normal, advanced, highest))
+}
+
+export async function setFarmRecommendationNoMaterials(enabled: boolean): Promise<FarmRecommendationState> {
+  if (!isWailsReady()) {
+    previewFarmNoMaterials = enabled
+    return previewFarmRecommendationState()
+  }
+  return normalizeFarmRecommendationState(await window.go.app.App.SetFarmRecommendationNoMaterials(enabled))
 }
 
 export async function setFarmRecommendationCaptureEnabled(enabled: boolean): Promise<FarmRecommendationState> {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import * as echarts from 'echarts'
 import { showNotify } from 'vant'
 import SvgIcon from '@jamescoyle/vue-icon'
 import {
@@ -7,6 +8,7 @@ import {
   mdiClockOutline,
   mdiLeaf,
   mdiLightningBolt,
+  mdiCashMultiple,
   mdiSprout,
   mdiStarFourPoints,
   mdiWateringCanOutline,
@@ -15,7 +17,9 @@ import * as api from '../composables/useApi'
 import FarmRecommendationView from './FarmRecommendationView.vue'
 import FarmStorageView from './FarmStorageView.vue'
 
-const activeFarmTab = ref<'reminder' | 'recommendation' | 'storage'>('reminder')
+const farmItemIcons = import.meta.glob('../assets/farm-items/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
+
+const activeFarmTab = ref<'reminder' | 'recommendation' | 'storage' | 'statistics'>('reminder')
 
 const emptyState = (): FarmState => ({
   enabled: false,
@@ -29,16 +33,92 @@ const emptyState = (): FarmState => ({
   energyKnown: false,
   synced: false,
   updatedAt: 0,
+  accountId: '',
+  coinsSpent: 0,
+  energySpent: 0,
+  cropCounts: {},
+  todayCropCounts: {},
+  yesterdayCropCounts: {},
+  dailyTrend: [],
+  todayCoinsSpent: 0,
+  yesterdayCoinsSpent: 0,
+  todayEnergySpent: 0,
+  yesterdayEnergySpent: 0,
   plots: [],
 })
 
+const numberFormatter = new Intl.NumberFormat('zh-CN')
+
 const farmState = ref<FarmState>(emptyState())
+const trendDays = ref<7 | 30>(7)
+const knownCropNames = ['黑莓', '秋葵', '茉莉', '红梨树', '橡胶树', '蜘蛛古木', '石英矿脉']
+const selectedTrendKeys = ref<string[]>(['coins', 'energy', ...knownCropNames])
 const toggling = ref(false)
 const readyNotificationToggling = ref(false)
 const specialNotificationToggling = ref(false)
 let updateInterval: number | null = null
 
 const enabled = computed(() => farmState.value.enabled)
+const cropCosts: Record<string, number> = { 黑莓: 1200, 秋葵: 1200, 茉莉: 1200, 红梨树: 5000, 橡胶树: 5000, 蜘蛛古木: 5000, 石英矿脉: 5000 }
+const cropIcons: Record<string, string> = {
+  黑莓: 'item_seasonalfarming_06_s', 秋葵: 'item_seasonalfarming_05_s', 茉莉: 'item_seasonalfarming_07_s',
+  红梨树: 'item_seasonalfarming_08_s', 橡胶树: 'item_seasonalfarming_09_s', 蜘蛛古木: 'item_seasonalfarming_04_s', 石英矿脉: 'item_seasonalfarming_10_s',
+}
+const cropSummaryRows = computed(() => knownCropNames.map(name => {
+  const value = (farmState.value.cropCounts?.[name] || 0) * cropCosts[name]
+  const diff = ((farmState.value.todayCropCounts?.[name] || 0) - (farmState.value.yesterdayCropCounts?.[name] || 0)) * cropCosts[name]
+  return { name, value, diff, icon: farmItemIcons[`../assets/farm-items/${cropIcons[name]}.png`] || '' }
+}))
+function dailyDiffLabel(diff: number): string {
+  if (diff === 0) return '—'
+  return `${diff > 0 ? '↑' : '↓'}${numberFormatter.format(Math.abs(diff))}`
+}
+
+const selectedTrend = computed(() => (farmState.value.dailyTrend || []).slice(-trendDays.value))
+const cropColors = ['#66bb6a', '#8bc34a', '#26a69a', '#ab87ff', '#ff9f68', '#e57373', '#4dd0e1']
+const trendSeries = [
+  { key: 'coins', label: '金币消耗', color: '#d4a72c', value: (day: FarmDailyUsage) => day.coinsSpent || 0 },
+  { key: 'energy', label: '能量消耗', color: '#42a5f5', value: (day: FarmDailyUsage) => day.energySpent || 0 },
+  ...knownCropNames.map((name, index) => ({ key: name, label: name, color: cropColors[index], value: (day: FarmDailyUsage) => day.cropCounts?.[name] || 0 })),
+]
+function toggleTrend(key: string) {
+  if (selectedTrendKeys.value.includes(key)) {
+    if (selectedTrendKeys.value.length > 1) selectedTrendKeys.value = selectedTrendKeys.value.filter(item => item !== key)
+  } else selectedTrendKeys.value = [...selectedTrendKeys.value, key]
+}
+
+const trendChartRef = ref<HTMLElement | null>(null)
+let trendChart: echarts.ECharts | null = null
+function renderTrendChart() {
+  if (!trendChartRef.value) return
+  if (!trendChart) trendChart = echarts.init(trendChartRef.value, undefined, { renderer: 'canvas' })
+  const days = selectedTrend.value
+  const enabled = new Set(selectedTrendKeys.value)
+  const cropSeries = knownCropNames.filter(name => enabled.has(name)).map((name, index) => ({
+    name, type: 'bar' as const, stack: 'crops', yAxisIndex: 1,
+    barMaxWidth: 18, itemStyle: { color: cropColors[index] },
+    data: days.map(day => day.cropCounts?.[name] || 0),
+  }))
+  const series: echarts.SeriesOption[] = [
+    ...(enabled.has('coins') ? [{ name: '金币消耗', type: 'line' as const, smooth: true, symbol: 'circle', symbolSize: 5, yAxisIndex: 0, lineStyle: { width: 2, color: '#d4a72c' }, itemStyle: { color: '#d4a72c' }, data: days.map(day => day.coinsSpent || 0) }] : []),
+    ...(enabled.has('energy') ? [{ name: '能量消耗', type: 'line' as const, smooth: true, symbol: 'circle', symbolSize: 5, yAxisIndex: 1, lineStyle: { width: 2, color: '#42a5f5' }, itemStyle: { color: '#42a5f5' }, data: days.map(day => day.energySpent || 0) }] : []),
+    ...cropSeries,
+  ]
+  trendChart.setOption({
+    animation: false,
+    color: ['#d4a72c', '#42a5f5', ...cropColors],
+    grid: { left: 42, right: 12, top: 24, bottom: 28 },
+    tooltip: { trigger: 'axis' },
+    legend: { show: false },
+    xAxis: { type: 'category', data: days.map(day => day.date.slice(5)), axisLabel: { color: '#777', fontSize: 9 }, axisLine: { lineStyle: { color: 'rgba(255,255,255,.15)' } } },
+    yAxis: [
+      { type: 'value', axisLabel: { color: '#888', fontSize: 9 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,.06)' } } },
+      { type: 'value', axisLabel: { color: '#888', fontSize: 9 }, splitLine: { show: false } },
+    ],
+    series,
+  } as echarts.EChartsOption, true)
+}
+function resizeTrendChart() { trendChart?.resize() }
 
 function clampPercent(value: number, maximum: number): number {
   if (maximum <= 0) return 0
@@ -150,7 +230,15 @@ onMounted(async () => {
   api.onEvent('farm-ready', onFarmReady)
   api.onEvent('farm-special', onFarmSpecial)
   await loadFarmState()
+  await nextTick()
+  renderTrendChart()
+  window.addEventListener('resize', resizeTrendChart)
   updateInterval = window.setInterval(loadFarmState, 1000)
+})
+
+watch([selectedTrend, selectedTrendKeys, trendDays], () => { void nextTick().then(renderTrendChart) }, { deep: true })
+watch(activeFarmTab, tab => {
+  if (tab === 'statistics') void nextTick().then(renderTrendChart)
 })
 
 onUnmounted(() => {
@@ -158,6 +246,9 @@ onUnmounted(() => {
   api.offEvent('farm-ready', onFarmReady)
   api.offEvent('farm-special', onFarmSpecial)
   if (updateInterval !== null) clearInterval(updateInterval)
+  window.removeEventListener('resize', resizeTrendChart)
+  trendChart?.dispose()
+  trendChart = null
 })
 </script>
 
@@ -193,6 +284,16 @@ onUnmounted(() => {
         @click="activeFarmTab = 'storage'"
       >
         储存库
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="farm-tab"
+        :class="{ active: activeFarmTab === 'statistics' }"
+        :aria-selected="activeFarmTab === 'statistics'"
+        @click="activeFarmTab = 'statistics'"
+      >
+        统计
       </button>
     </div>
 
@@ -315,7 +416,47 @@ onUnmounted(() => {
     </div>
 
     <FarmRecommendationView v-else-if="activeFarmTab === 'recommendation'" />
-    <FarmStorageView v-else />
+    <FarmStorageView v-else-if="activeFarmTab === 'storage'" />
+    <div v-else class="statistics-view">
+      <div class="statistics-grid">
+        <div class="statistic-item coins primary-stat">
+          <span class="statistic-icon"><svg-icon type="mdi" :path="mdiCashMultiple" :size="22" /></span>
+          <span class="statistic-label">累计消耗金币</span>
+          <strong>{{ numberFormatter.format(farmState.coinsSpent || 0) }}</strong>
+          <small class="daily-change" :class="{ up: farmState.todayCoinsSpent - farmState.yesterdayCoinsSpent > 0, down: farmState.todayCoinsSpent - farmState.yesterdayCoinsSpent < 0 }">今日 {{ numberFormatter.format(farmState.todayCoinsSpent || 0) }} · {{ dailyDiffLabel(farmState.todayCoinsSpent - farmState.yesterdayCoinsSpent) }}</small>
+        </div>
+        <div class="statistic-item energy primary-stat">
+          <span class="statistic-icon"><svg-icon type="mdi" :path="mdiLightningBolt" :size="22" /></span>
+          <span class="statistic-label">累计消耗能量</span>
+          <strong>{{ numberFormatter.format(farmState.energySpent || 0) }}</strong>
+          <small class="daily-change" :class="{ up: farmState.todayEnergySpent - farmState.yesterdayEnergySpent > 0, down: farmState.todayEnergySpent - farmState.yesterdayEnergySpent < 0 }">今日 {{ numberFormatter.format(farmState.todayEnergySpent || 0) }} · {{ dailyDiffLabel(farmState.todayEnergySpent - farmState.yesterdayEnergySpent) }}</small>
+        </div>
+        <div v-for="(row, index) in cropSummaryRows" :key="row.name" class="statistic-item crop-summary" :class="index < 3 ? 'field-crop' : 'tree-crop'">
+          <span class="statistic-icon crop-icon"><img v-if="row.icon" :src="row.icon" :alt="row.name"></span>
+          <span class="statistic-label">{{ row.name }}累计消耗金币</span>
+          <strong>{{ numberFormatter.format(row.value) }}</strong>
+          <small class="daily-change" :class="{ up: row.diff > 0, down: row.diff < 0 }">{{ dailyDiffLabel(row.diff) }}</small>
+        </div>
+      </div>
+      <section class="trend-section">
+        <div class="section-title">消耗走势
+          <div class="trend-switch">
+            <button type="button" :class="{ active: trendDays === 7 }" @click="trendDays = 7">7天</button>
+            <button type="button" :class="{ active: trendDays === 30 }" @click="trendDays = 30">30天</button>
+          </div>
+        </div>
+        <div v-if="selectedTrend.length" class="trend-chart-wrap">
+          <div class="trend-options">
+            <button v-for="series in trendSeries" :key="series.key" type="button" :class="{ selected: selectedTrendKeys.includes(series.key) }" @click="toggleTrend(series.key)">
+              <i :style="{ backgroundColor: series.color }" />{{ series.label }}
+            </button>
+          </div>
+          <div ref="trendChartRef" class="trend-chart" role="img" aria-label="农场消耗走势" />
+          <div class="chart-labels"><span>{{ selectedTrend[0].date.slice(5) }}</span><span>{{ selectedTrend[selectedTrend.length - 1].date.slice(5) }}</span></div>
+        </div>
+        <div v-else class="empty-stat">暂无走势数据</div>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -457,6 +598,149 @@ onUnmounted(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
+
+.statistics-view {
+  flex: 1;
+  min-height: 0;
+  padding: 8px 6px;
+  overflow-y: auto;
+}
+
+.statistics-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.statistic-item {
+  min-width: 0;
+  height: 92px;
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  column-gap: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-left: 3px solid #d4a72c;
+  border-radius: 5px;
+}
+.primary-stat { grid-column: span 6; height: 78px; }
+.daily-change { grid-column: 2; color: #777; font: 9px Consolas, monospace; white-space: nowrap; }
+.daily-change.up { color: #66bb6a; }
+.daily-change.down { color: #ef7070; }
+
+.statistic-item.energy {
+  border-left-color: #42a5f5;
+}
+
+.statistic-icon {
+  grid-row: 1 / 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #d4a72c;
+}
+
+.statistic-item.energy .statistic-icon {
+  color: #42a5f5;
+}
+
+.statistic-item.crop-summary {
+  grid-column: span 4;
+  height: 72px;
+  padding: 10px 12px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  border-left-color: #66bb6a;
+}
+.tree-crop { grid-column: span 3; }
+.crop-summary .statistic-icon { color: #66bb6a; }
+.crop-icon img { width: 25px; height: 25px; object-fit: contain; image-rendering: auto; }
+.crop-summary .statistic-label { font-size: 10px; }
+.crop-summary strong { font-size: 18px; }
+
+.statistic-label {
+  min-width: 0;
+  color: #bbb;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.statistic-item strong {
+  min-width: 0;
+  color: #f5f5f5;
+  font-family: Consolas, monospace;
+  font-size: 24px;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.today-section,
+.trend-section {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #ddd;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.section-title > span {
+  margin-left: 8px;
+  color: #777;
+  font-size: 9px;
+  font-weight: 400;
+}
+
+.crop-stats { margin-top: 7px; }
+.crop-stat-row {
+  display: grid;
+  grid-template-columns: 1fr auto 42px;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 25px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+.crop-stat-row:last-child { border-bottom: 0; }
+.crop-stat-name { color: #bbb; font-size: 11px; }
+.crop-stat-row strong { color: #f0f0f0; font: 700 12px Consolas, monospace; }
+.crop-stat-row small { text-align: right; font: 10px Consolas, monospace; }
+.crop-stat-row .up { color: #66bb6a; }
+.crop-stat-row .down { color: #ef7070; }
+.crop-stat-row .flat { color: #777; }
+.empty-stat { padding: 12px 0 4px; color: #777; font-size: 10px; text-align: center; }
+
+.trend-switch { display: inline-flex; gap: 3px; }
+.trend-switch button {
+  padding: 3px 8px;
+  color: #888;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 3px;
+  font: 10px inherit;
+  cursor: pointer;
+}
+.trend-switch button.active { color: #fff; background: rgba(102,187,106,.25); border-color: #66bb6a; }
+.trend-chart-wrap { margin-top: 8px; }
+.trend-chart { width: 100%; height: 230px; min-height: 180px; }
+.chart-axis { stroke: rgba(255,255,255,.14); stroke-width: 1; }
+.chart-line { fill: none; stroke: #d4a72c; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.energy-line { stroke: #42a5f5; stroke-dasharray: 4 3; }
+.trend-options { display:flex; flex-wrap:wrap; gap:5px; margin:8px 0 3px; }
+.trend-options button { border:1px solid rgba(255,255,255,.12); border-radius:3px; padding:3px 7px; color:#777; background:transparent; font:10px inherit; cursor:pointer; }
+.trend-options button.selected { color:#ddd; border-color:rgba(255,255,255,.3); background:rgba(255,255,255,.06); }
+.trend-options i { display:inline-block; width:8px; height:8px; margin-right:4px; border-radius:50%; vertical-align:-1px; opacity:.45; }
+.trend-options button.selected i { opacity:1; }
+.chart-labels { display:flex; justify-content:space-between; color:#666; font:9px Consolas, monospace; margin-top:3px; }
 
 .resource-meter {
   padding: 6px 8px;
@@ -710,5 +994,12 @@ onUnmounted(() => {
   .farm-plot {
     min-height: 72px;
   }
+}
+
+@media (max-width: 480px) {
+  .statistics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .primary-stat, .crop-summary, .tree-crop { grid-column: span 1; }
+  .statistic-item { padding-left: 10px; padding-right: 10px; }
+  .statistic-item.crop-summary { padding-left: 9px; padding-right: 9px; }
 }
 </style>

@@ -31,7 +31,7 @@ cd new
 wails build -o BlonyMonitorV2.exe
 ```
 
-构建输出仅保留 `build/bin/BlonyMonitorV2.exe`。用户存档、库存数据库和本地配置保存在 `%APPDATA%\BlonyMonitorV2`，不会随构建目录清理而删除。
+构建输出仅保留 `build/bin/BlonyMonitorV2.exe`。用户存档、库存数据库、农场统计数据库和本地配置保存在 `%APPDATA%\BlonyMonitorV2`，不会随构建目录清理而删除。
 
 ## 项目结构
 
