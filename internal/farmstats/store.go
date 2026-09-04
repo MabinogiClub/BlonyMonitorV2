@@ -26,6 +26,23 @@ type DailyUsage struct {
 	CropCounts  map[string]int64
 }
 
+type CurrencyUsage struct {
+	CharacterID  string `json:"characterId"`
+	Currency     string `json:"currency"`
+	Added        int64  `json:"added"`
+	Spent        int64  `json:"spent"`
+	Balance      int64  `json:"balance"`
+	BalanceKnown bool   `json:"balanceKnown"`
+	UpdatedAt    int64  `json:"updatedAt"`
+}
+
+type DailyCurrencyUsage struct {
+	Date    string
+	Added   int64
+	Spent   int64
+	Balance int64
+}
+
 type Store struct {
 	db   *sql.DB
 	path string
@@ -75,11 +92,155 @@ CREATE TABLE IF NOT EXISTS farm_usage_daily (
  PRIMARY KEY(account_id, usage_date, action_type, item_key)
 );
 CREATE INDEX IF NOT EXISTS idx_farm_usage_account_date ON farm_usage_daily(account_id, usage_date);
+CREATE TABLE IF NOT EXISTS currency_usage_daily (
+ character_id TEXT NOT NULL,
+ usage_date TEXT NOT NULL,
+ currency TEXT NOT NULL,
+ added INTEGER NOT NULL DEFAULT 0,
+ spent INTEGER NOT NULL DEFAULT 0,
+ balance INTEGER NOT NULL DEFAULT 0,
+ balance_known INTEGER NOT NULL DEFAULT 0,
+ updated_at INTEGER NOT NULL,
+ PRIMARY KEY(character_id, usage_date, currency)
+);
+CREATE TABLE IF NOT EXISTS currency_balance (
+ character_id TEXT NOT NULL,
+ currency TEXT NOT NULL,
+ balance INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL,
+ PRIMARY KEY(character_id, currency)
+);
 `); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return s, nil
+}
+
+func (s *Store) RecordCurrencyDelta(characterID, currency string, delta int64, at time.Time) error {
+	if s == nil || s.db == nil || !isCharacterKey(characterID) || strings.TrimSpace(currency) == "" || delta == 0 {
+		return nil
+	}
+	if at.IsZero() {
+		at = time.Now()
+	}
+	added, spent := int64(0), int64(0)
+	if delta > 0 {
+		added = delta
+	} else {
+		spent = -delta
+	}
+	_, err := s.db.Exec(`INSERT INTO currency_usage_daily(character_id, usage_date, currency, added, spent, updated_at)
+VALUES(?, ?, ?, ?, ?, ?)
+ON CONFLICT(character_id, usage_date, currency) DO UPDATE SET
+added=added+excluded.added, spent=spent+excluded.spent, updated_at=excluded.updated_at`,
+		characterID, usageDate(at), currency, added, spent, at.UnixMilli())
+	return err
+}
+
+// SyncCurrencyBalance stores an authoritative balance. After the first
+// baseline, differences are recorded as inferred additions or expenditures.
+func (s *Store) SyncCurrencyBalance(characterID, currency string, balance int64, at time.Time) error {
+	if s == nil || s.db == nil || !isCharacterKey(characterID) || strings.TrimSpace(currency) == "" || balance < 0 {
+		return nil
+	}
+	if at.IsZero() {
+		at = time.Now()
+	}
+	var previous int64
+	err := s.db.QueryRow(`SELECT balance FROM currency_balance WHERE character_id=? AND currency=?`, characterID, currency).Scan(&previous)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	hasBaseline := err == nil
+	if !hasBaseline {
+		// A stale daily row without a balance baseline cannot be classified as
+		// a real change. Remove it so the first authoritative sync is baseline
+		// only, even after an interrupted/old-version write.
+		if _, err := s.db.Exec(`DELETE FROM currency_usage_daily WHERE character_id=? AND currency=?`, characterID, currency); err != nil {
+			return err
+		}
+	}
+	if hasBaseline && previous != balance {
+		if err := s.RecordCurrencyDelta(characterID, currency, balance-previous, at); err != nil {
+			return err
+		}
+	}
+	_, err = s.db.Exec(`INSERT INTO currency_balance(character_id, currency, balance, updated_at) VALUES(?, ?, ?, ?)
+ON CONFLICT(character_id, currency) DO UPDATE SET balance=excluded.balance, updated_at=excluded.updated_at`,
+		characterID, currency, balance, at.UnixMilli())
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO currency_usage_daily(character_id, usage_date, currency, balance, balance_known, updated_at)
+VALUES(?, ?, ?, ?, 1, ?)
+ON CONFLICT(character_id, usage_date, currency) DO UPDATE SET balance=excluded.balance, balance_known=1, updated_at=excluded.updated_at`,
+		characterID, usageDate(at), currency, balance, at.UnixMilli())
+	return err
+}
+
+func (s *Store) CurrencyUsage(characterID, currency string) (CurrencyUsage, error) {
+	u := CurrencyUsage{CharacterID: characterID, Currency: currency}
+	if s == nil || s.db == nil || !isCharacterKey(characterID) || currency == "" {
+		return u, nil
+	}
+	err := s.db.QueryRow(`SELECT balance FROM currency_balance WHERE character_id=? AND currency=?`, characterID, currency).Scan(&u.Balance)
+	u.BalanceKnown = err == nil
+	row := s.db.QueryRow(`SELECT COALESCE(SUM(added),0), COALESCE(SUM(spent),0), COALESCE(MAX(updated_at),0)
+FROM currency_usage_daily WHERE character_id=? AND currency=?`, characterID, currency)
+	if err := row.Scan(&u.Added, &u.Spent, &u.UpdatedAt); err != nil {
+		return u, err
+	}
+	return u, nil
+}
+
+func (s *Store) CurrencyUsageHistory(characterID, currency string, at time.Time, days int) ([]DailyCurrencyUsage, error) {
+	if days <= 0 {
+		days = 30
+	}
+	if days > 30 {
+		days = 30
+	}
+	currentDate := usageDate(at)
+	location := time.FixedZone("CST", 8*60*60)
+	current, err := time.ParseInLocation("2006-01-02", currentDate, location)
+	if err != nil {
+		return nil, err
+	}
+	start := current.AddDate(0, 0, -(days - 1))
+	result := make([]DailyCurrencyUsage, days)
+	indexes := make(map[string]int, days)
+	for i := range result {
+		date := start.AddDate(0, 0, i).Format("2006-01-02")
+		result[i].Date = date
+		indexes[date] = i
+	}
+	if s == nil || s.db == nil || !isCharacterKey(characterID) || currency == "" {
+		return result, nil
+	}
+	rows, err := s.db.Query(`SELECT usage_date, added, spent, balance FROM currency_usage_daily
+WHERE character_id=? AND currency=? AND usage_date>=? AND usage_date<=?`, characterID, currency, start.Format("2006-01-02"), currentDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var date string
+		var index int
+		var row DailyCurrencyUsage
+		if err := rows.Scan(&date, &row.Added, &row.Spent, &row.Balance); err != nil {
+			return nil, err
+		}
+		index, _ = indexes[date]
+		result[index].Added += row.Added
+		result[index].Spent += row.Spent
+		result[index].Balance = row.Balance
+	}
+	return result, rows.Err()
+}
+
+func isCharacterKey(value string) bool {
+	return strings.HasPrefix(strings.TrimSpace(value), "character:") && len(strings.TrimPrefix(strings.TrimSpace(value), "character:")) > 0
 }
 
 func (s *Store) Close() error {

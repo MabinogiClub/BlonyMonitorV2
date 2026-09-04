@@ -24,7 +24,18 @@ func (a *App) handleMapChange(pkt *packet.GamePacket) {
 	a.mu.RUnlock()
 
 	if currentSelfId != "" && targetEntityId != currentSelfId {
-		return
+		a.mu.RLock()
+		targetEntity := a.entities[targetEntityId]
+		a.mu.RUnlock()
+		// A map-change packet addressed to a complete, ownerless playable
+		// entity is the explicit signal used when the user switches characters.
+		// Reject other entities (including pets/companions and nearby players)
+		// so they cannot replace the cached local identity.
+		if targetEntity == nil || !targetEntity.IsPC || targetEntity.OwnerID != 0 {
+			return
+		}
+		a.setSelfInfo(targetEntity.ID, targetEntity.Name)
+		currentSelfId = targetEntity.ID
 	}
 
 	if inDungeon && mapID >= 10000 && mapID < 20000 {

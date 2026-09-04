@@ -36,14 +36,14 @@ const emptyState = (): FarmState => ({
   accountId: '',
   coinsSpent: 0,
   energySpent: 0,
+  lifeCoinsAdded: 0,
+  lifeCoinsSpent: 0,
+  lifeCoinsBalance: 0,
+  lifeCoinsKnown: false,
   cropCounts: {},
   todayCropCounts: {},
   yesterdayCropCounts: {},
   dailyTrend: [],
-  todayCoinsSpent: 0,
-  yesterdayCoinsSpent: 0,
-  todayEnergySpent: 0,
-  yesterdayEnergySpent: 0,
   plots: [],
 })
 
@@ -59,14 +59,13 @@ const specialNotificationToggling = ref(false)
 let updateInterval: number | null = null
 
 const enabled = computed(() => farmState.value.enabled)
-const cropCosts: Record<string, number> = { 黑莓: 1200, 秋葵: 1200, 茉莉: 1200, 红梨树: 5000, 橡胶树: 5000, 蜘蛛古木: 5000, 石英矿脉: 5000 }
 const cropIcons: Record<string, string> = {
   黑莓: 'item_seasonalfarming_06_s', 秋葵: 'item_seasonalfarming_05_s', 茉莉: 'item_seasonalfarming_07_s',
   红梨树: 'item_seasonalfarming_08_s', 橡胶树: 'item_seasonalfarming_09_s', 蜘蛛古木: 'item_seasonalfarming_04_s', 石英矿脉: 'item_seasonalfarming_10_s',
 }
 const cropSummaryRows = computed(() => knownCropNames.map(name => {
-  const value = (farmState.value.cropCounts?.[name] || 0) * cropCosts[name]
-  const diff = ((farmState.value.todayCropCounts?.[name] || 0) - (farmState.value.yesterdayCropCounts?.[name] || 0)) * cropCosts[name]
+  const value = farmState.value.cropCounts?.[name] || 0
+  const diff = (farmState.value.todayCropCounts?.[name] || 0) - (farmState.value.yesterdayCropCounts?.[name] || 0)
   return { name, value, diff, icon: farmItemIcons[`../assets/farm-items/${cropIcons[name]}.png`] || '' }
 }))
 function dailyDiffLabel(diff: number): string {
@@ -89,9 +88,29 @@ function toggleTrend(key: string) {
 
 const trendChartRef = ref<HTMLElement | null>(null)
 let trendChart: echarts.ECharts | null = null
+let trendResizeObserver: ResizeObserver | null = null
+
+function disposeTrendChart() {
+  trendResizeObserver?.disconnect()
+  trendResizeObserver = null
+  trendChart?.dispose()
+  trendChart = null
+}
+
 function renderTrendChart() {
-  if (!trendChartRef.value) return
-  if (!trendChart) trendChart = echarts.init(trendChartRef.value, undefined, { renderer: 'canvas' })
+  const element = trendChartRef.value
+  if (!element) {
+    disposeTrendChart()
+    return
+  }
+  if (trendChart && trendChart.getDom() !== element) disposeTrendChart()
+  if (!trendChart) {
+    trendChart = echarts.init(element, undefined, { renderer: 'canvas' })
+    if (typeof ResizeObserver !== 'undefined') {
+      trendResizeObserver = new ResizeObserver(() => resizeTrendChart())
+      trendResizeObserver.observe(element)
+    }
+  }
   const days = selectedTrend.value
   const enabled = new Set(selectedTrendKeys.value)
   const cropSeries = knownCropNames.filter(name => enabled.has(name)).map((name, index) => ({
@@ -238,7 +257,11 @@ onMounted(async () => {
 
 watch([selectedTrend, selectedTrendKeys, trendDays], () => { void nextTick().then(renderTrendChart) }, { deep: true })
 watch(activeFarmTab, tab => {
-  if (tab === 'statistics') void nextTick().then(renderTrendChart)
+  if (tab === 'statistics') {
+    void nextTick().then(renderTrendChart)
+  } else {
+    disposeTrendChart()
+  }
 })
 
 onUnmounted(() => {
@@ -247,8 +270,7 @@ onUnmounted(() => {
   api.offEvent('farm-special', onFarmSpecial)
   if (updateInterval !== null) clearInterval(updateInterval)
   window.removeEventListener('resize', resizeTrendChart)
-  trendChart?.dispose()
-  trendChart = null
+  disposeTrendChart()
 })
 </script>
 
@@ -418,24 +440,31 @@ onUnmounted(() => {
     <FarmRecommendationView v-else-if="activeFarmTab === 'recommendation'" />
     <FarmStorageView v-else-if="activeFarmTab === 'storage'" />
     <div v-else class="statistics-view">
+      <div class="association-coins-row">
+        <span class="association-coins-label">生活协会硬币</span>
+        <div class="association-coins-values">
+          <span class="association-coins-balance">{{ farmState.lifeCoinsKnown ? numberFormatter.format(farmState.lifeCoinsBalance || 0) : '--' }}</span>
+          <span class="association-coins-added">+{{ numberFormatter.format(farmState.lifeCoinsAdded || 0) }}</span>
+          <span class="association-coins-spent">-{{ numberFormatter.format(farmState.lifeCoinsSpent || 0) }}</span>
+        </div>
+      </div>
       <div class="statistics-grid">
         <div class="statistic-item coins primary-stat">
           <span class="statistic-icon"><svg-icon type="mdi" :path="mdiCashMultiple" :size="22" /></span>
           <span class="statistic-label">累计消耗金币</span>
           <strong>{{ numberFormatter.format(farmState.coinsSpent || 0) }}</strong>
-          <small class="daily-change" :class="{ up: farmState.todayCoinsSpent - farmState.yesterdayCoinsSpent > 0, down: farmState.todayCoinsSpent - farmState.yesterdayCoinsSpent < 0 }">今日 {{ numberFormatter.format(farmState.todayCoinsSpent || 0) }} · {{ dailyDiffLabel(farmState.todayCoinsSpent - farmState.yesterdayCoinsSpent) }}</small>
         </div>
         <div class="statistic-item energy primary-stat">
           <span class="statistic-icon"><svg-icon type="mdi" :path="mdiLightningBolt" :size="22" /></span>
           <span class="statistic-label">累计消耗能量</span>
           <strong>{{ numberFormatter.format(farmState.energySpent || 0) }}</strong>
-          <small class="daily-change" :class="{ up: farmState.todayEnergySpent - farmState.yesterdayEnergySpent > 0, down: farmState.todayEnergySpent - farmState.yesterdayEnergySpent < 0 }">今日 {{ numberFormatter.format(farmState.todayEnergySpent || 0) }} · {{ dailyDiffLabel(farmState.todayEnergySpent - farmState.yesterdayEnergySpent) }}</small>
         </div>
         <div v-for="(row, index) in cropSummaryRows" :key="row.name" class="statistic-item crop-summary" :class="index < 3 ? 'field-crop' : 'tree-crop'">
           <span class="statistic-icon crop-icon"><img v-if="row.icon" :src="row.icon" :alt="row.name"></span>
-          <span class="statistic-label">{{ row.name }}累计消耗金币</span>
-          <strong>{{ numberFormatter.format(row.value) }}</strong>
+          <span class="statistic-label">{{ row.name }}</span>
+          <div class="statistic-value"><strong>{{ numberFormatter.format(row.value) }}</strong>
           <small class="daily-change" :class="{ up: row.diff > 0, down: row.diff < 0 }">{{ dailyDiffLabel(row.diff) }}</small>
+          </div>
         </div>
       </div>
       <section class="trend-section">
@@ -612,6 +641,46 @@ onUnmounted(() => {
   gap: 12px;
 }
 
+.association-coins-row {
+  min-height: 54px;
+  margin-bottom: 12px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-left: 3px solid #d4a72c;
+  border-radius: 5px;
+}
+
+.association-coins-label,
+.association-coins-values {
+  color: #bbb;
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.association-coins-values {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 16px;
+  color: #f5f5f5;
+  font-family: Consolas, monospace;
+}
+
+.association-coins-balance,
+.association-coins-added,
+.association-coins-spent {
+  font-size: 16px;
+}
+
+.association-coins-added { color: #66bb6a; }
+.association-coins-spent { color: #ef7070; }
+
 .statistic-item {
   min-width: 0;
   height: 92px;
@@ -659,6 +728,8 @@ onUnmounted(() => {
 .crop-icon img { width: 25px; height: 25px; object-fit: contain; image-rendering: auto; }
 .crop-summary .statistic-label { font-size: 10px; }
 .crop-summary strong { font-size: 18px; }
+.statistic-value { display: flex; align-items: baseline; gap: 7px; }
+.statistic-value .daily-change { grid-column: auto; }
 
 .statistic-label {
   min-width: 0;
@@ -1001,5 +1072,9 @@ onUnmounted(() => {
   .primary-stat, .crop-summary, .tree-crop { grid-column: span 1; }
   .statistic-item { padding-left: 10px; padding-right: 10px; }
   .statistic-item.crop-summary { padding-left: 9px; padding-right: 9px; }
+  .association-coins-row { padding-left: 10px; padding-right: 10px; gap: 8px; }
+  .association-coins-values { gap: 8px; }
+  .association-coins-label, .association-coins-values { font-size: 12px; }
+  .association-coins-balance, .association-coins-added, .association-coins-spent { font-size: 13px; }
 }
 </style>

@@ -366,6 +366,9 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 	if a.farmRecommendationMgr != nil {
 		a.farmRecommendationMgr.recordPacket(pkt)
 	}
+	// Currency tracking is independent of the farm monitor toggle and uses
+	// character-scoped packet identity throughout.
+	a.handleLifeCoinPacket(pkt)
 	if a.analysisLoggingEnabled() {
 		packetStarted := time.Now()
 		defer func() { a.recordPacketProcessing(pkt.Op, time.Since(packetStarted)) }()

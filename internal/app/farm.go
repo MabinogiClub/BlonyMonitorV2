@@ -125,37 +125,42 @@ type FarmPlotState struct {
 
 // FarmState contains all data needed by the farm tab.
 type FarmState struct {
-	Enabled                    bool             `json:"enabled"`
-	ReadyNotificationEnabled   bool             `json:"readyNotificationEnabled"`
-	SpecialNotificationEnabled bool             `json:"specialNotificationEnabled"`
-	Fertility                  int              `json:"fertility"`
-	FertilityMax               int              `json:"fertilityMax"`
-	FertilityKnown             bool             `json:"fertilityKnown"`
-	Energy                     int              `json:"energy"`
-	EnergyMax                  int              `json:"energyMax"`
-	EnergyKnown                bool             `json:"energyKnown"`
-	Synced                     bool             `json:"synced"`
-	UpdatedAt                  int64            `json:"updatedAt"`
-	AccountID                  string           `json:"accountId"`
-	CoinsSpent                 int64            `json:"coinsSpent"`
-	EnergySpent                int64            `json:"energySpent"`
-	CropCounts                 map[string]int64 `json:"cropCounts"`
-	TodayCropCounts            map[string]int64 `json:"todayCropCounts"`
-	YesterdayCropCounts        map[string]int64 `json:"yesterdayCropCounts"`
-	DailyTrend                 []FarmDailyUsage `json:"dailyTrend"`
-	TodayCoinsSpent            int64            `json:"todayCoinsSpent"`
-	YesterdayCoinsSpent        int64            `json:"yesterdayCoinsSpent"`
-	TodayEnergySpent           int64            `json:"todayEnergySpent"`
-	YesterdayEnergySpent       int64            `json:"yesterdayEnergySpent"`
-	Plots                      []FarmPlotState  `json:"plots"`
+	Enabled                    bool  `json:"enabled"`
+	ReadyNotificationEnabled   bool  `json:"readyNotificationEnabled"`
+	SpecialNotificationEnabled bool  `json:"specialNotificationEnabled"`
+	Fertility                  int   `json:"fertility"`
+	FertilityMax               int   `json:"fertilityMax"`
+	FertilityKnown             bool  `json:"fertilityKnown"`
+	Energy                     int   `json:"energy"`
+	EnergyMax                  int   `json:"energyMax"`
+	EnergyKnown                bool  `json:"energyKnown"`
+	Synced                     bool  `json:"synced"`
+	UpdatedAt                  int64 `json:"updatedAt"`
+	// AccountID is retained for API compatibility; it contains the active
+	// character-scoped key (character:<id>) rather than an account aggregate.
+	AccountID           string           `json:"accountId"`
+	CoinsSpent          int64            `json:"coinsSpent"`
+	EnergySpent         int64            `json:"energySpent"`
+	LifeCoinsAdded      int64            `json:"lifeCoinsAdded"`
+	LifeCoinsSpent      int64            `json:"lifeCoinsSpent"`
+	LifeCoinsBalance    int64            `json:"lifeCoinsBalance"`
+	LifeCoinsKnown      bool             `json:"lifeCoinsKnown"`
+	CropCounts          map[string]int64 `json:"cropCounts"`
+	TodayCropCounts     map[string]int64 `json:"todayCropCounts"`
+	YesterdayCropCounts map[string]int64 `json:"yesterdayCropCounts"`
+	DailyTrend          []FarmDailyUsage `json:"dailyTrend"`
+	Plots               []FarmPlotState  `json:"plots"`
 }
 
 // FarmDailyUsage is the usage summary for one farm statistics day (07:00-07:00 CST).
 type FarmDailyUsage struct {
-	Date        string           `json:"date"`
-	CoinsSpent  int64            `json:"coinsSpent"`
-	EnergySpent int64            `json:"energySpent"`
-	CropCounts  map[string]int64 `json:"cropCounts"`
+	Date             string           `json:"date"`
+	CoinsSpent       int64            `json:"coinsSpent"`
+	EnergySpent      int64            `json:"energySpent"`
+	CropCounts       map[string]int64 `json:"cropCounts"`
+	LifeCoinsAdded   int64            `json:"lifeCoinsAdded"`
+	LifeCoinsSpent   int64            `json:"lifeCoinsSpent"`
+	LifeCoinsBalance int64            `json:"lifeCoinsBalance"`
 }
 
 type FarmManager struct {
@@ -682,7 +687,25 @@ func (m *FarmManager) handleCropState(pkt *packet.GamePacket) (bool, bool) {
 	if record.SlotID != 0 {
 		m.setEntitySlotLocked(pkt.Id, record.SlotID)
 	}
-	planting := phase == "seed" && (old == nil || record.StartRawMS != old.StartRawMS)
+	// Spiderwood uses phase "empty" for both harvest transitions and the
+	// subsequent planting update. Its planting packet carries a fresh starttime;
+	// require that timestamp to be close to the packet time so an existing crop
+	// observed during startup is not counted as a new planting.
+	startIsRecent := false
+	if record.StartRawMS > dotNetUnixEpochMilliseconds {
+		for _, location := range []*time.Location{pkt.At.Location(), time.UTC} {
+			serverStart := dotNetMillisecondsToWallTime(record.StartRawMS, location).Add(m.clockOffset)
+			delta := pkt.At.Sub(serverStart)
+			if delta < 0 {
+				delta = -delta
+			}
+			if delta <= 20*time.Second {
+				startIsRecent = true
+				break
+			}
+		}
+	}
+	planting := (phase == "seed" || phase == "empty" && startIsRecent) && (old == nil || record.StartRawMS != old.StartRawMS)
 	specialDetected := record.Special && !record.SpecialNotified && (old == nil || !old.Special)
 	m.crops[pkt.Id] = record
 	m.synced = true

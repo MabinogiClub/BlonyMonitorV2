@@ -101,6 +101,50 @@ func TestFarmUsageCallbacksDetectPlantingOnceAndEnergyDecreaseOnly(t *testing.T)
 	}
 }
 
+func TestFarmUsageCallbacksDetectSpiderwoodEmptyPhaseAfterHarvest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var plantCount int
+	mgr := NewFarmManager(ctx, nil, nil, nil, FarmUsageCallbacks{OnPlant: func(_ uint64, name string, _ int64, _ time.Time) {
+		if name == "蜘蛛古木" {
+			plantCount++
+		}
+	}})
+	now := time.Now()
+	raw := farmRawMilliseconds(now)
+	initial := fmt.Sprintf(`<xml onwer="123" itemid="5040994" support="0" lmtime="%d" supportIndex="0" Special="false" starttime="%d" Fertility="false"/>`, raw, raw)
+	mgr.HandlePacket(farmCropPacket(now, 7001, "seed", initial))
+	plantCount = 0
+	// Harvest/clear sequence from the capture, followed by planting updates.
+	mgr.HandlePacket(farmCropPacket(now.Add(time.Second), 7001, "empty", initial))
+	cleared := fmt.Sprintf(`<xml onwer="123" itemid="0" support="0" lmtime="%d" starttime="%d" Fertility="false"/>`, raw+2_000, raw+2_000)
+	mgr.HandlePacket(farmCropPacket(now.Add(2*time.Second), 7001, "empty", cleared))
+	planted := fmt.Sprintf(`<xml onwer="123" itemid="5040994" support="0" lmtime="%d" supportIndex="0" Special="false" starttime="%d" Fertility="false"/>`, raw+3_000, raw+3_000)
+	mgr.HandlePacket(farmCropPacket(now.Add(3*time.Second), 7001, "empty", planted))
+	mgr.HandlePacket(farmCropPacket(now.Add(4*time.Second), 7001, "empty", planted))
+	if plantCount != 1 {
+		t.Fatalf("spiderwood empty-phase planting count = %d, want 1", plantCount)
+	}
+}
+
+func TestFarmUsageCallbacksDetectSpiderwoodEmptyPhasePlanting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var count int
+	mgr := NewFarmManager(ctx, nil, nil, nil, FarmUsageCallbacks{OnPlant: func(_ uint64, name string, _ int64, _ time.Time) {
+		if name == "蜘蛛古木" {
+			count++
+		}
+	}})
+	now := time.Now()
+	raw := farmRawMilliseconds(now)
+	xmlState := fmt.Sprintf(`<xml onwer="123" itemid="5040994" support="0" lmtime="%d" supportIndex="0" Special="false" starttime="%d" Fertility="false"/>`, raw, raw)
+	mgr.HandlePacket(farmCropPacket(now, 7001, "empty", xmlState))
+	if count != 1 {
+		t.Fatalf("spiderwood empty-phase planting count = %d, want 1", count)
+	}
+}
+
 func TestFarmCropUpdatesAccelerationAndHarvest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

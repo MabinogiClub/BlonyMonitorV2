@@ -624,14 +624,14 @@ interface FarmState {
   accountId: string
   coinsSpent: number
   energySpent: number
+  lifeCoinsAdded: number
+  lifeCoinsSpent: number
+  lifeCoinsBalance: number
+  lifeCoinsKnown: boolean
   cropCounts: Record<string, number>
   todayCropCounts: Record<string, number>
   yesterdayCropCounts: Record<string, number>
   dailyTrend: FarmDailyUsage[]
-  todayCoinsSpent: number
-  yesterdayCoinsSpent: number
-  todayEnergySpent: number
-  yesterdayEnergySpent: number
   plots: FarmPlotState[]
 }
 
@@ -640,6 +640,9 @@ interface FarmDailyUsage {
   coinsSpent: number
   energySpent: number
   cropCounts: Record<string, number>
+  lifeCoinsAdded: number
+  lifeCoinsSpent: number
+  lifeCoinsBalance: number
 }
 
 interface FarmRecommendationAmount {

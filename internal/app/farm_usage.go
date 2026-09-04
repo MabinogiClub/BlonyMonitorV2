@@ -12,10 +12,6 @@ func (a *App) rememberFarmAccount(accountID, characterID string) {
 		return
 	}
 	accountKey := "account:" + accountID
-	provisionalKey := ""
-	if characterID != "" {
-		provisionalKey = "character:" + characterID
-	}
 	a.mu.Lock()
 	a.accountID = accountKey
 	if a.characterAccounts == nil {
@@ -23,54 +19,32 @@ func (a *App) rememberFarmAccount(accountID, characterID string) {
 	}
 	if characterID != "" {
 		a.characterAccounts[characterID] = accountKey
-		if energy, exists := a.farmEnergyByAccount[provisionalKey]; exists {
-			if _, accountKnown := a.farmEnergyByAccount[accountKey]; !accountKnown {
-				a.farmEnergyByAccount[accountKey] = energy
-			}
-			delete(a.farmEnergyByAccount, provisionalKey)
-		}
 	}
 	a.mu.Unlock()
-	if a.farmStatsStore != nil && provisionalKey != "" {
-		if err := a.farmStatsStore.Merge(provisionalKey, accountKey); err != nil {
-			logger.Printf("[Farm] merge provisional usage failed: %v", err)
-		}
-	}
 }
 
-func (a *App) farmAccountForOwner(ownerID uint64) string {
-	owner := strconv.FormatUint(ownerID, 10)
-	a.mu.RLock()
+// farmCharacterForOwner returns the stable character-scoped key used by farm
+// statistics. Account IDs are intentionally not used here because one account
+// can contain multiple characters whose usage must remain isolated.
+func (a *App) farmCharacterForOwner(ownerID uint64) string {
 	if ownerID != 0 {
-		if account := a.characterAccounts[owner]; account != "" {
-			a.mu.RUnlock()
-			return account
-		}
-	}
-	if a.accountID != "" && (ownerID == 0 || owner == a.selfId) {
-		account := a.accountID
-		a.mu.RUnlock()
-		return account
-	}
-	a.mu.RUnlock()
-	if ownerID != 0 {
-		return "character:" + owner
+		return "character:" + strconv.FormatUint(ownerID, 10)
 	}
 	a.mu.RLock()
 	selfID := a.selfId
 	a.mu.RUnlock()
-	if selfID != "" {
-		return "character:" + selfID
+	if selfID == "" {
+		return ""
 	}
-	return ""
+	return "character:" + selfID
 }
 
 func (a *App) recordFarmPlant(ownerID uint64, cropName string, coinCost int64, at time.Time) {
 	if a.farmStatsStore == nil {
 		return
 	}
-	account := a.farmAccountForOwner(ownerID)
-	if err := a.farmStatsStore.RecordPlant(account, cropName, coinCost, at); err != nil {
+	character := a.farmCharacterForOwner(ownerID)
+	if err := a.farmStatsStore.RecordPlant(character, cropName, coinCost, at); err != nil {
 		logger.Printf("[Farm] record planting usage failed: %v", err)
 	}
 }
@@ -79,18 +53,21 @@ func (a *App) recordFarmEnergy(ownerID uint64, energy int, at time.Time) {
 	if a.farmStatsStore == nil {
 		return
 	}
-	account := a.farmAccountForOwner(ownerID)
-	if account == "" {
+	character := a.farmCharacterForOwner(ownerID)
+	if character == "" {
 		return
 	}
 	a.mu.Lock()
-	previous, known := a.farmEnergyByAccount[account]
-	a.farmEnergyByAccount[account] = energy
+	if a.farmEnergyByCharacter == nil {
+		a.farmEnergyByCharacter = make(map[string]int)
+	}
+	previous, known := a.farmEnergyByCharacter[character]
+	a.farmEnergyByCharacter[character] = energy
 	a.mu.Unlock()
 	if !known || energy >= previous {
 		return
 	}
-	if err := a.farmStatsStore.RecordEnergy(account, previous-energy, at); err != nil {
+	if err := a.farmStatsStore.RecordEnergy(character, previous-energy, at); err != nil {
 		logger.Printf("[Farm] record energy usage failed: %v", err)
 	}
 }
@@ -100,21 +77,20 @@ func (a *App) decorateFarmState(state FarmState) FarmState {
 	state.TodayCropCounts = map[string]int64{}
 	state.YesterdayCropCounts = map[string]int64{}
 	state.DailyTrend = []FarmDailyUsage{}
-	account := a.farmAccountForOwner(0)
-	state.AccountID = account
-	if a.farmStatsStore == nil || account == "" {
+	character := a.farmCharacterForOwner(0)
+	state.AccountID = character
+	if a.farmStatsStore == nil || character == "" {
 		return state
 	}
-	usage, err := a.farmStatsStore.Usage(account)
+	usage, err := a.farmStatsStore.Usage(character)
 	if err != nil {
 		logger.Printf("[Farm] read usage failed: %v", err)
 		return state
 	}
-	state.AccountID = usage.AccountID
 	state.CoinsSpent = usage.CoinsSpent
 	state.EnergySpent = usage.EnergySpent
 	state.CropCounts = usage.CropCounts
-	if history, err := a.farmStatsStore.UsageHistory(account, time.Now(), 30); err != nil {
+	if history, err := a.farmStatsStore.UsageHistory(character, time.Now(), 30); err != nil {
 		logger.Printf("[Farm] read usage history failed: %v", err)
 	} else {
 		if len(history) > 0 {
@@ -123,14 +99,6 @@ func (a *App) decorateFarmState(state FarmState) FarmState {
 		if len(history) > 1 {
 			state.YesterdayCropCounts = history[len(history)-2].CropCounts
 		}
-		if len(history) > 0 {
-			state.TodayCoinsSpent = history[len(history)-1].CoinsSpent
-			state.TodayEnergySpent = history[len(history)-1].EnergySpent
-		}
-		if len(history) > 1 {
-			state.YesterdayCoinsSpent = history[len(history)-2].CoinsSpent
-			state.YesterdayEnergySpent = history[len(history)-2].EnergySpent
-		}
 		state.DailyTrend = make([]FarmDailyUsage, len(history))
 		for i, daily := range history {
 			state.DailyTrend[i] = FarmDailyUsage{
@@ -138,6 +106,36 @@ func (a *App) decorateFarmState(state FarmState) FarmState {
 				EnergySpent: daily.EnergySpent, CropCounts: daily.CropCounts,
 			}
 		}
+	}
+	if life, err := a.farmStatsStore.CurrencyUsage(character, lifeAssociationCurrency); err != nil {
+		logger.Printf("[LifeCoin] read usage failed: %v", err)
+	} else {
+		state.LifeCoinsAdded = life.Added
+		state.LifeCoinsSpent = life.Spent
+		state.LifeCoinsBalance = life.Balance
+		state.LifeCoinsKnown = life.BalanceKnown
+	}
+	if lifeHistory, err := a.farmStatsStore.CurrencyUsageHistory(character, lifeAssociationCurrency, time.Now(), 30); err == nil {
+		if len(state.DailyTrend) == 0 {
+			state.DailyTrend = make([]FarmDailyUsage, len(lifeHistory))
+			for i, day := range lifeHistory {
+				state.DailyTrend[i] = FarmDailyUsage{Date: day.Date, LifeCoinsAdded: day.Added, LifeCoinsSpent: day.Spent, LifeCoinsBalance: day.Balance, CropCounts: map[string]int64{}}
+			}
+		} else {
+			byDate := make(map[string]int, len(state.DailyTrend))
+			for i, day := range state.DailyTrend {
+				byDate[day.Date] = i
+			}
+			for _, day := range lifeHistory {
+				if i, ok := byDate[day.Date]; ok {
+					state.DailyTrend[i].LifeCoinsAdded = day.Added
+					state.DailyTrend[i].LifeCoinsSpent = day.Spent
+					state.DailyTrend[i].LifeCoinsBalance = day.Balance
+				}
+			}
+		}
+	} else {
+		logger.Printf("[LifeCoin] read usage history failed: %v", err)
 	}
 	return state
 }

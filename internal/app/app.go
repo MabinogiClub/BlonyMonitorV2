@@ -116,7 +116,7 @@ type App struct {
 	selfName                    string
 	accountID                   string
 	characterAccounts           map[string]string
-	farmEnergyByAccount         map[string]int
+	farmEnergyByCharacter       map[string]int
 	rankingConsentRequestMu     sync.Mutex
 	rankingConsentSyncKey       string
 	buffTimerMgr                *BuffTimerManager
@@ -131,6 +131,9 @@ type App struct {
 	analysisLog                 *analysisLogController
 	inventoryStore              *inventory.Store
 	farmStatsStore              *farmstats.Store
+	lifeCoinStacks              map[string]map[uint64]int64
+	lifeCoinBalances            map[string]int64
+	lifeCoinBalanceKnown        map[string]bool
 	onHide                      func()
 }
 
@@ -167,7 +170,10 @@ func NewApp() *App {
 		selfEquipmentByInstance: make(map[uint64]uint32),
 		selfEquipmentItemCache:  make(map[uint64]SelfEquipmentSlot),
 		characterAccounts:       make(map[string]string),
-		farmEnergyByAccount:     make(map[string]int),
+		farmEnergyByCharacter:   make(map[string]int),
+		lifeCoinStacks:          make(map[string]map[uint64]int64),
+		lifeCoinBalances:        make(map[string]int64),
+		lifeCoinBalanceKnown:    make(map[string]bool),
 		opacity:                 100,
 		soundVolume:             defaultSoundVolume,
 	}
