@@ -338,6 +338,7 @@ func TestTargetBuffCoverageAllowlist(t *testing.T) {
 
 func TestTargetBuffCoverageUsesTargetStatusSetWithoutStrength(t *testing.T) {
 	a := NewApp()
+	a.entities["1"] = &EntityInfo{ID: "1", Name: "枯木之佩塔克"}
 	a.mu.Lock()
 	a.recordStatusConditionUnsafe(2, 680, true, "", map[string]packet.ConditionDetailValue{
 		"MCMBAMAX": {Type: "f", Value: "50"},
@@ -372,6 +373,22 @@ func TestTargetBuffCoverageUsesTargetStatusSetWithoutStrength(t *testing.T) {
 		if buff.ConditionID == 680 {
 			t.Fatal("player-only status must not appear in target coverage")
 		}
+	}
+}
+
+func TestBossOnlyStatusIsNotCapturedForPlayers(t *testing.T) {
+	a := NewApp()
+	a.entities["1"] = &EntityInfo{ID: "1", Name: "枯木之佩塔克"}
+	a.entities["2"] = &EntityInfo{ID: "2", Name: "Flandre", IsPC: true}
+	a.mu.Lock()
+	a.recordStatusConditionUnsafe(1, 1026, true, "", nil, 100)
+	a.recordStatusConditionUnsafe(2, 1026, true, "", nil, 100)
+	a.recordStatusConditionUnsafe(1, 1026, false, "", nil, 200)
+	a.recordStatusConditionUnsafe(2, 1026, false, "", nil, 200)
+	a.mu.Unlock()
+
+	if len(a.statusIntervals) != 1 || a.statusIntervals[0].EntityID != "1" || a.statusIntervals[0].ConditionID != 1026 {
+		t.Fatalf("boss-only status capture = %+v", a.statusIntervals)
 	}
 }
 

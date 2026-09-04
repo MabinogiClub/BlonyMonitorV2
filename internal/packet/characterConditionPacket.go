@@ -2,6 +2,7 @@ package packet
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -62,6 +63,20 @@ func extractDurationSeconds(details map[string]ConditionDetailValue) int64 {
 		return 0
 	}
 	return (durationMillis + 999) / 1000
+}
+
+func extractConditionDurationSeconds(ccID uint32, details map[string]ConditionDetailValue) int64 {
+	// Hanged Man (1026) stores the card-level duration in ACCVV1 as seconds;
+	// unlike ordinary timed conditions it has no DURA field.
+	if ccID == 1026 {
+		if detail, ok := details["ACCVV1"]; ok {
+			seconds, err := strconv.ParseFloat(detail.Value, 64)
+			if err == nil && seconds > 0 {
+				return int64(math.Ceil(seconds))
+			}
+		}
+	}
+	return extractDurationSeconds(details)
 }
 
 func durationFromDisableAt(disableAt int64, packetAt time.Time) int64 {
@@ -160,7 +175,7 @@ func ParseCharacterConditionPacket(p *GamePacket) (*CharacterConditionPacket, er
 			duration = (disableAt - mcagt) / 1000
 		}
 		if duration <= 0 {
-			duration = extractDurationSeconds(details)
+			duration = extractConditionDurationSeconds(ccId, details)
 		}
 		if duration <= 0 && ccId == 63 {
 			duration = durationFromDisableAt(disableAt, p.At)

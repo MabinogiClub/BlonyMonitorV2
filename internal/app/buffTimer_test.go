@@ -91,6 +91,44 @@ func TestBuffTimerManagerIncludesSuperBurningBuff(t *testing.T) {
 	}
 }
 
+func TestBuffTimerManagerIncludesBossOnlyHangedManBuff(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
+	mgr := NewBuffTimerManager(context.Background(), "1")
+
+	if got := mgr.targetBuffs[1026]; got != "倒吊者" {
+		t.Fatalf("buff 1026 name = %q, want %q", got, "倒吊者")
+	}
+	if got := mgr.getNotifyThreshold(1026); got != 10 {
+		t.Fatalf("buff 1026 notify threshold = %d, want 10", got)
+	}
+	if _, ok := targetOnlyNotificationBuffs[1026]; !ok {
+		t.Fatal("buff 1026 must be marked as target-only")
+	}
+	if !slices.Contains(mgr.buffOrder, uint32(1026)) {
+		t.Fatalf("buff 1026 missing from default order: %v", mgr.buffOrder)
+	}
+}
+
+func TestStartTimerAllowsHangedManOnlyForMarkedBoss(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	mgr := NewBuffTimerManager(ctx, "1")
+
+	mgr.StartTimer(1026, 2, "枯木之佩塔克", 63922387254713, 300)
+	if mgr.timers["2_1026"] == nil {
+		t.Fatal("marked boss hanged man timer did not start")
+	}
+	mgr.StartTimer(1026, 3, "普通怪物", 63922387254713, 300)
+	if mgr.timers["3_1026"] != nil {
+		t.Fatal("hanged man timer started for an unmarked target")
+	}
+	mgr.StartTimer(1026, 1, "Flandre", 63922387254713, 300)
+	if mgr.timers["1_1026"] != nil {
+		t.Fatal("boss-only hanged man timer started for the player")
+	}
+}
+
 func TestStartTimerIgnoresConditionUpdateWithSameDisableAt(t *testing.T) {
 	t.Setenv("MABI_WORK_DIR", t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
@@ -125,5 +163,24 @@ func TestStartTimerRestartsWhenDisableAtChanges(t *testing.T) {
 	}
 	if second.DisableAt != 63922387554713 {
 		t.Fatalf("disableAt = %d, want %d", second.DisableAt, int64(63922387554713))
+	}
+}
+
+func TestAdjustRepeatedBuffDurationDetectsHangedManDoubleTime(t *testing.T) {
+	// The final capture activation advanced SBT by 63.565s while only 10.566s
+	// elapsed locally, leaving an extra 53s to add to the base duration.
+	got := adjustRepeatedBuffDuration(1026, 53, 63924159538884, 63924159602449, 10*time.Second+566*time.Millisecond)
+	if got != 106 {
+		t.Fatalf("duration = %d, want 106", got)
+	}
+}
+
+func TestAdjustRepeatedBuffDurationIgnoresNormalRefresh(t *testing.T) {
+	got := adjustRepeatedBuffDuration(1026, 53, 63924159528307, 63924159538884, 10*time.Second+577*time.Millisecond)
+	if got != 53 {
+		t.Fatalf("duration = %d, want 53", got)
+	}
+	if got := adjustRepeatedBuffDuration(515, 300, 1000, 70000, time.Second); got != 300 {
+		t.Fatalf("non-hanged-man duration = %d, want 300", got)
 	}
 }

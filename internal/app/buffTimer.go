@@ -17,6 +17,10 @@ import (
 
 var defaultBuffOrder = []uint32{515, 680, 192, 193, 681, 194, 1225, 63, 1121, 1150}
 
+var targetOnlyNotificationBuffs = map[uint32]struct{}{
+	1026: {}, // 倒吊者，仅出现在被标记的 Boss 身上
+}
+
 // buffFallbackDurations 用于状态包未提供可计算时长的 Buff。
 // 当前数据库没有结构化的 Buff 时长字段。
 var buffFallbackDurations = map[uint32]int64{
@@ -31,6 +35,23 @@ func resolveBuffDuration(ccID uint32, packetDuration int64) int64 {
 		return packetDuration
 	}
 	return buffFallbackDurations[ccID]
+}
+
+// adjustRepeatedBuffDuration handles 1026's stacked-time representation. The
+// server keeps ACCVV1 at the base duration, but advances SBT by the extra
+// duration when a new card extends an already active instance.
+func adjustRepeatedBuffDuration(ccID uint32, duration int64, previousDisableAt, disableAt int64, elapsed time.Duration) int64 {
+	if ccID != 1026 || duration <= 0 || previousDisableAt <= 0 || disableAt <= previousDisableAt {
+		return duration
+	}
+	extraMilliseconds := (disableAt - previousDisableAt) - elapsed.Milliseconds()
+	// Ignore normal packet jitter; the observed doubled activation adds about
+	// 53 seconds beyond the wall-clock interval.
+	if extraMilliseconds <= 1500 {
+		return duration
+	}
+	extraSeconds := (extraMilliseconds + 500) / 1000
+	return duration + extraSeconds
 }
 
 // BuffTimer 表示一个buff的定时器
@@ -83,8 +104,9 @@ func NewBuffTimerManagerWithVolume(ctx context.Context, selfId string, getSoundV
 		63:   "攻击力增加",
 		1121: "魔法攻击强化",
 		1150: "炼金术伤害增加",
+		1026: "倒吊者",
 	}
-	buffOrder := append([]uint32(nil), defaultBuffOrder...)
+	buffOrder := append(append([]uint32(nil), defaultBuffOrder...), 1026)
 	soundEnabled := make(map[uint32]bool, len(buffOrder))
 	for _, ccId := range buffOrder {
 		soundEnabled[ccId] = true
@@ -97,6 +119,7 @@ func NewBuffTimerManagerWithVolume(ctx context.Context, selfId string, getSoundV
 		soundEnabled: soundEnabled,
 		notifyThresholds: map[uint32]int64{
 			515:  10, // 状态支援（逆转）提前 10 秒提醒
+			1026: 10, // 倒吊者提前 10 秒提醒
 			63:   30,
 			1121: 30,
 			1150: 30,
@@ -249,7 +272,12 @@ func (m *BuffTimerManager) StartTimer(ccId uint32, entityId uint64, entityName s
 	m.mu.RLock()
 	selfID := m.selfId
 	m.mu.RUnlock()
-	if entityIdStr != selfID {
+	_, targetOnly := targetOnlyNotificationBuffs[ccId]
+	if targetOnly {
+		if entityIdStr == selfID || !shouldMonitorTargetBuffCoverage(entityName) {
+			return
+		}
+	} else if entityIdStr != selfID {
 		return
 	}
 
@@ -265,6 +293,13 @@ func (m *BuffTimerManager) StartTimer(ccId uint32, entityId uint64, entityName s
 	// 状态包也会发送属性更新；结束时间不变表示仍是同一个 Buff 实例。
 	if existing != nil && disableAt > 0 && existing.DisableAt == disableAt {
 		return
+	}
+	if existing != nil {
+		adjustedDuration := adjustRepeatedBuffDuration(ccId, duration, existing.DisableAt, disableAt, time.Since(existing.StartTime))
+		if adjustedDuration != duration {
+			logger.Printf("[BuffTimer] 检测到倒吊者叠加时间: %d 秒 -> %d 秒", duration, adjustedDuration)
+		}
+		duration = adjustedDuration
 	}
 	m.cancelTimer(key)
 

@@ -83,11 +83,17 @@ func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bo
 		}
 	}
 	if a.buffTimerMgr != nil {
-		if isEnable && entityIdStr == a.selfId {
-			entityName := a.getEntityNameUnsafe(entityIdStr)
-			if entityKnown {
-				entityName = entity.Name
-			}
+		entityName := a.getEntityNameUnsafe(entityIdStr)
+		if entityKnown {
+			entityName = entity.Name
+		}
+		_, targetOnlyNotification := targetOnlyNotificationBuffs[conditionId]
+		if targetOnlyNotification {
+			entityName = a.targetDisplayNameUnsafe(entityIdStr, entityName)
+		}
+		isSelfNotification := entityIdStr == a.selfId && !targetOnlyNotification
+		isMarkedBossNotification := targetOnlyNotification && shouldMonitorTargetBuffCoverage(entityName)
+		if isEnable && (isSelfNotification || isMarkedBossNotification) {
 			a.buffTimerMgr.StartTimer(conditionId, entityId, entityName, disableAt, duration)
 		} else if !isEnable {
 			a.buffTimerMgr.StopTimer(entityId, conditionId)

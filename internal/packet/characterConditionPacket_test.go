@@ -26,6 +26,26 @@ func TestExtractDurationSeconds(t *testing.T) {
 	}
 }
 
+func TestParseHangedManDurationFromCardLevel(t *testing.T) {
+	condition, err := ParseCharacterConditionPacket(&GamePacket{
+		At: time.Date(2026, 9, 4, 22, 41, 26, 0, time.FixedZone("CST", 8*60*60)),
+		Id: 1,
+		Msg: Message{
+			NewMessageElemByte(1),
+			NewMessageElemInt(1026),
+			NewMessageElemLong(63924158528339),
+			NewMessageElemString("ACCVV1:f:53;ACCVV2:f:4.3;SBT:8:63924158528339;"),
+			NewMessageElemLong(2),
+		},
+	})
+	if err != nil {
+		t.Fatalf("parse condition: %v", err)
+	}
+	if condition.Duration != 53 {
+		t.Fatalf("duration = %d, want 53", condition.Duration)
+	}
+}
+
 func TestDurationFromDisableAtForAttackPotion(t *testing.T) {
 	location := time.FixedZone("CST", 8*60*60)
 	tests := []struct {

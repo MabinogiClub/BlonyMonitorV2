@@ -143,17 +143,46 @@ func isMonitoredStatus(conditionID uint32) bool {
 	return ok
 }
 
+func isPlayerMonitoredStatus(conditionID uint32) bool {
+	_, ok := monitoredStatusNames[conditionID]
+	return ok
+}
+
 // shouldRecordTargetStatusUnsafe limits the all-status capture path to the
 // explicitly configured boss targets. It is called while a.mu is held.
 func (a *App) shouldRecordTargetStatusUnsafe(entityID uint64) bool {
 	id := strconv.FormatUint(entityID, 10)
-	if entity := a.entities[id]; entity != nil && shouldMonitorTargetBuffCoverage(entity.Name) {
-		return true
+	if entity := a.entities[id]; entity != nil {
+		if shouldMonitorTargetBuffCoverage(entity.Name) {
+			return true
+		}
+		// Monster appearance packets carry an internal numeric name. The
+		// localized boss name is derived from the race ID for history display.
+		if db.DB != nil && shouldMonitorTargetBuffCoverage(formatDisplayName(entity.ID, entity.Name, entity.RaceID, entity.IsPC)) {
+			return true
+		}
 	}
-	if target := a.takenStats[id]; target != nil && shouldMonitorTargetBuffCoverage(target.name) {
-		return true
+	if target := a.takenStats[id]; target != nil {
+		if shouldMonitorTargetBuffCoverage(target.name) {
+			return true
+		}
+		if db.DB != nil && shouldMonitorTargetBuffCoverage(formatDisplayName(id, target.name, target.raceId, target.isPC)) {
+			return true
+		}
 	}
 	return shouldMonitorTargetBuffCoverage(a.getEntityNameUnsafe(id))
+}
+
+// targetDisplayNameUnsafe resolves the localized monster name used by the
+// target allowlist. Appearance packets commonly carry only a numeric name.
+func (a *App) targetDisplayNameUnsafe(entityID string, fallback string) string {
+	if entity := a.entities[entityID]; entity != nil && db.DB != nil {
+		return formatDisplayName(entity.ID, entity.Name, entity.RaceID, entity.IsPC)
+	}
+	if target := a.takenStats[entityID]; target != nil && db.DB != nil {
+		return formatDisplayName(entityID, target.name, target.raceId, target.isPC)
+	}
+	return fallback
 }
 
 func extractStatusStrength(conditionID uint32, details map[string]packet.ConditionDetailValue) *float64 {
@@ -173,7 +202,7 @@ func extractStatusStrength(conditionID uint32, details map[string]packet.Conditi
 }
 
 func (a *App) recordStatusConditionUnsafe(entityID uint64, conditionID uint32, enabled bool, rawDetail string, details map[string]packet.ConditionDetailValue, at int64) {
-	if !isMonitoredStatus(conditionID) && !a.shouldRecordTargetStatusUnsafe(entityID) {
+	if !isPlayerMonitoredStatus(conditionID) && !a.shouldRecordTargetStatusUnsafe(entityID) {
 		return
 	}
 	if a.activeStatusIntervals == nil {
@@ -205,7 +234,16 @@ func (a *App) recordStatusConditionUnsafe(entityID uint64, conditionID uint32, e
 }
 
 func (a *App) ensureAppearedStatusUnsafe(entity *packet.EntityInfo, conditionID uint32, at int64) {
-	if entity == nil || (!isMonitoredStatus(conditionID) && !shouldMonitorTargetBuffCoverage(entity.Name)) {
+	if entity == nil {
+		return
+	}
+	monitoredTarget := shouldMonitorTargetBuffCoverage(entity.Name)
+	if !monitoredTarget && db.DB != nil {
+		monitoredTarget = shouldMonitorTargetBuffCoverage(formatDisplayName(
+			strconv.FormatUint(entity.Id, 10), entity.Name, int(entity.RaceId), isPC(int(entity.RaceId)),
+		))
+	}
+	if !isPlayerMonitoredStatus(conditionID) && !monitoredTarget {
 		return
 	}
 	if a.activeStatusIntervals == nil {
