@@ -624,6 +624,10 @@ interface FarmState {
   accountId: string
   coinsSpent: number
   energySpent: number
+  todayCoinsSpent: number
+  todayEnergySpent: number
+  todayLifeCoinsAdded: number
+  todayLifeCoinsSpent: number
   lifeCoinsAdded: number
   lifeCoinsSpent: number
   lifeCoinsBalance: number

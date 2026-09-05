@@ -141,6 +141,10 @@ type FarmState struct {
 	AccountID           string           `json:"accountId"`
 	CoinsSpent          int64            `json:"coinsSpent"`
 	EnergySpent         int64            `json:"energySpent"`
+	TodayCoinsSpent     int64            `json:"todayCoinsSpent"`
+	TodayEnergySpent    int64            `json:"todayEnergySpent"`
+	TodayLifeCoinsAdded int64            `json:"todayLifeCoinsAdded"`
+	TodayLifeCoinsSpent int64            `json:"todayLifeCoinsSpent"`
 	LifeCoinsAdded      int64            `json:"lifeCoinsAdded"`
 	LifeCoinsSpent      int64            `json:"lifeCoinsSpent"`
 	LifeCoinsBalance    int64            `json:"lifeCoinsBalance"`

@@ -94,6 +94,8 @@ func (a *App) decorateFarmState(state FarmState) FarmState {
 		logger.Printf("[Farm] read usage history failed: %v", err)
 	} else {
 		if len(history) > 0 {
+			state.TodayCoinsSpent = history[len(history)-1].CoinsSpent
+			state.TodayEnergySpent = history[len(history)-1].EnergySpent
 			state.TodayCropCounts = history[len(history)-1].CropCounts
 		}
 		if len(history) > 1 {
@@ -116,6 +118,10 @@ func (a *App) decorateFarmState(state FarmState) FarmState {
 		state.LifeCoinsKnown = life.BalanceKnown
 	}
 	if lifeHistory, err := a.farmStatsStore.CurrencyUsageHistory(character, lifeAssociationCurrency, time.Now(), 30); err == nil {
+		if len(lifeHistory) > 0 {
+			state.TodayLifeCoinsAdded = lifeHistory[len(lifeHistory)-1].Added
+			state.TodayLifeCoinsSpent = lifeHistory[len(lifeHistory)-1].Spent
+		}
 		if len(state.DailyTrend) == 0 {
 			state.DailyTrend = make([]FarmDailyUsage, len(lifeHistory))
 			for i, day := range lifeHistory {

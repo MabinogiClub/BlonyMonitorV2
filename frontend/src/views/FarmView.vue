@@ -36,6 +36,10 @@ const emptyState = (): FarmState => ({
   accountId: '',
   coinsSpent: 0,
   energySpent: 0,
+  todayCoinsSpent: 0,
+  todayEnergySpent: 0,
+  todayLifeCoinsAdded: 0,
+  todayLifeCoinsSpent: 0,
   lifeCoinsAdded: 0,
   lifeCoinsSpent: 0,
   lifeCoinsBalance: 0,
@@ -64,9 +68,10 @@ const cropIcons: Record<string, string> = {
   红梨树: 'item_seasonalfarming_08_s', 橡胶树: 'item_seasonalfarming_09_s', 蜘蛛古木: 'item_seasonalfarming_04_s', 石英矿脉: 'item_seasonalfarming_10_s',
 }
 const cropSummaryRows = computed(() => knownCropNames.map(name => {
-  const value = farmState.value.cropCounts?.[name] || 0
+  const total = farmState.value.cropCounts?.[name] || 0
+  const value = farmState.value.todayCropCounts?.[name] || 0
   const diff = (farmState.value.todayCropCounts?.[name] || 0) - (farmState.value.yesterdayCropCounts?.[name] || 0)
-  return { name, value, diff, icon: farmItemIcons[`../assets/farm-items/${cropIcons[name]}.png`] || '' }
+  return { name, value, total, diff, icon: farmItemIcons[`../assets/farm-items/${cropIcons[name]}.png`] || '' }
 }))
 function dailyDiffLabel(diff: number): string {
   if (diff === 0) return '—'
@@ -89,6 +94,9 @@ function toggleTrend(key: string) {
 const trendChartRef = ref<HTMLElement | null>(null)
 let trendChart: echarts.ECharts | null = null
 let trendResizeObserver: ResizeObserver | null = null
+const lifeCoinChartRef = ref<HTMLElement | null>(null)
+let lifeCoinChart: echarts.ECharts | null = null
+let lifeCoinResizeObserver: ResizeObserver | null = null
 
 function disposeTrendChart() {
   trendResizeObserver?.disconnect()
@@ -138,6 +146,43 @@ function renderTrendChart() {
   } as echarts.EChartsOption, true)
 }
 function resizeTrendChart() { trendChart?.resize() }
+
+function disposeLifeCoinChart() {
+  lifeCoinResizeObserver?.disconnect()
+  lifeCoinResizeObserver = null
+  lifeCoinChart?.dispose()
+  lifeCoinChart = null
+}
+
+function renderLifeCoinChart() {
+  const element = lifeCoinChartRef.value
+  if (!element) {
+    disposeLifeCoinChart()
+    return
+  }
+  if (lifeCoinChart && lifeCoinChart.getDom() !== element) disposeLifeCoinChart()
+  if (!lifeCoinChart) {
+    lifeCoinChart = echarts.init(element, undefined, { renderer: 'canvas' })
+    if (typeof ResizeObserver !== 'undefined') {
+      lifeCoinResizeObserver = new ResizeObserver(() => resizeLifeCoinChart())
+      lifeCoinResizeObserver.observe(element)
+    }
+  }
+  const days = selectedTrend.value
+  lifeCoinChart.setOption({
+    animation: false,
+    grid: { left: 42, right: 12, top: 16, bottom: 28 },
+    tooltip: { trigger: 'axis' },
+    legend: { show: false },
+    xAxis: { type: 'category', data: days.map(day => day.date.slice(5)), axisLabel: { color: '#777', fontSize: 9 }, axisLine: { lineStyle: { color: 'rgba(255,255,255,.15)' } } },
+    yAxis: { type: 'value', axisLabel: { color: '#888', fontSize: 9 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,.06)' } } },
+    series: [
+      { name: '获得', type: 'bar', barMaxWidth: 18, itemStyle: { color: '#66bb6a' }, data: days.map(day => day.lifeCoinsAdded || 0) },
+      { name: '消耗', type: 'bar', barMaxWidth: 18, itemStyle: { color: '#ef7070' }, data: days.map(day => -(day.lifeCoinsSpent || 0)) },
+    ],
+  } as echarts.EChartsOption, true)
+}
+function resizeLifeCoinChart() { lifeCoinChart?.resize() }
 
 function clampPercent(value: number, maximum: number): number {
   if (maximum <= 0) return 0
@@ -231,7 +276,14 @@ async function setSpecialNotificationEnabled(value: boolean) {
 }
 
 const onFarmState = (state: FarmState) => {
-  farmState.value = state
+  const latest = state.dailyTrend?.[state.dailyTrend.length - 1]
+  farmState.value = {
+    ...state,
+    todayCoinsSpent: state.todayCoinsSpent ?? latest?.coinsSpent ?? 0,
+    todayEnergySpent: state.todayEnergySpent ?? latest?.energySpent ?? 0,
+    todayLifeCoinsAdded: state.todayLifeCoinsAdded ?? latest?.lifeCoinsAdded ?? 0,
+    todayLifeCoinsSpent: state.todayLifeCoinsSpent ?? latest?.lifeCoinsSpent ?? 0,
+  }
 }
 
 const onFarmReady = (plot: FarmPlotState) => {
@@ -251,16 +303,23 @@ onMounted(async () => {
   await loadFarmState()
   await nextTick()
   renderTrendChart()
-  window.addEventListener('resize', resizeTrendChart)
+  renderLifeCoinChart()
+  window.addEventListener('resize', resizeTrendCharts)
   updateInterval = window.setInterval(loadFarmState, 1000)
 })
 
-watch([selectedTrend, selectedTrendKeys, trendDays], () => { void nextTick().then(renderTrendChart) }, { deep: true })
+function resizeTrendCharts() {
+  resizeTrendChart()
+  resizeLifeCoinChart()
+}
+
+watch([selectedTrend, selectedTrendKeys, trendDays], () => { void nextTick().then(() => { renderTrendChart(); renderLifeCoinChart() }) }, { deep: true })
 watch(activeFarmTab, tab => {
   if (tab === 'statistics') {
-    void nextTick().then(renderTrendChart)
+    void nextTick().then(() => { renderTrendChart(); renderLifeCoinChart() })
   } else {
     disposeTrendChart()
+    disposeLifeCoinChart()
   }
 })
 
@@ -269,8 +328,9 @@ onUnmounted(() => {
   api.offEvent('farm-ready', onFarmReady)
   api.offEvent('farm-special', onFarmSpecial)
   if (updateInterval !== null) clearInterval(updateInterval)
-  window.removeEventListener('resize', resizeTrendChart)
+  window.removeEventListener('resize', resizeTrendCharts)
   disposeTrendChart()
+  disposeLifeCoinChart()
 })
 </script>
 
@@ -444,20 +504,22 @@ onUnmounted(() => {
         <span class="association-coins-label">生活协会硬币</span>
         <div class="association-coins-values">
           <span class="association-coins-balance">{{ farmState.lifeCoinsKnown ? numberFormatter.format(farmState.lifeCoinsBalance || 0) : '--' }}</span>
-          <span class="association-coins-added">+{{ numberFormatter.format(farmState.lifeCoinsAdded || 0) }}</span>
-          <span class="association-coins-spent">-{{ numberFormatter.format(farmState.lifeCoinsSpent || 0) }}</span>
+          <span class="association-coins-added">+{{ numberFormatter.format(farmState.todayLifeCoinsAdded || 0) }}</span>
+          <span class="association-coins-spent">-{{ numberFormatter.format(farmState.todayLifeCoinsSpent || 0) }}</span>
         </div>
       </div>
       <div class="statistics-grid">
         <div class="statistic-item coins primary-stat">
           <span class="statistic-icon"><svg-icon type="mdi" :path="mdiCashMultiple" :size="22" /></span>
-          <span class="statistic-label">累计消耗金币</span>
-          <strong>{{ numberFormatter.format(farmState.coinsSpent || 0) }}</strong>
+          <span class="statistic-label">今日消耗金币</span>
+          <div class="statistic-value"><strong>{{ numberFormatter.format(farmState.todayCoinsSpent || 0) }}</strong></div>
+          <small class="statistic-total">累计 {{ numberFormatter.format(farmState.coinsSpent || 0) }}</small>
         </div>
         <div class="statistic-item energy primary-stat">
           <span class="statistic-icon"><svg-icon type="mdi" :path="mdiLightningBolt" :size="22" /></span>
-          <span class="statistic-label">累计消耗能量</span>
-          <strong>{{ numberFormatter.format(farmState.energySpent || 0) }}</strong>
+          <span class="statistic-label">今日消耗能量</span>
+          <div class="statistic-value"><strong>{{ numberFormatter.format(farmState.todayEnergySpent || 0) }}</strong></div>
+          <small class="statistic-total">累计 {{ numberFormatter.format(farmState.energySpent || 0) }}</small>
         </div>
         <div v-for="(row, index) in cropSummaryRows" :key="row.name" class="statistic-item crop-summary" :class="index < 3 ? 'field-crop' : 'tree-crop'">
           <span class="statistic-icon crop-icon"><img v-if="row.icon" :src="row.icon" :alt="row.name"></span>
@@ -465,6 +527,7 @@ onUnmounted(() => {
           <div class="statistic-value"><strong>{{ numberFormatter.format(row.value) }}</strong>
           <small class="daily-change" :class="{ up: row.diff > 0, down: row.diff < 0 }">{{ dailyDiffLabel(row.diff) }}</small>
           </div>
+          <small class="statistic-total">累计 {{ numberFormatter.format(row.total) }}</small>
         </div>
       </div>
       <section class="trend-section">
@@ -484,6 +547,20 @@ onUnmounted(() => {
           <div class="chart-labels"><span>{{ selectedTrend[0].date.slice(5) }}</span><span>{{ selectedTrend[selectedTrend.length - 1].date.slice(5) }}</span></div>
         </div>
         <div v-else class="empty-stat">暂无走势数据</div>
+      </section>
+      <section class="trend-section life-coin-trend-section">
+        <div class="section-title">生活协会硬币走势
+          <div class="trend-switch">
+            <button type="button" :class="{ active: trendDays === 7 }" @click="trendDays = 7">7天</button>
+            <button type="button" :class="{ active: trendDays === 30 }" @click="trendDays = 30">30天</button>
+          </div>
+        </div>
+        <div v-if="selectedTrend.length" class="trend-chart-wrap">
+          <div class="life-coin-legend"><span><i class="life-coin-positive" />获得</span><span><i class="life-coin-negative" />消耗</span></div>
+          <div ref="lifeCoinChartRef" class="trend-chart" role="img" aria-label="生活协会硬币获得与消耗走势" />
+          <div class="chart-labels"><span>{{ selectedTrend[0].date.slice(5) }}</span><span>{{ selectedTrend[selectedTrend.length - 1].date.slice(5) }}</span></div>
+        </div>
+        <div v-else class="empty-stat">暂无生活协会硬币数据</div>
       </section>
     </div>
   </div>
@@ -687,7 +764,7 @@ onUnmounted(() => {
   padding: 14px 16px;
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr auto;
   align-items: center;
   column-gap: 8px;
   background: rgba(255, 255, 255, 0.035);
@@ -696,6 +773,7 @@ onUnmounted(() => {
   border-radius: 5px;
 }
 .primary-stat { grid-column: span 6; height: 78px; }
+.primary-stat .statistic-total { grid-column: 2; }
 .daily-change { grid-column: 2; color: #777; font: 9px Consolas, monospace; white-space: nowrap; }
 .daily-change.up { color: #66bb6a; }
 .daily-change.down { color: #ef7070; }
@@ -705,7 +783,7 @@ onUnmounted(() => {
 }
 
 .statistic-icon {
-  grid-row: 1 / 3;
+  grid-row: 1 / 4;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -730,6 +808,12 @@ onUnmounted(() => {
 .crop-summary strong { font-size: 18px; }
 .statistic-value { display: flex; align-items: baseline; gap: 7px; }
 .statistic-value .daily-change { grid-column: auto; }
+.statistic-total {
+  grid-column: 2;
+  color: #777;
+  font: 9px Consolas, monospace;
+  white-space: nowrap;
+}
 
 .statistic-label {
   min-width: 0;
@@ -803,6 +887,11 @@ onUnmounted(() => {
 .trend-switch button.active { color: #fff; background: rgba(102,187,106,.25); border-color: #66bb6a; }
 .trend-chart-wrap { margin-top: 8px; }
 .trend-chart { width: 100%; height: 230px; min-height: 180px; }
+.life-coin-legend { display: flex; justify-content: flex-end; gap: 12px; margin-bottom: 2px; color: #888; font-size: 9px; }
+.life-coin-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.life-coin-legend i { width: 8px; height: 8px; display: inline-block; border-radius: 1px; }
+.life-coin-positive { background: #66bb6a; }
+.life-coin-negative { background: #ef7070; }
 .chart-axis { stroke: rgba(255,255,255,.14); stroke-width: 1; }
 .chart-line { fill: none; stroke: #d4a72c; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
 .energy-line { stroke: #42a5f5; stroke-dasharray: 4 3; }

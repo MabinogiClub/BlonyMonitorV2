@@ -55,6 +55,10 @@ function previewFarmState(): FarmState {
     accountId: 'character:preview',
     coinsSpent: 16800,
     energySpent: 42,
+    todayCoinsSpent: 6200,
+    todayEnergySpent: 10,
+    todayLifeCoinsAdded: 1300,
+    todayLifeCoinsSpent: 0,
     lifeCoinsAdded: 5200,
     lifeCoinsSpent: 5000,
     lifeCoinsBalance: 183595,
@@ -84,6 +88,20 @@ function previewFarmState(): FarmState {
       ready: false,
       ...samples[index],
     })),
+  }
+}
+
+// Keep the UI compatible with an older generated Wails model until it is
+// regenerated. The daily trend already carries the same values, so missing
+// fields can be filled from the current statistics day.
+function normalizeFarmState(state: FarmState): FarmState {
+  const latest = state.dailyTrend?.[state.dailyTrend.length - 1]
+  return {
+    ...state,
+    todayCoinsSpent: state.todayCoinsSpent ?? latest?.coinsSpent ?? 0,
+    todayEnergySpent: state.todayEnergySpent ?? latest?.energySpent ?? 0,
+    todayLifeCoinsAdded: state.todayLifeCoinsAdded ?? latest?.lifeCoinsAdded ?? 0,
+    todayLifeCoinsSpent: state.todayLifeCoinsSpent ?? latest?.lifeCoinsSpent ?? 0,
   }
 }
 
@@ -1009,7 +1027,7 @@ export async function setBuffOrder(order: number[]): Promise<void> {
 
 export async function getFarmState(): Promise<FarmState> {
   if (!isWailsReady()) return previewFarmState()
-  return window.go.app.App.GetFarmState()
+  return normalizeFarmState(await window.go.app.App.GetFarmState())
 }
 
 export async function setFarmMonitorEnabled(enabled: boolean): Promise<FarmState> {
@@ -1017,7 +1035,7 @@ export async function setFarmMonitorEnabled(enabled: boolean): Promise<FarmState
     previewFarmEnabled = enabled
     return previewFarmState()
   }
-  return window.go.app.App.SetFarmMonitorEnabled(enabled)
+  return normalizeFarmState(await window.go.app.App.SetFarmMonitorEnabled(enabled))
 }
 
 export async function setFarmReadyNotificationEnabled(enabled: boolean): Promise<FarmState> {
@@ -1025,7 +1043,7 @@ export async function setFarmReadyNotificationEnabled(enabled: boolean): Promise
     previewFarmReadyNotificationEnabled = enabled
     return previewFarmState()
   }
-  return window.go.app.App.SetFarmReadyNotificationEnabled(enabled)
+  return normalizeFarmState(await window.go.app.App.SetFarmReadyNotificationEnabled(enabled))
 }
 
 export async function setFarmSpecialNotificationEnabled(enabled: boolean): Promise<FarmState> {
@@ -1033,7 +1051,7 @@ export async function setFarmSpecialNotificationEnabled(enabled: boolean): Promi
     previewFarmSpecialNotificationEnabled = enabled
     return previewFarmState()
   }
-  return window.go.app.App.SetFarmSpecialNotificationEnabled(enabled)
+  return normalizeFarmState(await window.go.app.App.SetFarmSpecialNotificationEnabled(enabled))
 }
 
 export async function getFarmRecommendationState(): Promise<FarmRecommendationState> {
