@@ -154,6 +154,37 @@ func TestIncompletePetSnapshotDoesNotReplaceStoredBackpack(t *testing.T) {
 	}
 }
 
+func TestTemporarySummonInventoryIsBlocked(t *testing.T) {
+	store, err := inventory.Open(filepath.Join(t.TempDir(), "inventory.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	app := NewApp()
+	app.inventoryStore = store
+
+	app.handleInventoryCharacterPacket(&packet.GamePacket{}, &packet.CharacterDataPacket{
+		Id: 10, Name: "0:9OGYF", RaceId: 490292,
+	})
+	app.handleInventoryPetOwner(&packet.EntityInfo{Id: 12, Name: "0:9OGYG", RaceId: 490292, OwnerId: 1}, 100)
+	if state, err := store.State(); err != nil {
+		t.Fatal(err)
+	} else if len(state.Holders) != 0 || len(state.Rows) != 0 {
+		t.Fatalf("temporary summon was persisted: %#v", state)
+	}
+
+	if err := store.ReplaceSnapshots([]inventory.Snapshot{{
+		HolderID: "11", HolderType: "pet", HolderName: "0:9OGYG", Container: inventoryContainerBackpack,
+		Items: []inventory.Item{{ItemID: 40915, Name: "临时道具", Amount: 1}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	state := app.GetInventoryState()
+	if len(state.Holders) != 0 || len(state.Rows) != 0 {
+		t.Fatalf("stale temporary summon was exposed: %#v", state)
+	}
+}
+
 func TestIncompleteFriendPetAppearanceDoesNotChangeOwner(t *testing.T) {
 	store, err := inventory.Open(filepath.Join(t.TempDir(), "inventory.db"))
 	if err != nil {

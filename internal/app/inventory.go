@@ -17,6 +17,15 @@ import (
 
 var enchantAttributeRE = regexp.MustCompile(`(?:^|;)(?:ENPFIX|ENSFIX):[^:;]*:([0-9]+)`)
 
+// Temporary summon entities are announced with protocol-generated names such
+// as 0:9OGYF. They are not real pets and their 0x5209 payload can contain
+// transient equipment, so exposing them would pollute inventory searches.
+var temporaryPetNameRE = regexp.MustCompile(`^0:[0-9A-Za-z]+$`)
+
+func isBlockedTemporaryPet(name string) bool {
+	return temporaryPetNameRE.MatchString(strings.TrimSpace(name))
+}
+
 func inventoryDisplayName(itemID uint32, base string, extendedData []byte, attributes string) string {
 	name := base
 	if strings.TrimSpace(name) == "" {
@@ -187,6 +196,8 @@ func (a *App) handleInventoryCharacterPacket(pkt *packet.GamePacket, character *
 	holderType := "pet"
 	if isPC(int(character.RaceId)) {
 		holderType = "character"
+	} else if isBlockedTemporaryPet(character.Name) {
+		return
 	}
 	backpack := make([]packet.InventoryItemRecord, 0)
 	gacha := make([]packet.InventoryItemRecord, 0)
@@ -317,7 +328,8 @@ func (a *App) handleInventoryPetOwner(entity *packet.EntityInfo, updatedAt int64
 	// Friend summons (0x906f) contain only an ID. Ownership is updated only
 	// from a complete primary-pet 0x520c entity.
 	if a.inventoryStore == nil || entity == nil || entity.Id == 0 || entity.OwnerId == 0 ||
-		strings.TrimSpace(entity.Name) == "" || entity.RaceId == 0 || isPC(int(entity.RaceId)) {
+		strings.TrimSpace(entity.Name) == "" || entity.RaceId == 0 || isPC(int(entity.RaceId)) ||
+		isBlockedTemporaryPet(entity.Name) {
 		return
 	}
 	ownerID := strconv.FormatUint(entity.OwnerId, 10)
@@ -340,6 +352,27 @@ func (a *App) GetInventoryState() inventory.State {
 		logger.Printf("[Inventory] read state failed: %v", err)
 		return inventory.State{Rows: []inventory.Row{}, Holders: []inventory.Holder{}}
 	}
+	// Older versions may already have persisted temporary summon snapshots.
+	// Filter them at the API boundary so stale records cannot pollute searches;
+	// new snapshots are rejected in handleInventoryCharacterPacket above.
+	filteredHolders := state.Holders[:0]
+	blocked := make(map[string]struct{})
+	for _, holder := range state.Holders {
+		if holder.Type == "pet" && isBlockedTemporaryPet(holder.Name) {
+			blocked[holder.ID] = struct{}{}
+			continue
+		}
+		filteredHolders = append(filteredHolders, holder)
+	}
+	state.Holders = filteredHolders
+	filteredRows := state.Rows[:0]
+	for _, row := range state.Rows {
+		if _, hidden := blocked[row.HolderID]; hidden {
+			continue
+		}
+		filteredRows = append(filteredRows, row)
+	}
+	state.Rows = filteredRows
 	itemIDs := make([]uint32, 0, len(state.Rows))
 	for _, row := range state.Rows {
 		itemIDs = append(itemIDs, row.ItemID)
