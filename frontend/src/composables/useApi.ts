@@ -874,6 +874,22 @@ export async function getAlwaysOnTop(): Promise<boolean> {
 }
 
 /**
+ * 设置状态栏主显角色名是否脱敏
+ */
+export async function setMaskSelfName(enabled: boolean): Promise<void> {
+  if (!isWailsReady()) return
+  return window.go.app.App.SetMaskSelfName(enabled)
+}
+
+/**
+ * 获取状态栏主显角色名脱敏设置
+ */
+export async function getMaskSelfName(): Promise<boolean> {
+  if (!isWailsReady()) return false
+  return window.go.app.App.GetMaskSelfName()
+}
+
+/**
  * 设置窗口大小
  */
 export async function setWindowSize(width: number, height: number): Promise<void> {

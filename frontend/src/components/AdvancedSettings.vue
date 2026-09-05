@@ -37,6 +37,7 @@ const searchKeyword = ref('')
 // 透明度
 const opacity = ref(100)
 const soundVolume = ref(100)
+const maskSelfName = ref(false)
 
 // 频道相关
 const autoDetect = ref(true)
@@ -173,6 +174,28 @@ async function loadSoundVolume() {
     soundVolume.value = appStore.soundVolume
   } catch (err) {
     console.error('加载音效音量失败:', err)
+  }
+}
+
+async function loadMaskSelfName() {
+  try {
+    maskSelfName.value = await api.getMaskSelfName()
+    appStore.maskSelfName = maskSelfName.value
+  } catch (err) {
+    console.error('加载主显角色脱敏设置失败:', err)
+  }
+}
+
+async function handleMaskSelfNameChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  const nextValue = target.checked
+  try {
+    await api.setMaskSelfName(nextValue)
+    maskSelfName.value = nextValue
+    appStore.maskSelfName = nextValue
+  } catch (err) {
+    target.checked = maskSelfName.value
+    console.error('设置主显角色脱敏失败:', err)
   }
 }
 
@@ -520,6 +543,7 @@ watch(() => props.visible, (newVal) => {
     loadNics()
     loadOpacity()
     loadSoundVolume()
+    loadMaskSelfName()
     loadChannelSettings()
     loadUploadSettings()
     loadAnalysisLogSettings()
@@ -616,6 +640,26 @@ watch(() => appStore.selfInfo?.id, (newID, oldID) => {
             >
               <van-icon name="volume-o" aria-hidden="true" />
             </button>
+          </div>
+        </div>
+
+        <!-- 主显角色脱敏设置 -->
+        <div class="setting-section">
+          <div class="section-header">
+            <div>
+              <h4>脱敏主显角色</h4>
+              <p class="setting-desc">仅隐藏左上角绿色角色名，保留前两个文字</p>
+            </div>
+          </div>
+          <div class="auto-detect-control">
+            <label class="auto-detect-label">
+              <input
+                type="checkbox"
+                :checked="maskSelfName"
+                @change="handleMaskSelfNameChange"
+              >
+              <span>{{ maskSelfName ? '已开启' : '关闭' }}</span>
+            </label>
           </div>
         </div>
 

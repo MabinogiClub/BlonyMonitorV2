@@ -99,6 +99,7 @@ type App struct {
 	opacity                     int
 	soundVolume                 int
 	alwaysOnTop                 bool
+	maskSelfName                bool
 	currentDungeon              *DungeonInfo
 	dungeonSaveName             string
 	dungeonChineseNameReceived  bool
@@ -191,6 +192,7 @@ func (a *App) Startup(ctx context.Context) {
 
 	a.dpsRefreshSettings = loadDPSRefreshSettings()
 	a.soundVolume = loadSoundVolume()
+	a.maskSelfName = loadDisplaySettings().MaskSelfName
 	a.dpsUpdateThrottler = NewDPSUpdateThrottler(a, time.Duration(a.dpsRefreshSettings.BackendIntervalMS)*time.Millisecond)
 	a.attackerTimerMgr = NewAttackerTimerManager(a)
 	a.targetTimerMgr = NewTargetTimerManager(a)

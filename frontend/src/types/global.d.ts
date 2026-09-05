@@ -66,6 +66,8 @@ interface GoApp {
   PlaySoundPreview(): Promise<void>
   SetAlwaysOnTop(enabled: boolean): Promise<void>
   GetAlwaysOnTop(): Promise<boolean>
+  SetMaskSelfName(enabled: boolean): Promise<void>
+  GetMaskSelfName(): Promise<boolean>
   // 窗口大小
   SetWindowSize(width: number, height: number): Promise<void>
   GetWindowSize(): Promise<{ width: number; height: number }>

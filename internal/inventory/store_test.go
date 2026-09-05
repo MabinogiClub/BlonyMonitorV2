@@ -82,6 +82,35 @@ func TestReplaceSnapshotsAndPetOwner(t *testing.T) {
 	}
 }
 
+func TestStateMergesSameItemAcrossPockets(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "inventory.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	snapshot := Snapshot{
+		HolderID: "character-1", HolderType: "character", HolderName: "角色1",
+		Container: "backpack", CapturedAt: 100,
+		Items: []Item{
+			{InstanceID: 1, ItemID: 63296, Name: "世界频道号角", Amount: 10, PocketType: 123},
+			{InstanceID: 2, ItemID: 63296, Name: "世界频道号角", Amount: 4, PocketType: 123},
+			{InstanceID: 3, ItemID: 63296, Name: "世界频道号角", Amount: 10, PocketType: 126},
+		},
+	}
+	if err := store.ReplaceSnapshots([]Snapshot{snapshot}); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := store.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Rows) != 1 || state.Rows[0].Amount != 24 || state.Rows[0].PocketType != 0 {
+		t.Fatalf("unexpected merged state: %#v", state.Rows)
+	}
+}
+
 func TestBankTabsAreReplacedIndependently(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "inventory.db"))
 	if err != nil {
@@ -108,6 +137,36 @@ func TestBankTabsAreReplacedIndependently(t *testing.T) {
 	}
 	if len(state.Rows) != 1 || state.Rows[0].ItemID != 102 || state.Rows[0].SubLocation != "角色2" {
 		t.Fatalf("unexpected bank state: %#v", state.Rows)
+	}
+}
+
+func TestStateDoesNotMergeSameItemAcrossBankTabs(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "inventory.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	tabA := Snapshot{
+		HolderID: "account:test", HolderType: "account", HolderName: "账号共享",
+		Container: "bank", SubLocation: "角色1", CapturedAt: 100,
+		Items: []Item{{InstanceID: 1, ItemID: 63296, Name: "世界频道号角", Amount: 14, PocketType: 2}},
+	}
+	tabB := Snapshot{
+		HolderID: "account:test", HolderType: "account", HolderName: "账号共享",
+		Container: "bank", SubLocation: "角色2", CapturedAt: 100,
+		Items: []Item{{InstanceID: 2, ItemID: 63296, Name: "世界频道号角", Amount: 10, PocketType: 11}},
+	}
+	if err := store.ReplaceSnapshots([]Snapshot{tabA, tabB}); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := store.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Rows) != 2 || state.Rows[0].SubLocation == state.Rows[1].SubLocation {
+		t.Fatalf("bank tabs were merged: %#v", state.Rows)
 	}
 }
 

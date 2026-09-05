@@ -44,6 +44,7 @@ export const useAppStore = defineStore('app', () => {
   const channelName = ref('')
   const clickThroughEnabled = ref(false)
   const alwaysOnTop = ref(false)
+  const maskSelfName = ref(false)
   const chartVisible = ref(false)
   const opacity = ref(100)
   const soundVolume = ref(100)
@@ -277,6 +278,12 @@ export const useAppStore = defineStore('app', () => {
     }
 
     try {
+      maskSelfName.value = await api.getMaskSelfName()
+    } catch (e) {
+      console.error('加载主显角色脱敏设置失败:', e)
+    }
+
+    try {
       opacity.value = await api.getOpacity()
     } catch (e) {
       console.error('加载窗口透明度失败:', e)
@@ -468,6 +475,7 @@ export const useAppStore = defineStore('app', () => {
     channelName,
     clickThroughEnabled,
     alwaysOnTop,
+    maskSelfName,
     chartData,
     historyChartData,
     chartTimeRange,

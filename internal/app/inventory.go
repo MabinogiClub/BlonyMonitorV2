@@ -22,8 +22,17 @@ var enchantAttributeRE = regexp.MustCompile(`(?:^|;)(?:ENPFIX|ENSFIX):[^:;]*:([0
 // transient equipment, so exposing them would pollute inventory searches.
 var temporaryPetNameRE = regexp.MustCompile(`^0:[0-9A-Za-z]+$`)
 
-func isBlockedTemporaryPet(name string) bool {
-	return temporaryPetNameRE.MatchString(strings.TrimSpace(name))
+const dollRaceID uint32 = 990215
+
+func isTemporaryInventoryEntityID(id uint64) bool {
+	// Session-scoped summoned entities observed in CN packets use the 0010F
+	// namespace, while persistent character and pet IDs use 00100.
+	return id&0xFFFFF00000000000 == 0x0010F00000000000
+}
+
+func isBlockedTemporaryPet(id uint64, name string, raceID uint32) bool {
+	return raceID == dollRaceID || isTemporaryInventoryEntityID(id) ||
+		temporaryPetNameRE.MatchString(strings.TrimSpace(name))
 }
 
 func inventoryDisplayName(itemID uint32, base string, extendedData []byte, attributes string) string {
@@ -196,7 +205,7 @@ func (a *App) handleInventoryCharacterPacket(pkt *packet.GamePacket, character *
 	holderType := "pet"
 	if isPC(int(character.RaceId)) {
 		holderType = "character"
-	} else if isBlockedTemporaryPet(character.Name) {
+	} else if isBlockedTemporaryPet(character.Id, character.Name, character.RaceId) {
 		return
 	}
 	backpack := make([]packet.InventoryItemRecord, 0)
@@ -329,7 +338,7 @@ func (a *App) handleInventoryPetOwner(entity *packet.EntityInfo, updatedAt int64
 	// from a complete primary-pet 0x520c entity.
 	if a.inventoryStore == nil || entity == nil || entity.Id == 0 || entity.OwnerId == 0 ||
 		strings.TrimSpace(entity.Name) == "" || entity.RaceId == 0 || isPC(int(entity.RaceId)) ||
-		isBlockedTemporaryPet(entity.Name) {
+		isBlockedTemporaryPet(entity.Id, entity.Name, entity.RaceId) {
 		return
 	}
 	ownerID := strconv.FormatUint(entity.OwnerId, 10)
@@ -358,7 +367,8 @@ func (a *App) GetInventoryState() inventory.State {
 	filteredHolders := state.Holders[:0]
 	blocked := make(map[string]struct{})
 	for _, holder := range state.Holders {
-		if holder.Type == "pet" && isBlockedTemporaryPet(holder.Name) {
+		holderID, _ := strconv.ParseUint(holder.ID, 10, 64)
+		if holder.Type == "pet" && isBlockedTemporaryPet(holderID, holder.Name, 0) {
 			blocked[holder.ID] = struct{}{}
 			continue
 		}

@@ -67,13 +67,24 @@ const channelDisplayText = computed(() => {
 
   return '未选择频道'
 })
+
+const selfNameDisplayText = computed(() => {
+  const name = appStore.selfInfo?.name || ''
+  if (!appStore.maskSelfName || !name) return name
+
+  const characters = Array.from(name)
+  if (characters.length <= 1) return name
+
+  const visibleCount = characters.length === 2 ? 1 : 2
+  return `${characters.slice(0, visibleCount).join('')}**`
+})
 </script>
 
 <template>
   <div class="status-bar">
     <span class="status-item channel-name">{{ channelDisplayText }}</span>
 
-    <span v-if="appStore.selfInfo" class="status-item self-name">{{ appStore.selfInfo.name }}</span>
+    <span v-if="appStore.selfInfo" class="status-item self-name">{{ selfNameDisplayText }}</span>
     <span v-else-if="showSelfLoading" class="status-item self-loading">
       <svg-icon type="mdi" :path="mdiAlert" :size="12" class="self-loading-icon" />
       <span>角色加载中</span>

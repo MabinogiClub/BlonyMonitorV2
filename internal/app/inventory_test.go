@@ -155,6 +155,16 @@ func TestIncompletePetSnapshotDoesNotReplaceStoredBackpack(t *testing.T) {
 }
 
 func TestTemporarySummonInventoryIsBlocked(t *testing.T) {
+	if !isBlockedTemporaryPet(4_503_599_638_666_428, "Flandre", dollRaceID) {
+		t.Fatal("DOLL race was not blocked")
+	}
+	if !isBlockedTemporaryPet(4_767_482_431_004_495, "Flandre", 0) {
+		t.Fatal("temporary entity ID namespace was not blocked")
+	}
+	if isBlockedTemporaryPet(4_503_599_638_666_428, "普通宠物", 490292) {
+		t.Fatal("persistent pet was blocked")
+	}
+
 	store, err := inventory.Open(filepath.Join(t.TempDir(), "inventory.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -167,6 +177,12 @@ func TestTemporarySummonInventoryIsBlocked(t *testing.T) {
 		Id: 10, Name: "0:9OGYF", RaceId: 490292,
 	})
 	app.handleInventoryPetOwner(&packet.EntityInfo{Id: 12, Name: "0:9OGYG", RaceId: 490292, OwnerId: 1}, 100)
+	app.handleInventoryCharacterPacket(&packet.GamePacket{Msg: inventoryTestRecord(2, 2, 8183, 1)}, &packet.CharacterDataPacket{
+		Id: 4_767_482_431_004_495, Name: "Flandre", RaceId: dollRaceID,
+	})
+	app.handleInventoryPetOwner(&packet.EntityInfo{
+		Id: 4_767_482_431_004_495, Name: "Flandre", RaceId: dollRaceID, OwnerId: 1,
+	}, 100)
 	if state, err := store.State(); err != nil {
 		t.Fatal(err)
 	} else if len(state.Holders) != 0 || len(state.Rows) != 0 {
@@ -176,6 +192,9 @@ func TestTemporarySummonInventoryIsBlocked(t *testing.T) {
 	if err := store.ReplaceSnapshots([]inventory.Snapshot{{
 		HolderID: "11", HolderType: "pet", HolderName: "0:9OGYG", Container: inventoryContainerBackpack,
 		Items: []inventory.Item{{ItemID: 40915, Name: "临时道具", Amount: 1}},
+	}, {
+		HolderID: "4767482431004494", HolderType: "pet", HolderName: "Flandre", Container: inventoryContainerBackpack,
+		Items: []inventory.Item{{ItemID: 8183, Name: "午后红茶发型", Amount: 1}},
 	}}); err != nil {
 		t.Fatal(err)
 	}

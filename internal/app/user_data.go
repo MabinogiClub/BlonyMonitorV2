@@ -106,6 +106,7 @@ func migrateLegacyUserDataFrom(sourceDir, targetDir string) {
 		"blonymonitor-farm-recommendation.json",
 		"blonymonitor-farm-recommendation-capture.jsonl",
 		"blonymonitor-sound-settings.json",
+		"blonymonitor-display-settings.json",
 		"buff_order.json",
 		"overlay.log",
 	}

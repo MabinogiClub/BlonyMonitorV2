@@ -271,11 +271,13 @@ func (s *Store) State() (State, error) {
 	}
 	holderRows.Close()
 
-	rows, err := s.db.Query(`SELECT i.item_id, i.name, SUM(i.amount), i.pocket_type, h.holder_id, h.holder_type, h.name,
+	rows, err := s.db.Query(`SELECT i.item_id, i.name, SUM(i.amount),
+CASE WHEN MIN(i.pocket_type) = MAX(i.pocket_type) THEN MIN(i.pocket_type) ELSE 0 END,
+h.holder_id, h.holder_type, h.name,
 h.owner_character_id, h.owner_character_name, sn.scanned_by_id, sn.scanned_by_name,
 sn.container, sn.sub_location, sn.updated_at
 FROM items i JOIN snapshots sn ON sn.id=i.snapshot_id JOIN holders h ON h.holder_id=sn.holder_id
-GROUP BY i.item_id, i.name, i.pocket_type, h.holder_id, h.holder_type, h.name, h.owner_character_id,
+GROUP BY i.item_id, i.name, h.holder_id, h.holder_type, h.name, h.owner_character_id,
 h.owner_character_name, sn.scanned_by_id, sn.scanned_by_name, sn.container, sn.sub_location, sn.updated_at`)
 	if err != nil {
 		return state, err
