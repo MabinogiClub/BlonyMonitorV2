@@ -11,6 +11,15 @@ import (
 
 const lifeAssociationCurrency = "life_association_coin"
 
+const lifeCoinSettleDelay = 500 * time.Millisecond
+
+type lifeCoinPendingSync struct {
+	balance    int64
+	at         time.Time
+	generation uint64
+	timer      *time.Timer
+}
+
 // 5300264 is the item class used by the server for 生活协会硬币. Pocket 65
 // also contains unrelated currency items (for example seals), so pocket type
 // alone must not be used when rebuilding an authoritative total.
@@ -77,14 +86,15 @@ func (a *App) handleLifeCoinPacket(pkt *packet.GamePacket) {
 		a.lifeCoinBalances[character] = total
 		a.lifeCoinBalanceKnown[character] = true
 		a.mu.Unlock()
-		if err := a.farmStatsStore.SyncCurrencyBalance(character, lifeAssociationCurrency, total, at); err != nil {
+		if err := a.syncLifeCoinBalanceNow(character, total, at); err != nil {
 			logger.Printf("[LifeCoin] sync balance failed: %v", err)
 		}
 		return
 	}
 
 	// 0x59ee updates one currency stack. Once a snapshot established the
-	// aggregate balance, apply the stack delta and let the store classify it.
+	// aggregate balance, update the in-memory total and settle the net change
+	// only after the server's burst of stack rebalancing packets is complete.
 	if pkt.Op == opcodeItemStackUpdate && len(pkt.Msg) >= 3 &&
 		pkt.Msg[0].Type() == packet.MessageElemTypeLong && pkt.Msg[1].Type() == packet.MessageElemTypeShort &&
 		pkt.Msg[2].Type() == packet.MessageElemTypeInt && pkt.Msg[2].Data().(uint32) == inventoryCurrencyPocket {
@@ -105,9 +115,7 @@ func (a *App) handleLifeCoinPacket(pkt *packet.GamePacket) {
 		balance += amount - previous
 		a.lifeCoinBalances[character] = balance
 		a.mu.Unlock()
-		if err := a.farmStatsStore.SyncCurrencyBalance(character, lifeAssociationCurrency, balance, at); err != nil {
-			logger.Printf("[LifeCoin] record stack delta failed: %v", err)
-		}
+		a.scheduleLifeCoinBalanceSync(character, balance, at)
 		return
 	}
 	if pkt.Op == opcodeItemRemoveUpdate && len(pkt.Msg) >= 1 && pkt.Msg[0].Type() == packet.MessageElemTypeLong {
@@ -129,9 +137,7 @@ func (a *App) handleLifeCoinPacket(pkt *packet.GamePacket) {
 		}
 		a.mu.Unlock()
 		if known && balanceKnown {
-			if err := a.farmStatsStore.SyncCurrencyBalance(character, lifeAssociationCurrency, balance, at); err != nil {
-				logger.Printf("[LifeCoin] record removed stack failed: %v", err)
-			}
+			a.scheduleLifeCoinBalanceSync(character, balance, at)
 		}
 		return
 	}
@@ -155,10 +161,83 @@ func (a *App) handleLifeCoinPacket(pkt *packet.GamePacket) {
 		a.lifeCoinBalances[character] = value
 		a.lifeCoinBalanceKnown[character] = true
 		a.mu.Unlock()
-		if err := a.farmStatsStore.SyncCurrencyBalance(character, lifeAssociationCurrency, value, at); err != nil {
+		if err := a.syncLifeCoinBalanceNow(character, value, at); err != nil {
 			logger.Printf("[LifeCoin] text balance sync failed: %v", err)
 		}
 	}
+}
+
+func (a *App) scheduleLifeCoinBalanceSync(character string, balance int64, at time.Time) {
+	a.mu.Lock()
+	if a.lifeCoinPending == nil {
+		a.lifeCoinPending = make(map[string]*lifeCoinPendingSync)
+	}
+	if pending := a.lifeCoinPending[character]; pending != nil && pending.timer != nil {
+		pending.timer.Stop()
+	}
+	a.lifeCoinPendingGeneration++
+	generation := a.lifeCoinPendingGeneration
+	pending := &lifeCoinPendingSync{balance: balance, at: at, generation: generation}
+	pending.timer = time.AfterFunc(lifeCoinSettleDelay, func() {
+		a.flushPendingLifeCoinBalance(character, generation)
+	})
+	a.lifeCoinPending[character] = pending
+	a.mu.Unlock()
+}
+
+func (a *App) flushPendingLifeCoinBalance(character string, generation uint64) {
+	a.lifeCoinSyncMu.Lock()
+	defer a.lifeCoinSyncMu.Unlock()
+
+	a.mu.Lock()
+	pending := a.lifeCoinPending[character]
+	if pending == nil || generation != 0 && pending.generation != generation {
+		a.mu.Unlock()
+		return
+	}
+	if pending.timer != nil {
+		pending.timer.Stop()
+	}
+	delete(a.lifeCoinPending, character)
+	store := a.farmStatsStore
+	a.mu.Unlock()
+
+	if store != nil {
+		if err := store.SyncCurrencyBalance(character, lifeAssociationCurrency, pending.balance, pending.at); err != nil {
+			logger.Printf("[LifeCoin] settle stack balance failed: %v", err)
+		}
+	}
+}
+
+func (a *App) flushAllPendingLifeCoinBalances() {
+	a.mu.RLock()
+	characters := make([]string, 0, len(a.lifeCoinPending))
+	for character := range a.lifeCoinPending {
+		characters = append(characters, character)
+	}
+	a.mu.RUnlock()
+	for _, character := range characters {
+		a.flushPendingLifeCoinBalance(character, 0)
+	}
+}
+
+func (a *App) syncLifeCoinBalanceNow(character string, balance int64, at time.Time) error {
+	a.lifeCoinSyncMu.Lock()
+	defer a.lifeCoinSyncMu.Unlock()
+
+	a.mu.Lock()
+	if pending := a.lifeCoinPending[character]; pending != nil {
+		if pending.timer != nil {
+			pending.timer.Stop()
+		}
+		delete(a.lifeCoinPending, character)
+	}
+	store := a.farmStatsStore
+	a.mu.Unlock()
+	if store == nil {
+		return nil
+	}
+	return store.SyncCurrencyBalance(character, lifeAssociationCurrency, balance, at)
 }
 
 func characterDataID(character *packet.CharacterDataPacket) uint64 {

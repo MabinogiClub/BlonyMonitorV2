@@ -178,7 +178,7 @@ function renderLifeCoinChart() {
     yAxis: { type: 'value', axisLabel: { color: '#888', fontSize: 9 }, splitLine: { lineStyle: { color: 'rgba(255,255,255,.06)' } } },
     series: [
       { name: '获得', type: 'bar', barMaxWidth: 18, itemStyle: { color: '#66bb6a' }, data: days.map(day => day.lifeCoinsAdded || 0) },
-      { name: '消耗', type: 'bar', barMaxWidth: 18, itemStyle: { color: '#ef7070' }, data: days.map(day => -(day.lifeCoinsSpent || 0)) },
+      { name: '消耗', type: 'bar', barGap: '-100%', barMaxWidth: 18, itemStyle: { color: '#ef7070' }, data: days.map(day => -(day.lifeCoinsSpent || 0)) },
     ],
   } as echarts.EChartsOption, true)
 }

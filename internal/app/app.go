@@ -135,6 +135,9 @@ type App struct {
 	lifeCoinStacks              map[string]map[uint64]int64
 	lifeCoinBalances            map[string]int64
 	lifeCoinBalanceKnown        map[string]bool
+	lifeCoinPending             map[string]*lifeCoinPendingSync
+	lifeCoinPendingGeneration   uint64
+	lifeCoinSyncMu              sync.Mutex
 	onHide                      func()
 }
 
@@ -175,6 +178,7 @@ func NewApp() *App {
 		lifeCoinStacks:          make(map[string]map[uint64]int64),
 		lifeCoinBalances:        make(map[string]int64),
 		lifeCoinBalanceKnown:    make(map[string]bool),
+		lifeCoinPending:         make(map[string]*lifeCoinPendingSync),
 		opacity:                 100,
 		soundVolume:             defaultSoundVolume,
 	}
@@ -255,6 +259,7 @@ func (a *App) Shutdown(ctx context.Context) {
 			logger.Printf("[Inventory] close database failed: %v", err)
 		}
 	}
+	a.flushAllPendingLifeCoinBalances()
 	if a.farmStatsStore != nil {
 		if err := a.farmStatsStore.Close(); err != nil {
 			logger.Printf("[Farm] close statistics database failed: %v", err)
