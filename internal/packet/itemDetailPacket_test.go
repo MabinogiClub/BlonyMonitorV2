@@ -2,6 +2,7 @@ package packet
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"testing"
 )
 
@@ -81,6 +82,27 @@ func TestParseItemDetailPacketVariantWithMidStringAndOverflow(t *testing.T) {
 	}
 	if detail.DurabilityMax == nil || *detail.DurabilityMax != 20 || detail.DurabilityValue != 20 {
 		t.Fatalf("durability max missing: %#v", detail)
+	}
+}
+
+func TestParseItemDetailPacketAcceptsR143PublicBlock(t *testing.T) {
+	// Captured from 0x5bd4 after R143: public item blob grew from 80 to 84 bytes.
+	publicData, err := hex.DecodeString("08000000d6b82100ff330000ffffffffffffffff000000002179b3002798f700ebe2fd0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ffff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	extendedData := make([]byte, 144)
+	binary.LittleEndian.PutUint32(extendedData[16:], 20000)
+	binary.LittleEndian.PutUint32(extendedData[20:], 20000)
+	details := ParseItemDetailPacket(Message{
+		NewMessageElemLong(99),
+		NewMessageElemByte(2),
+		NewMessageElemBin(publicData),
+		NewMessageElemBin(extendedData),
+		NewMessageElemString("OWNER:s:Flandre;"),
+	})
+	if len(details) != 1 || details[0].Item.ItemId != 2210006 || details[0].Item.PocketType != 8 {
+		t.Fatalf("details = %#v", details)
 	}
 }
 

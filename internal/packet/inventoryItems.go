@@ -1,5 +1,24 @@
 package packet
 
+const (
+	publicItemBlockSizeLegacy = 80
+	// R143 appends 4 trailing bytes (observed as 00 00 FF FF) to the public
+	// item blob. Pocket, item ID, colors and stack count stay at the same
+	// offsets as the previous 80-byte layout.
+	publicItemBlockSizeR143 = 84
+)
+
+// IsPublicItemBlock reports whether data is a character/inventory public item
+// blob. Older captures are 80 bytes; current China clients send 84 bytes.
+func IsPublicItemBlock(data []byte) bool {
+	switch len(data) {
+	case publicItemBlockSizeLegacy, publicItemBlockSizeR143:
+		return true
+	default:
+		return false
+	}
+}
+
 // InventoryItemRecord is the stable portion shared by character, bank,
 // dressing-room and cash-shop inventory snapshots.
 type InventoryItemRecord struct {
@@ -11,8 +30,8 @@ type InventoryItemRecord struct {
 	Attributes string
 }
 
-// ParseInventoryItemRecords intentionally reads only the public 80-byte item
-// block. Optional extended fields vary between containers and client versions.
+// ParseInventoryItemRecords intentionally reads only the public item block.
+// Optional extended fields vary between containers and client versions.
 func ParseInventoryItemRecords(msg Message) []InventoryItemRecord {
 	records := make([]InventoryItemRecord, 0)
 	seen := make(map[uint64]struct{})
@@ -23,7 +42,7 @@ func ParseInventoryItemRecords(msg Message) []InventoryItemRecord {
 			continue
 		}
 		publicData := msg[index].Data().([]byte)
-		if len(publicData) != 80 {
+		if !IsPublicItemBlock(publicData) {
 			continue
 		}
 		item, err := EntityItemReader(publicData)

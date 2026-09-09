@@ -80,7 +80,7 @@ func parseItemDetailAt(msg Message, flagIndex int) (ItemDetail, bool) {
 	}
 
 	publicIndex := flagIndex + 1
-	publicData, ok := binOfLen(msg[publicIndex], 80)
+	publicData, ok := binOfPublicItem(msg[publicIndex])
 	if !ok {
 		return ItemDetail{}, false
 	}
@@ -88,12 +88,12 @@ func parseItemDetailAt(msg Message, flagIndex int) (ItemDetail, bool) {
 	extendedIndex := -1
 	attrStart := -1
 
-	// 常见布局: byte(2) + bin[80] + bin[144] + string(+string)
+	// 常见布局: byte(2) + bin[80|84] + bin[144] + string(+string)
 	if _, ok := binOfLen(msg[flagIndex+2], 144); ok {
 		extendedIndex = flagIndex + 2
 		attrStart = flagIndex + 3
 	} else if flagIndex+3 < len(msg) && msg[flagIndex+2].Type() == MessageElemTypeString {
-		// 变体布局: byte(2) + bin[80] + string + bin[144] + string(+string)
+		// 变体布局: byte(2) + bin[80|84] + string + bin[144] + string(+string)
 		if _, ok := binOfLen(msg[flagIndex+3], 144); ok {
 			extendedIndex = flagIndex + 3
 			attrStart = flagIndex + 4
@@ -124,6 +124,17 @@ func parseItemDetailAt(msg Message, flagIndex int) (ItemDetail, bool) {
 	parseItemAttributes(&detail)
 	buildReadableEntries(&detail)
 	return detail, true
+}
+
+func binOfPublicItem(elem IMessageElem) ([]byte, bool) {
+	if elem == nil || elem.Type() != MessageElemTypeBin {
+		return nil, false
+	}
+	data, ok := elem.Data().([]byte)
+	if !ok || !IsPublicItemBlock(data) {
+		return nil, false
+	}
+	return data, true
 }
 
 func binOfLen(elem IMessageElem, size int) ([]byte, bool) {

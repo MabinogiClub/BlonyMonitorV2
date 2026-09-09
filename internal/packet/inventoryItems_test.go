@@ -2,6 +2,7 @@ package packet
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"testing"
 )
 
@@ -17,6 +18,23 @@ func TestParseInventoryItemRecords(t *testing.T) {
 	})
 	if len(records) != 1 || records[0].InstanceID != 123 ||
 		records[0].Item.ItemId != 85692 || records[0].Item.Amount != 4 {
+		t.Fatalf("records = %#v", records)
+	}
+}
+
+func TestParseInventoryItemRecordsAcceptsR143PublicBlock(t *testing.T) {
+	// Captured from 0x5209 after R143: 纯洁的精髓 in backpack pocket 123.
+	publicData, err := hex.DecodeString("7b0000008cd34d00808080005c99ed00015381000000000074dfcb006c78f5009db384003c000000000000000800000010000000000000000200000000000000000000000000000000000000000000000000ffff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := ParseInventoryItemRecords(Message{
+		NewMessageElemLong(1),
+		NewMessageElemByte(2),
+		NewMessageElemBin(publicData),
+	})
+	if len(records) != 1 || records[0].Item.ItemId != 5100428 ||
+		records[0].Item.PocketType != 123 || records[0].Item.Amount != 60 {
 		t.Fatalf("records = %#v", records)
 	}
 }
