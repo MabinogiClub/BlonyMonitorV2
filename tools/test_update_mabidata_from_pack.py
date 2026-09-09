@@ -1,6 +1,8 @@
 import unittest
 
-from update_mabidata_from_pack import item_locale_score, pick_item_row
+from pathlib import Path
+
+from update_mabidata_from_pack import item_locale_score, pick_item_row, resolve_pack_file
 
 
 class ItemSelectionTest(unittest.TestCase):
@@ -51,6 +53,18 @@ class ItemSelectionTest(unittest.TestCase):
     def test_exclusion_locale(self) -> None:
         self.assertEqual(item_locale_score("!korea", "china"), 1)
         self.assertIsNone(item_locale_score("!china", "china"))
+
+
+class PackPathTest(unittest.TestCase):
+    def test_strips_data_prefix_from_xml_asset_paths(self) -> None:
+        pack_data = Path("data")
+        resolved = resolve_pack_file(pack_data, r"data/gfx/image/gui_icon_skill_006.dds")
+        self.assertEqual(resolved, Path("data") / "gfx" / "image" / "gui_icon_skill_006.dds")
+
+    def test_keeps_paths_already_relative_to_data(self) -> None:
+        pack_data = Path("data")
+        resolved = resolve_pack_file(pack_data, "gfx/image/gui_icon_skill_006.dds")
+        self.assertEqual(resolved, Path("data") / "gfx" / "image" / "gui_icon_skill_006.dds")
 
 
 if __name__ == "__main__":

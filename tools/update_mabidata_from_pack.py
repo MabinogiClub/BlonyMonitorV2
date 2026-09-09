@@ -159,6 +159,19 @@ def unique_item_rows(
     }
 
 
+def resolve_pack_file(pack_data: Path, relative: str) -> Path:
+    """Resolve a packed asset path against the unpacked data/ directory.
+
+    XML attributes are usually rooted at data/, for example
+    data/gfx/image/gui_icon_skill_006.dds. pack_data already points at that
+    data/ directory, so the leading data/ segment must be stripped.
+    """
+    rel = relative.replace("\\", "/").lstrip("/")
+    if rel.lower().startswith("data/"):
+        rel = rel[5:]
+    return pack_data.joinpath(*rel.split("/")) if rel else pack_data
+
+
 def skill_icons(pack_data: Path, old: sqlite3.Connection, rows: dict[str, dict[str, str]]) -> dict[int, str]:
     """Crop current icons from sprite sheets, falling back to the old DB."""
     icons: dict[int, str] = {}
@@ -177,7 +190,7 @@ def skill_icons(pack_data: Path, old: sqlite3.Connection, rows: dict[str, dict[s
         image_file = attrs.get("ImageFile", "")
         if not image_file:
             continue
-        sheet_path = pack_data / image_file.replace("/", "\\")
+        sheet_path = resolve_pack_file(pack_data, image_file)
         if not sheet_path.exists():
             continue
         try:
