@@ -195,12 +195,10 @@ func (a *App) handleInstanceName(pkt *packet.GamePacket) {
 }
 
 func parseInstanceNamePacket(pkt *packet.GamePacket) (string, uint64, bool) {
-	if len(pkt.Msg) <= 34 {
+	if pkt == nil || len(pkt.Msg) <= 6 {
 		return "", 0, false
 	}
-	if pkt.Msg[5].Type() != packet.MessageElemTypeInt ||
-		pkt.Msg[6].Type() != packet.MessageElemTypeString ||
-		pkt.Msg[34].Type() != packet.MessageElemTypeString {
+	if pkt.Msg[6].Type() != packet.MessageElemTypeString {
 		return "", 0, false
 	}
 
@@ -217,11 +215,19 @@ func parseInstanceNamePacket(pkt *packet.GamePacket) (string, uint64, bool) {
 }
 
 func parseQMMDGNInstanceID(msg packet.Message) uint64 {
-	if len(msg) <= 34 || msg[34].Type() != packet.MessageElemTypeString {
-		return 0
+	for _, elem := range msg {
+		if elem == nil || elem.Type() != packet.MessageElemTypeString {
+			continue
+		}
+		params, _ := elem.Data().(string)
+		if id := parseQMMDGNValue(params); id != 0 {
+			return id
+		}
 	}
+	return 0
+}
 
-	params := msg[34].Data().(string)
+func parseQMMDGNValue(params string) uint64 {
 	idx := findQMMDGN(params)
 	if idx == -1 {
 		return 0
