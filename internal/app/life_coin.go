@@ -69,9 +69,16 @@ func (a *App) handleLifeCoinPacket(pkt *packet.GamePacket) {
 	// Character snapshots contain every currency-pocket stack and are the
 	// authoritative total, which also repairs changes missed while capture was off.
 	if pkt.Op == opcodeCharacterData {
+		records := packet.ParseInventoryItemRecords(pkt.Msg)
+		if len(records) == 0 {
+			// A real login snapshot always has public item blocks. Zero
+			// parsed records means the blob layout was skipped, not that the
+			// character spent every coin.
+			return
+		}
 		total := int64(0)
 		stacks := make(map[uint64]int64)
-		for _, record := range packet.ParseInventoryItemRecords(pkt.Msg) {
+		for _, record := range records {
 			if record.Item == nil || record.Item.PocketType != inventoryCurrencyPocket || record.Item.ItemId != lifeAssociationCoinItemID {
 				continue
 			}

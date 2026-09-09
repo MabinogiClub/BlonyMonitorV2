@@ -256,3 +256,58 @@ func TestLifeCoinTextBalanceSync(t *testing.T) {
 		t.Fatalf("usage = %#v", u)
 	}
 }
+
+func TestLifeCoinEmptySnapshotDoesNotZeroKnownBalance(t *testing.T) {
+	store, err := farmstats.Open(filepath.Join(t.TempDir(), "stats.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	a := NewApp()
+	a.farmStatsStore = store
+	at := time.Date(2026, 9, 9, 16, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	a.handleLifeCoinPacket(&packet.GamePacket{At: at, Op: opcodeCharacterData, Id: 101, Msg: lifeCoinItem(1, 30000)})
+	emptySnapshot := packet.Message{
+		packet.NewMessageElemByte(0), packet.NewMessageElemLong(101), packet.NewMessageElemByte(0),
+		packet.NewMessageElemString("Tester"), packet.NewMessageElemString(""), packet.NewMessageElemString(""), packet.NewMessageElemInt(1),
+	}
+	a.handleLifeCoinPacket(&packet.GamePacket{At: at.Add(time.Minute), Op: opcodeCharacterData, Id: 101, Msg: emptySnapshot})
+	u, err := store.CurrencyUsage("character:101", lifeAssociationCurrency)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Added != 0 || u.Spent != 0 || u.Balance != 30000 {
+		t.Fatalf("unparsed snapshot zeroed the wallet: %#v", u)
+	}
+}
+
+func TestLifeCoinSnapshotWithOtherItemsCanSyncZero(t *testing.T) {
+	store, err := farmstats.Open(filepath.Join(t.TempDir(), "stats.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	a := NewApp()
+	a.farmStatsStore = store
+	at := time.Date(2026, 9, 9, 16, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	a.handleLifeCoinPacket(&packet.GamePacket{At: at, Op: opcodeCharacterData, Id: 101, Msg: lifeCoinItem(1, 30000)})
+	other := make([]byte, 80)
+	binary.LittleEndian.PutUint32(other[0:], 2)
+	binary.LittleEndian.PutUint32(other[4:], 5100428)
+	binary.LittleEndian.PutUint16(other[36:], 60)
+	a.handleLifeCoinPacket(&packet.GamePacket{
+		At: at.Add(time.Minute), Op: opcodeCharacterData, Id: 101,
+		Msg: packet.Message{
+			packet.NewMessageElemByte(0), packet.NewMessageElemLong(101), packet.NewMessageElemByte(0),
+			packet.NewMessageElemString("Tester"), packet.NewMessageElemString(""), packet.NewMessageElemString(""), packet.NewMessageElemInt(1),
+			packet.NewMessageElemLong(9), packet.NewMessageElemByte(2), packet.NewMessageElemBin(other),
+		},
+	})
+	u, err := store.CurrencyUsage("character:101", lifeAssociationCurrency)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Added != 0 || u.Spent != 30000 || u.Balance != 0 {
+		t.Fatalf("parsed snapshot without coins should sync zero: %#v", u)
+	}
+}

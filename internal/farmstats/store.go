@@ -176,13 +176,86 @@ ON CONFLICT(character_id, currency) DO UPDATE SET balance=excluded.balance, upda
 VALUES(?, ?, ?, ?, 1, ?)
 ON CONFLICT(character_id, usage_date, currency) DO UPDATE SET balance=excluded.balance, balance_known=1, updated_at=excluded.updated_at`,
 		characterID, usageDate(at), currency, balance, at.UnixMilli())
-	return err
+	if err != nil {
+		return err
+	}
+	return s.repairSpuriousCurrencyBounces(characterID, currency)
+}
+
+// looksLikeFullWalletBounce detects a same-day wipe-to-zero followed by a
+// restore of the current balance. The added total matches the restored
+// wallet, and the spent total is that wallet plus a comparatively small net
+// change (for example +125796 / -126396 around a 125796 balance).
+func looksLikeFullWalletBounce(added, spent, balance int64) bool {
+	if added <= 0 || spent <= 0 || balance <= 0 || added != balance {
+		return false
+	}
+	diff := spent - added
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff*20 < added
+}
+
+func (s *Store) repairSpuriousCurrencyBounces(characterID, currency string) error {
+	if s == nil || s.db == nil || !isCharacterKey(characterID) || strings.TrimSpace(currency) == "" {
+		return nil
+	}
+	rows, err := s.db.Query(`SELECT usage_date, added, spent, balance FROM currency_usage_daily
+WHERE character_id=? AND currency=?`, characterID, currency)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type bounce struct {
+		date   string
+		added  int64
+		spent  int64
+		netAdd int64
+		netSp  int64
+	}
+	var repairs []bounce
+	for rows.Next() {
+		var date string
+		var added, spent, balance int64
+		if err := rows.Scan(&date, &added, &spent, &balance); err != nil {
+			return err
+		}
+		if !looksLikeFullWalletBounce(added, spent, balance) {
+			continue
+		}
+		net := added - spent
+		repair := bounce{date: date, added: added, spent: spent}
+		if net >= 0 {
+			repair.netAdd = net
+		} else {
+			repair.netSp = -net
+		}
+		repairs = append(repairs, repair)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, repair := range repairs {
+		if _, err := s.db.Exec(`UPDATE currency_usage_daily SET added=?, spent=?
+WHERE character_id=? AND usage_date=? AND currency=? AND added=? AND spent=?`,
+			repair.netAdd, repair.netSp, characterID, repair.date, currency, repair.added, repair.spent); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) CurrencyUsage(characterID, currency string) (CurrencyUsage, error) {
 	u := CurrencyUsage{CharacterID: characterID, Currency: currency}
 	if s == nil || s.db == nil || !isCharacterKey(characterID) || currency == "" {
 		return u, nil
+	}
+	if err := s.repairSpuriousCurrencyBounces(characterID, currency); err != nil {
+		return u, err
 	}
 	err := s.db.QueryRow(`SELECT balance FROM currency_balance WHERE character_id=? AND currency=?`, characterID, currency).Scan(&u.Balance)
 	u.BalanceKnown = err == nil
@@ -217,6 +290,9 @@ func (s *Store) CurrencyUsageHistory(characterID, currency string, at time.Time,
 	}
 	if s == nil || s.db == nil || !isCharacterKey(characterID) || currency == "" {
 		return result, nil
+	}
+	if err := s.repairSpuriousCurrencyBounces(characterID, currency); err != nil {
+		return nil, err
 	}
 	rows, err := s.db.Query(`SELECT usage_date, added, spent, balance FROM currency_usage_daily
 WHERE character_id=? AND currency=? AND usage_date>=? AND usage_date<=?`, characterID, currency, start.Format("2006-01-02"), currentDate)
