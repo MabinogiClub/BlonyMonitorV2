@@ -201,12 +201,68 @@ jobs:
             "prerelease=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
 
+      - name: Resolve version release notes
+        if: steps.meta.outputs.type == 'version'
+        id: notes
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') {
+            throw "Unexpected version tag: $tag"
+          }
+          $version = $Matches[1]
+          $changelogPath = "CHANGELOG.md"
+          if (-not (Test-Path $changelogPath)) {
+            throw "CHANGELOG.md is missing. Add a ## [$version] section before tagging $tag."
+          }
+
+          $escapedVersion = [regex]::Escape($version)
+          $headingPattern = "^##\s+(\[v?$escapedVersion\]|v?$escapedVersion)(\s|$)"
+          $lines = Get-Content -Path $changelogPath
+          $start = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match $headingPattern) {
+              $start = $i
+              break
+            }
+          }
+          if ($start -lt 0) {
+            throw "CHANGELOG.md has no ## [$version] section. Move [Unreleased] notes into that heading before tagging $tag."
+          }
+
+          $end = $lines.Count
+          for ($i = $start + 1; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match '^##\s+' -or $lines[$i] -match '^\[[^\]]+\]:\s+\S') {
+              $end = $i
+              break
+            }
+          }
+
+          $sectionLines = @()
+          if ($end -gt ($start + 1)) {
+            $sectionLines = $lines[($start + 1)..($end - 1)]
+          }
+          $notesText = ($sectionLines -join "`n").Trim()
+          if ([string]::IsNullOrWhiteSpace($notesText)) {
+            throw "CHANGELOG.md section ## [$version] is empty. Write the release notes before tagging $tag."
+          }
+
+          $notesPath = "release-notes.md"
+          Set-Content -Path $notesPath -Value $notesText -Encoding utf8
+          "notes_path=$notesPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Using CHANGELOG.md section [$version] as release notes:"
+          Write-Host $notesText
+
       - name: Publish version release
         if: steps.meta.outputs.type == 'version'
         uses: softprops/action-gh-release@v2
         with:
+          body_path: ${{ steps.notes.outputs.notes_path }}
           generate_release_notes: true
           files: ${{ steps.package.outputs.zip_name }}
+
+
+
 
       - name: Publish dev release
         if: steps.meta.outputs.type == 'dev'
