@@ -310,6 +310,7 @@ func TestTargetBuffCoverageAllowlist(t *testing.T) {
 		"布隆塔纳斯",
 		"雷内恩的米耶尔",
 		"雷内恩的米耶尔:悔恨",
+		"佩隆",
 		"如凯莱赫般坚固的木头人",
 		"如伊鲁夏般坚固的木头人",
 		"如塔赫杜因盖尔塔般坚固的木头人",
@@ -326,6 +327,8 @@ func TestTargetBuffCoverageAllowlist(t *testing.T) {
 		"雷内恩的米耶尔(506240)",
 		"雷内恩的米耶尔:悔恨 #6240",
 		"雷内恩的米耶尔：悔恨 #3871",
+		"佩隆 #8327",
+		"佩隆(193810)",
 	} {
 		if !shouldMonitorTargetBuffCoverage(name) {
 			t.Errorf("formatted target %q should be monitored", name)
