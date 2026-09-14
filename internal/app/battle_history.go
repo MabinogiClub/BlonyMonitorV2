@@ -188,9 +188,13 @@ func (a *App) buildTargetExportSince(sinceSeq int64) []targetExport {
 
 	exportDamage := a.computeExportDamageBySeqUnsafe()
 	now := nowCentiseconds()
-	result := make([]targetExport, 0, len(a.takenStats))
+	retainedTargets := a.retainedTakenTargetIDsUnsafe(sinceSeq, true)
+	result := make([]targetExport, 0, len(retainedTargets))
 
 	for id, stat := range a.takenStats {
+		if _, ok := retainedTargets[id]; !ok {
+			continue
+		}
 		attackers := make([]attackerExport, 0)
 		var targetTotal float64
 		var targetFirstHit, targetLastHit int64
@@ -384,9 +388,13 @@ func (a *App) buildTargetExport() []targetExport {
 	}
 
 	now := nowCentiseconds()
-	result := make([]targetExport, 0, len(a.takenStats))
+	retainedTargets := a.retainedTakenTargetIDsUnsafe(0, false)
+	result := make([]targetExport, 0, len(retainedTargets))
 
 	for id, stat := range a.takenStats {
+		if _, ok := retainedTargets[id]; !ok {
+			continue
+		}
 		attackers := make([]attackerExport, 0)
 		for attackerID, attackerStat := range stat.attackers {
 			percent := 0.0
@@ -934,11 +942,16 @@ func (a *App) ReadCleanedTargetFileFull(fileName string) interface{} {
 				delete(obj, "bossHP")
 			}
 
+			obj["targets"] = keepRetainedRawTargets(targetsArr)
 			return obj
 		}
 		return map[string]interface{}{
 			"targets": raw,
 		}
+	}
+
+	if arr, ok := raw.([]interface{}); ok {
+		return keepRetainedRawTargets(arr)
 	}
 
 	return raw

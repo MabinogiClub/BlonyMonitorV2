@@ -509,7 +509,11 @@ func (a *App) GetDamageTaken() []TargetDamageStats {
 
 	result := make([]TargetDamageStats, 0)
 	now := eventNow()
+	retainedTargets := a.retainedTakenTargetIDsUnsafe(0, false)
 	for targetId, targetStat := range a.takenStats {
+		if _, ok := retainedTargets[targetId]; !ok {
+			continue
+		}
 		targetTotal := a.aggregateTargetHitRecordsUnsafe(targetId, exportDamage)
 		attackers := make([]AttackerWithSkills, 0)
 
