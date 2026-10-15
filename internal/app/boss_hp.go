@@ -3,7 +3,6 @@ package app
 import (
 	"math"
 	"strconv"
-	"time"
 
 	"blonymonitorv2/internal/packet"
 )
@@ -16,6 +15,9 @@ const (
 	bossHPLockMinMaxHP           = 100000.0
 	bossHPLockMinOverflow        = 1000.0
 	bossHPLockMinOverflowPercent = 0.01
+	// bossHPHistoryMaxEntries 单个实体的 HP 历史上限。被裁掉的旧窗口已在实时路径
+	// 就地修正（pending 窗口会在后续伤害/结算时解析），导出重放只依赖保留的最近窗口。
+	bossHPHistoryMaxEntries = 8192
 )
 
 type bossDamageOverflowAdjustResult struct {
@@ -57,7 +59,9 @@ func (a *App) handleEntityProperty(pkt *packet.GamePacket) {
 	}
 
 	id := strconv.FormatUint(pkt.Id, 10)
-	now := time.Now().UnixMilli() / 10
+	// 用数据包自带的抓包时刻，与伤害记录（packetCentiseconds）保持同一条时间轴：
+	// 处理滞后时 time.Now() 会让血量时间线整体后移，把 duration/DPS 算错。
+	now := packetCentiseconds(pkt)
 
 	a.mu.Lock()
 	raceID := a.getEntityRaceIDUnsafe(id)
@@ -78,6 +82,11 @@ func (a *App) handleEntityProperty(pkt *packet.GamePacket) {
 		prevPercent = prev.Percent
 		prevDamageSeq = prev.DamageSeq
 		hasPrev = true
+		// 同一个实体 ID 会被不同怪物复用：血量从"几乎见底"跳回"接近满血"说明换了实体，
+		// 旧的血量历史必须丢弃，否则归零点会被后续实体污染，时长与导出重放都会算错。
+		if prevHP < maxHP*0.1 && currentHP >= maxHP*0.9 {
+			delete(a.bossHPHistory, id)
+		}
 	}
 
 	a.bossHP[id] = &BossHPInfo{
@@ -100,6 +109,7 @@ func (a *App) handleEntityProperty(pkt *packet.GamePacket) {
 		HpTimestamp: now,
 		DamageSeq:   currentDamageSeq,
 	})
+	a.capBossHPHistoryUnsafe(id)
 
 	var overflowResult bossDamageOverflowAdjustResult
 	consumeDamageWindow := !hasPrev
@@ -334,6 +344,17 @@ func parseEntityProperties(msg packet.Message) map[uint32]float64 {
 		props[key] = value
 	}
 	return props
+}
+
+// capBossHPHistoryUnsafe 限制单个实体的 HP 历史长度，避免长时间战斗时历史无限增长
+// 拖慢导出重放。只保留最近 bossHPHistoryMaxEntries 条：旧窗口的溢出修正已在实时路径
+// 就地应用，导出重放是幂等的，因此裁剪头部不影响结算结果。
+func (a *App) capBossHPHistoryUnsafe(id string) {
+	history := a.bossHPHistory[id]
+	if len(history) <= bossHPHistoryMaxEntries {
+		return
+	}
+	a.bossHPHistory[id] = history[len(history)-bossHPHistoryMaxEntries:]
 }
 
 func (a *App) clearBossHP(entityID string) {

@@ -2,6 +2,7 @@ package app
 
 import (
 	"math"
+	"sort"
 	"time"
 )
 
@@ -31,25 +32,58 @@ func (a *App) getExportDamage() map[int64]float64 {
 	}
 	a.exportDamageMu.Unlock()
 
+	// 在读锁内构建基础映射并只拷贝会参与重放的目标（写时复制），重放本身放到锁外。
 	a.mu.RLock()
-	targetDamages := cloneTargetDamagesMap(a.targetDamages)
-	bossHPHistory := cloneBossHPHistoryMap(a.bossHPHistory)
+	exportDamage := buildExportDamageMap(a.targetDamages)
+	adjustRecords := cloneAdjustableTargetDamages(a.targetDamages, a.bossHPHistory)
+	bossHPHistory := cloneBossHPHistoryForTargets(a.bossHPHistory, adjustRecords)
 	bossHPMax := snapshotBossHPMaxUnsafe(a.bossHP, a.bossHPHistory)
 	a.mu.RUnlock()
 
-	cache := computeExportDamageOnSnapshot(targetDamages, bossHPHistory, bossHPMax)
+	applyExportDamageAdjustments(adjustRecords, bossHPHistory, bossHPMax, exportDamage)
 
 	a.exportDamageMu.Lock()
-	a.exportDamageCache = cache
+	a.exportDamageCache = exportDamage
 	a.exportDamageDirty = false
 	a.exportDamageBuiltAt = time.Now()
 	a.exportDamageMu.Unlock()
-	return cache
+	return exportDamage
 }
 
-func cloneBossHPHistoryMap(src map[string][]BossHPRecord) map[string][]BossHPRecord {
-	dst := make(map[string][]BossHPRecord, len(src))
-	for id, records := range src {
+// buildExportDamageMap 汇总所有目标的 seq→伤害原始映射。
+func buildExportDamageMap(targetDamages map[string][]DamageRecord) map[int64]float64 {
+	exportDamage := make(map[int64]float64)
+	for _, records := range targetDamages {
+		for _, r := range records {
+			exportDamage[r.Seq] = r.Damage
+		}
+	}
+	return exportDamage
+}
+
+// cloneAdjustableTargetDamages 只拷贝会参与 HP 时间线重放的目标（有伤害记录且 HP 历史
+// 至少两条）。其余目标在重放中只读不写，无需拷贝，避免每次导出全量深拷贝。
+func cloneAdjustableTargetDamages(targetDamages map[string][]DamageRecord, bossHPHistory map[string][]BossHPRecord) map[string][]DamageRecord {
+	adjustRecords := make(map[string][]DamageRecord)
+	for id, records := range targetDamages {
+		if len(records) == 0 || len(bossHPHistory[id]) < 2 {
+			continue
+		}
+		copied := make([]DamageRecord, len(records))
+		copy(copied, records)
+		adjustRecords[id] = copied
+	}
+	return adjustRecords
+}
+
+// cloneBossHPHistoryForTargets 只克隆 targetIDs 对应的 HP 历史。
+func cloneBossHPHistoryForTargets(src map[string][]BossHPRecord, targetIDs map[string][]DamageRecord) map[string][]BossHPRecord {
+	dst := make(map[string][]BossHPRecord, len(targetIDs))
+	for id := range targetIDs {
+		records, ok := src[id]
+		if !ok {
+			continue
+		}
 		copied := make([]BossHPRecord, len(records))
 		copy(copied, records)
 		dst[id] = copied
@@ -129,31 +163,25 @@ func (a *App) adjustBossDamageOverflowUnsafe(targetIdStr string, fromSeq, toSeq 
 		return result
 	}
 
-	indexes := make([]int, 0)
-	totalDamage := 0.0
-	for i := range records {
-		r := records[i]
-		if r.Seq <= fromSeq || r.Seq > toSeq || r.Damage <= 0 {
-			continue
-		}
-		indexes = append(indexes, i)
-		totalDamage += r.Damage
-	}
-	if len(indexes) == 0 {
+	lo, hi := seqWindowRange(records, fromSeq, toSeq)
+	if lo >= hi {
 		return result
 	}
 
 	tolerance := bossDamageSyncTolerance(maxHP)
-	overflow := totalDamage - hpDelta
+	scan := scanBossDamageWindow(records, lo, hi, hpDelta, tolerance)
+	if scan.hitCount == 0 {
+		return result
+	}
+	overflow := scan.totalDamage - hpDelta
 	if overflow <= tolerance {
 		return result
 	}
 	result.Overflow = overflow
 
-	triggerIndex := findBossLockTriggerIndex(records, indexes, hpDelta, tolerance)
 	canMarkLockTrigger := markLockTrigger && lockThreshold > 0 && isMeaningfulBossLockOverflow(overflow, maxHP)
-	if triggerIndex >= 0 && canMarkLockTrigger {
-		trigger := &a.targetDamages[targetIdStr][triggerIndex]
+	if scan.triggerIndex >= 0 && canMarkLockTrigger {
+		trigger := &a.targetDamages[targetIdStr][scan.triggerIndex]
 		trigger.LockTriggered = true
 		trigger.LockThreshold = lockThreshold
 		result.TriggerFound = true
@@ -168,39 +196,80 @@ func adjustBossDamageOverflowOnClone(records []DamageRecord, fromSeq, toSeq int6
 		return
 	}
 
-	indexes := make([]int, 0)
-	totalDamage := 0.0
-	for i := range records {
-		r := records[i]
-		if r.Seq <= fromSeq || r.Seq > toSeq || r.Damage <= 0 {
-			continue
-		}
-		indexes = append(indexes, i)
-		totalDamage += r.Damage
-	}
-	if len(indexes) == 0 {
+	lo, hi := seqWindowRange(records, fromSeq, toSeq)
+	if lo >= hi {
 		return
 	}
 
 	tolerance := bossDamageSyncTolerance(maxHP)
-	overflow := totalDamage - hpDelta
+	scan := scanBossDamageWindow(records, lo, hi, hpDelta, tolerance)
+	if scan.hitCount == 0 {
+		return
+	}
+	overflow := scan.totalDamage - hpDelta
 	if overflow <= tolerance {
 		return
 	}
 
-	triggerIndex := findBossLockTriggerIndex(records, indexes, hpDelta, tolerance)
 	canMarkLockTrigger := markLockTrigger && lockThreshold > 0 && isMeaningfulBossLockOverflow(overflow, maxHP)
 	canAttachLockThreshold := lockThreshold > 0 && (!markLockTrigger || canMarkLockTrigger)
+	applyBossDamageOverflowCuts(records, lo, hi, overflow, scan.triggerIndex, lockThreshold, canMarkLockTrigger, canAttachLockThreshold)
+}
+
+// seqWindowRange 用二分查找定位 Seq ∈ (fromSeq, toSeq] 的记录区间 [lo, hi)。
+// records 必须按 Seq 升序排列：targetDamages 只按全局递增的 damageSeq 追加，
+// 从不重排，因此该前提始终成立。
+func seqWindowRange(records []DamageRecord, fromSeq, toSeq int64) (lo, hi int) {
+	lo = sort.Search(len(records), func(i int) bool { return records[i].Seq > fromSeq })
+	hi = sort.Search(len(records), func(i int) bool { return records[i].Seq > toSeq })
+	return lo, hi
+}
+
+type bossDamageWindowScan struct {
+	totalDamage  float64 // 窗口内正伤害之和
+	hitCount     int     // 窗口内正伤害记录数
+	triggerIndex int     // 累计伤害首次超过 hpDelta+tolerance 的记录下标；未超过时为最后一个正伤害记录
+}
+
+// scanBossDamageWindow 单趟扫描窗口区间，同时完成伤害求和与锁血触发点定位，
+// 替代原先“建索引求和 + 再扫一遍找触发点”的两次遍历。
+func scanBossDamageWindow(records []DamageRecord, lo, hi int, hpDelta, tolerance float64) bossDamageWindowScan {
+	scan := bossDamageWindowScan{triggerIndex: -1}
+	if tolerance < bossDamageAdjustEpsilon {
+		tolerance = bossDamageAdjustEpsilon
+	}
+	limit := hpDelta + tolerance
+	triggerFound := false
+	for i := lo; i < hi; i++ {
+		damage := records[i].Damage
+		if damage <= 0 {
+			continue
+		}
+		scan.totalDamage += damage
+		scan.hitCount++
+		if !triggerFound {
+			if scan.totalDamage > limit {
+				scan.triggerIndex = i
+				triggerFound = true
+			} else {
+				scan.triggerIndex = i
+			}
+		}
+	}
+	return scan
+}
+
+// applyBossDamageOverflowCuts 从窗口尾部向前削减溢出伤害；必要时先标记锁血触发记录。
+func applyBossDamageOverflowCuts(records []DamageRecord, lo, hi int, overflow float64, triggerIndex int, lockThreshold float64, canMarkLockTrigger, canAttachLockThreshold bool) {
 	if triggerIndex >= 0 && canMarkLockTrigger {
 		records[triggerIndex].LockTriggered = true
 		records[triggerIndex].LockThreshold = lockThreshold
 	}
-
-	for i := len(indexes) - 1; i >= 0 && overflow > bossDamageAdjustEpsilon; i-- {
-		if canMarkLockTrigger && triggerIndex >= 0 && indexes[i] < triggerIndex {
+	for i := hi - 1; i >= lo && overflow > bossDamageAdjustEpsilon; i-- {
+		if canMarkLockTrigger && triggerIndex >= 0 && i < triggerIndex {
 			break
 		}
-		record := &records[indexes[i]]
+		record := &records[i]
 		cut := record.Damage
 		if cut > overflow {
 			cut = overflow
@@ -232,25 +301,6 @@ func bossDamageSyncTolerance(maxHP float64) float64 {
 		return bossDamageAdjustEpsilon
 	}
 	return step
-}
-
-func findBossLockTriggerIndex(records []DamageRecord, indexes []int, hpDelta float64, tolerance float64) int {
-	if len(indexes) == 0 {
-		return -1
-	}
-	if tolerance < bossDamageAdjustEpsilon {
-		tolerance = bossDamageAdjustEpsilon
-	}
-
-	total := 0.0
-	for i := 0; i < len(indexes); i++ {
-		idx := indexes[i]
-		total += records[idx].Damage
-		if total > hpDelta+tolerance {
-			return idx
-		}
-	}
-	return indexes[len(indexes)-1]
 }
 
 func isMeaningfulBossLockOverflow(overflow, maxHP float64) bool {
@@ -290,13 +340,12 @@ func (a *App) resolvePendingBossHPDamageWindowUnsafe(id string, toSeq int64) []D
 	}
 
 	records := a.targetDamages[id]
+	lo, hi := seqWindowRange(records, pending.FromSeq, toSeq)
 	totalDamage := 0.0
-	for i := range records {
-		r := records[i]
-		if r.Seq <= pending.FromSeq || r.Seq > toSeq || r.Damage <= 0 {
-			continue
+	for i := lo; i < hi; i++ {
+		if records[i].Damage > 0 {
+			totalDamage += records[i].Damage
 		}
-		totalDamage += r.Damage
 	}
 
 	tolerance := bossDamageSyncTolerance(pending.MaxHP)
@@ -390,16 +439,6 @@ func cutDamageRecordInPlace(record *DamageRecord, cut float64) {
 	record.Adjusted = true
 }
 
-func cloneTargetDamagesMap(src map[string][]DamageRecord) map[string][]DamageRecord {
-	dst := make(map[string][]DamageRecord, len(src))
-	for id, records := range src {
-		cloned := make([]DamageRecord, len(records))
-		copy(cloned, records)
-		dst[id] = cloned
-	}
-	return dst
-}
-
 func capTargetDamageRecordsToMaxHP(records []DamageRecord, maxHP float64) {
 	if maxHP <= 0 || len(records) == 0 {
 		return
@@ -425,10 +464,21 @@ func capTargetDamageRecordsToMaxHP(records []DamageRecord, maxHP float64) {
 	}
 }
 
-// computeExportDamageOnSnapshot 在数据快照上重放 Boss HP 时间线并修正伤害。
-func computeExportDamageOnSnapshot(cloned map[string][]DamageRecord, bossHPHistory map[string][]BossHPRecord, bossHPMax map[string]float64) map[int64]float64 {
-	for targetID, history := range bossHPHistory {
-		records := cloned[targetID]
+// computeExportDamageOnSnapshot 在目标伤害快照上重放 Boss HP 时间线并修正伤害。
+// targetDamages/bossHPHistory 在调用期间必须保持一致快照（调用方负责加锁或提前克隆）。
+// 只有会参与修正的目标才会拷贝记录（写时复制），其余目标仅读取。
+func computeExportDamageOnSnapshot(targetDamages map[string][]DamageRecord, bossHPHistory map[string][]BossHPRecord, bossHPMax map[string]float64) map[int64]float64 {
+	exportDamage := buildExportDamageMap(targetDamages)
+	adjustRecords := cloneAdjustableTargetDamages(targetDamages, bossHPHistory)
+	applyExportDamageAdjustments(adjustRecords, bossHPHistory, bossHPMax, exportDamage)
+	return exportDamage
+}
+
+// applyExportDamageAdjustments 在拷贝出的目标记录上重放 Boss HP 时间线，
+// 并把修正后的 seq→伤害写回 exportDamage。
+func applyExportDamageAdjustments(adjustRecords map[string][]DamageRecord, bossHPHistory map[string][]BossHPRecord, bossHPMax map[string]float64, exportDamage map[int64]float64) {
+	for targetID, records := range adjustRecords {
+		history := bossHPHistory[targetID]
 		if len(records) == 0 || len(history) < 2 {
 			continue
 		}
@@ -457,21 +507,16 @@ func computeExportDamageOnSnapshot(cloned map[string][]DamageRecord, bossHPHisto
 		if last.CurrentHP <= bossDamageAdjustEpsilon && maxHP > 0 {
 			capTargetDamageRecordsToMaxHP(records, maxHP)
 		}
-		cloned[targetID] = records
-	}
-	exportDamage := make(map[int64]float64)
-	for _, records := range cloned {
 		for _, r := range records {
 			exportDamage[r.Seq] = r.Damage
 		}
 	}
-	return exportDamage
 }
 
 // computeExportDamageBySeqUnsafe 在持锁上下文内计算导出伤害（用于历史保存）。
 func (a *App) computeExportDamageBySeqUnsafe() map[int64]float64 {
 	return computeExportDamageOnSnapshot(
-		cloneTargetDamagesMap(a.targetDamages),
+		a.targetDamages,
 		a.bossHPHistory,
 		snapshotBossHPMaxUnsafe(a.bossHP, a.bossHPHistory),
 	)

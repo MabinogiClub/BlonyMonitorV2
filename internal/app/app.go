@@ -130,6 +130,8 @@ type App struct {
 	battlefieldShockStates      map[string]*battlefieldShockState
 	battlefieldShockGeneration  uint64
 	analysisLog                 *analysisLogController
+	saveWriterMu                sync.Mutex
+	saveWriter                  *saveWriter
 	inventoryStore              *inventory.Store
 	farmStatsStore              *farmstats.Store
 	lifeCoinStacks              map[string]map[uint64]int64
@@ -188,6 +190,9 @@ func NewApp() *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx, a.cancel = context.WithCancel(ctx)
 	migrateLegacyUserData()
+	// 调试支撑：回环 pprof HTTP 口子 + 触发文件轮询（运行中可随时抓一段 profile）。
+	startPprofEndpoint()
+	startPprofTriggerWatcher(ensureUserDataDirectory())
 	if loadAnalysisLogEnabled() {
 		if err := a.startAnalysisLog(); err != nil {
 			logger.Printf("[AnalysisLog] 启动失败: %v", err)
@@ -250,6 +255,10 @@ func (a *App) Startup(ctx context.Context) {
 // Shutdown ???????
 func (a *App) Shutdown(ctx context.Context) {
 	a.shutdownSaveData()
+	// 战斗切换/手动保存现在是异步落盘，退出前等它们写完（网络上传不受影响，仍是后台）。
+	if !a.flushPendingSaves(5 * time.Second) {
+		logger.Printf("[Shutdown] 仍有排定中的保存未完成（已等待 5s）\n")
+	}
 	a.stopAnalysisLog()
 	if a.farmRecommendationMgr != nil {
 		a.farmRecommendationMgr.close()
