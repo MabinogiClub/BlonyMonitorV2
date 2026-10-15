@@ -655,24 +655,62 @@ func (a *App) resolveSaveName(mapName string) string {
 	return finalizeSaveName(a.currentSaveNameUnsafe(mapName))
 }
 
-func (a *App) saveTakenStatsLocked(saveName string, sinceSeq int64) (string, int, int, error) {
+// prepareSaveTaskLocked 在锁内构建保存快照（不序列化、不写盘）。
+// 返回 ok=false 表示本次没有可保存的数据。
+func (a *App) prepareSaveTaskLocked(saveName string, sinceSeq int64) (saveTask, int, int, bool) {
+	// 上一次异步写盘彻底失败时把起点回退：这段战斗记录仍会被写入，不会无声丢掉。
+	if earliest := a.pendingSaveSince(); earliest >= 0 && sinceSeq > 0 && earliest < sinceSeq {
+		sinceSeq = earliest
+	}
+
 	saveData := a.buildSaveFileDataSince(sinceSeq)
 	if len(saveData.Targets) == 0 {
-		return "", 0, 0, nil
+		return saveTask{}, 0, 0, false
 	}
 
 	timeStr := time.Now().Format("2006-01-02_15-04-05")
 	fileName := fmt.Sprintf("%s_%s%s", timeStr, saveName, saveFileExtension)
 	filePath := filepath.Join(a.saveDir(), fileName)
 
-	finalPath, err := writeSaveFile(filePath, saveData)
+	return saveTask{
+		saveData: saveData,
+		filePath: filePath,
+		saveName: saveName,
+		sinceSeq: sinceSeq,
+		upload:   a.prepareBattleUploadUnsafe(saveName, filePath),
+	}, len(saveData.Targets), countBossHPTargets(saveData.Targets), true
+}
+
+// saveTakenStatsLocked 排定一次保存：调用方（持写锁）只构建快照并入队，
+// json/gzip/写盘/上传由后台 writer 串行完成，因此这里返回的是排定路径
+// （真实落盘路径见 [Save] 日志）。
+func (a *App) saveTakenStatsLocked(saveName string, sinceSeq int64) (string, int, int, error) {
+	task, targetCount, bossHPCount, ok := a.prepareSaveTaskLocked(saveName, sinceSeq)
+	if !ok {
+		return "", 0, 0, nil
+	}
+	a.enqueueSaveTask(task)
+	return task.filePath, targetCount, bossHPCount, nil
+}
+
+// saveTakenStatsImmediateLocked 同步写盘（程序退出路径使用），确保退出前一定落盘。
+// 上传仍走后台，网络不该卡住退出流程。
+func (a *App) saveTakenStatsImmediateLocked(saveName string, sinceSeq int64) (string, int, int, error) {
+	task, targetCount, bossHPCount, ok := a.prepareSaveTaskLocked(saveName, sinceSeq)
+	if !ok {
+		return "", 0, 0, nil
+	}
+
+	finalPath, err := writeSaveFile(task.filePath, task.saveData)
 	if err != nil {
 		return "", 0, 0, err
 	}
-	recordLastBattleSave(saveName, filepath.Base(finalPath))
+	recordLastBattleSave(task.saveName, filepath.Base(finalPath))
 	a.emitHistorySaved(finalPath)
-	a.scheduleBattleUpload(saveData, finalPath, saveName)
-	return finalPath, len(saveData.Targets), countBossHPTargets(saveData.Targets), nil
+	if task.upload != nil {
+		go a.runBattleUpload(*task.upload, task.saveData, finalPath)
+	}
+	return finalPath, targetCount, bossHPCount, nil
 }
 
 func (a *App) emitHistorySaved(filePath string) {
@@ -805,7 +843,8 @@ func (a *App) shutdownSaveData() {
 
 	saveName := a.resolveSaveName("退出保存")
 	sinceSeq := a.damageSeqAtLastAutoSave
-	finalPath, targetCount, bossHPCount, err := a.saveTakenStatsLocked(saveName, sinceSeq)
+	// 退出路径同步写盘：程序马上要结束，不能只入队。
+	finalPath, targetCount, bossHPCount, err := a.saveTakenStatsImmediateLocked(saveName, sinceSeq)
 	if err != nil {
 		logger.Printf("[Shutdown] 保存失败: %v\n", err)
 		return

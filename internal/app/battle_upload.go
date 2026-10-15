@@ -190,53 +190,59 @@ func marshalBattleUpload(data SaveFileData) ([]byte, error) {
 	return marshalSaveJSON(buildBattleUploadPayload(data))
 }
 
-// scheduleBattleUpload 在战斗记录保存后异步上传。调用方必须已持有 a.mu。
-func (a *App) scheduleBattleUpload(saveData SaveFileData, filePath, saveName string) {
+// prepareBattleUploadUnsafe 判定本次保存是否需要上传，并快照上传所需状态（玩家 ID/昵称）。
+// 调用方必须已持有 a.mu。过滤、序列化与网络都交给后台执行，见 runBattleUpload。
+func (a *App) prepareBattleUploadUnsafe(saveName, filePath string) *battleUploadPlan {
 	fileName := filepath.Base(filePath)
 
 	if reason := uploadBlockReason(saveName); reason != "" {
 		uploadLog.Printf("跳过上传：%s (dungeon=%s file=%s)\n", reason, saveName, fileName)
 		recordUploadSkipped(saveName, fileName, reason)
-		return
+		return nil
 	}
 
-	playerID := a.selfId
-	playerName := a.selfName
-
-	if playerID == "" {
+	if a.selfId == "" {
 		uploadLog.Printf("跳过上传：未识别到玩家 ID (dungeon=%s file=%s)\n", saveName, fileName)
 		recordUploadSkipped(saveName, fileName, "未识别到玩家 ID")
-		return
+		return nil
 	}
+
+	return &battleUploadPlan{playerID: a.selfId, playerName: a.selfName, saveName: saveName}
+}
+
+// runBattleUpload 在后台（无需持有 a.mu）完成上传：过滤 -> 序列化(gzip) -> 异步 POST。
+// 这几步对 1MB+ 的存档是百毫秒量级，历史上都在写锁里做，是保存卡顿的一半来源。
+func (a *App) runBattleUpload(plan battleUploadPlan, saveData SaveFileData, filePath string) {
+	fileName := filepath.Base(filePath)
 
 	uploadData := filterSaveDataForUpload(saveData)
 	if len(uploadData.Targets) == 0 {
-		uploadLog.Printf("跳过上传：无符合血量条件的目标 (dungeon=%s file=%s)\n", saveName, fileName)
-		recordUploadSkipped(saveName, fileName, "无符合血量条件的目标")
+		uploadLog.Printf("跳过上传：无符合血量条件的目标 (dungeon=%s file=%s)\n", plan.saveName, fileName)
+		recordUploadSkipped(plan.saveName, fileName, "无符合血量条件的目标")
 		return
 	}
 
 	// Buff 数据放在根级扩展中，旧服务端可忽略未知字段，上传仍只有一个文件。
 	gzData, err := marshalBattleUpload(uploadData)
 	if err != nil {
-		uploadLog.Printf("序列化失败 (dungeon=%s file=%s): %v\n", saveName, fileName, err)
-		recordUploadSkipped(saveName, fileName, fmt.Sprintf("序列化失败: %v", err))
+		uploadLog.Printf("序列化失败 (dungeon=%s file=%s): %v\n", plan.saveName, fileName, err)
+		recordUploadSkipped(plan.saveName, fileName, fmt.Sprintf("序列化失败: %v", err))
 		return
 	}
 	endpoint := strings.TrimSpace(config.UploadEndpoint)
 	maskedEndpoint := maskUploadEndpoint(endpoint)
-	dungeonName := saveName
+	dungeonName := plan.saveName
 	targetCount := len(uploadData.Targets)
 	payloadBytes := len(gzData)
 
 	recordUploadUploading(dungeonName, fileName)
 	uploadLog.Printf(
 		"开始上传: dungeon=%s file=%s player=%s(%s) targets=%d payload=%d bytes endpoint=%s\n",
-		dungeonName, fileName, playerName, playerID, targetCount, payloadBytes, maskedEndpoint,
+		dungeonName, fileName, plan.playerName, plan.playerID, targetCount, payloadBytes, maskedEndpoint,
 	)
 
 	go func() {
-		if err := postBattleUploadWithRetry(endpoint, playerID, playerName, dungeonName, fileName, gzData, targetCount); err != nil {
+		if err := postBattleUploadWithRetry(endpoint, plan.playerID, plan.playerName, dungeonName, fileName, gzData, targetCount); err != nil {
 			uploadLog.Printf("上传失败: dungeon=%s file=%s err=%v\n", dungeonName, fileName, err)
 		}
 	}()
