@@ -186,7 +186,7 @@ func TestFinishEventEndsPlayerStatuses(t *testing.T) {
 	}, 100)
 	a.mu.Unlock()
 
-	a.addFinishEvent(1, 2)
+	a.addFinishEvent(1, 2, 0)
 
 	a.mu.RLock()
 	defer a.mu.RUnlock()
