@@ -4,17 +4,16 @@ import (
 	"blonymonitorv2/db"
 )
 
-// getSkillNameUnsafe 获取技能名称（需要在锁内调用）
+// getSkillNameUnsafe 获取技能名称（需要在锁内调用）。
+// 走进程内缓存：该函数会在每个 (target, attacker, skill) 组合上被调用，
+// 直接查库会把 CPU 打满并长时间占用读锁，见 resource_cache.go。
 func (a *App) getSkillNameUnsafe(skillId int) string {
-	skillInfo := db.NewSkillInfo(skillId)
-	return skillInfo.GetName()
+	return skillNameCache.name(skillId)
 }
 
-// getConditionNameUnsafe 获取状态名称（需要在锁内调用）
+// getConditionNameUnsafe 获取状态名称（需要在锁内调用）。
 func (a *App) getConditionNameUnsafe(conditionId uint32) string {
-	id := int(conditionId)
-	conditionInfo := db.NewCharacterCondition(id)
-	return conditionInfo.GetName()
+	return conditionNameCache.name(int(conditionId))
 }
 
 // GetSkillName 获取技能名称 (供前端调用)
