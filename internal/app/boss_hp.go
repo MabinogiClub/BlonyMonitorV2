@@ -84,8 +84,12 @@ func (a *App) handleEntityProperty(pkt *packet.GamePacket) {
 		hasPrev = true
 		// 同一个实体 ID 会被不同怪物复用：血量从"几乎见底"跳回"接近满血"说明换了实体，
 		// 旧的血量历史必须丢弃，否则归零点会被后续实体污染，时长与导出重放都会算错。
-		if prevHP < maxHP*0.1 && currentHP >= maxHP*0.9 {
+		// 使用旧/新的百分比，避免新实体的 MaxHP 让阈值比较失真。
+		if isBossEntityReuse(prevPercent, percent) {
 			delete(a.bossHPHistory, id)
+			if targetStat := a.takenStats[id]; targetStat != nil {
+				targetStat.deathTime = 0
+			}
 		}
 	}
 
@@ -177,6 +181,10 @@ func (a *App) handleEntityProperty(pkt *packet.GamePacket) {
 	a.clearInactiveBossHPLockPlatformUnsafe(id, currentHP, percent)
 	a.markExportDamageDirty()
 	a.mu.Unlock()
+}
+
+func isBossEntityReuse(previousPercent, currentPercent float64) bool {
+	return previousPercent < 10 && currentPercent >= 90
 }
 
 func (a *App) markBossHPLockUnsafe(id, name string, raceID int, currentHP, maxHP, percent, prevHP, prevPercent float64, now int64, overflowResult bossDamageOverflowAdjustResult) (float64, bool) {

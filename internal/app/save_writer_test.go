@@ -139,7 +139,7 @@ func TestSaveWriterRecordsFailureForRetry(t *testing.T) {
 		t.Fatalf("更晚的起点不应清除标记，实际 = %d", got)
 	}
 
-	// 回退后的任务（起点 = 失败起点）成功时才清除标记。
+	// 新快照不能替代原失败快照，即使它使用相同的起点序号。
 	app.enqueueSaveTask(saveTask{
 		saveData: SaveFileData{Targets: []targetExport{{TargetID: "3"}}},
 		filePath: filepath.Join(dir, "save", "good-retry.json.gz"),
@@ -149,8 +149,47 @@ func TestSaveWriterRecordsFailureForRetry(t *testing.T) {
 	if !app.flushPendingSaves(10 * time.Second) {
 		t.Fatal("flush 超时")
 	}
+	if got := app.pendingSaveSince(); got != 42 {
+		t.Fatalf("原失败快照应保留，实际起点 = %d", got)
+	}
+}
+
+func TestSaveWriterRetainsFailedSnapshotAfterLiveStateIsCleared(t *testing.T) {
+	dir := setupSaveWriterTest(t)
+	app := &App{}
+	badPath := filepath.Join(dir, "save", "bad<>name.json.gz")
+	app.enqueueSaveTask(saveTask{
+		saveData: SaveFileData{Targets: []targetExport{{TargetID: "preserved", TotalDamage: 900}}},
+		filePath: badPath,
+		saveName: "失败后清空",
+		sinceSeq: 42,
+	})
+	if !app.flushPendingSaves(10 * time.Second) {
+		t.Fatal("flush 超时")
+	}
+
+	app.mu.Lock()
+	app.clearDamageStateUnsafe()
+	app.mu.Unlock()
+
+	writer := app.saveWriter
+	writer.mu.Lock()
+	if len(writer.failedTasks) != 1 || writer.failedTasks[0].saveData.Targets[0].TargetID != "preserved" {
+		writer.mu.Unlock()
+		t.Fatalf("完整失败快照未保留: %+v", writer.failedTasks)
+	}
+	writer.failedTasks[0].filePath = filepath.Join(dir, "save", "recovered.json.gz")
+	writer.mu.Unlock()
+
+	if !app.flushPendingSaves(10 * time.Second) {
+		t.Fatal("重试失败快照超时")
+	}
+	parsed := readSavedTargets(t, filepath.Join(dir, "save", "recovered.json.gz"))
+	if len(parsed.Targets) != 1 || parsed.Targets[0].TargetID != "preserved" || parsed.Targets[0].TotalDamage != 900 {
+		t.Fatalf("恢复保存的内容错误: %+v", parsed.Targets)
+	}
 	if got := app.pendingSaveSince(); got >= 0 {
-		t.Fatalf("回退起点成功后应清除标记，实际 = %d", got)
+		t.Fatalf("成功重试后仍有失败标记: %d", got)
 	}
 }
 

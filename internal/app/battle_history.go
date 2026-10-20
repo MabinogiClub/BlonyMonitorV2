@@ -666,11 +666,6 @@ func (a *App) resolveSaveName(mapName string) string {
 // prepareSaveTaskLocked 在锁内构建保存快照（不序列化、不写盘）。
 // 返回 ok=false 表示本次没有可保存的数据。
 func (a *App) prepareSaveTaskLocked(saveName string, sinceSeq int64) (saveTask, int, int, bool) {
-	// 上一次异步写盘彻底失败时把起点回退：这段战斗记录仍会被写入，不会无声丢掉。
-	if earliest := a.pendingSaveSince(); earliest >= 0 && sinceSeq > 0 && earliest < sinceSeq {
-		sinceSeq = earliest
-	}
-
 	saveData := a.buildSaveFileDataSince(sinceSeq)
 	if len(saveData.Targets) == 0 {
 		return saveTask{}, 0, 0, false

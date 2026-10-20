@@ -29,10 +29,11 @@ type saveTask struct {
 	// 以 [Save] 日志里的路径为准。
 	filePath string
 	saveName string
-	// sinceSeq 是本次保存覆盖的起点；写盘最终失败时用它回退，避免这段战斗记录丢失。
-	sinceSeq int64
-	upload   *battleUploadPlan
-	retries  int
+	// sinceSeq 标记本次保存的起点，用于诊断失败范围。
+	sinceSeq      int64
+	upload        *battleUploadPlan
+	retries       int
+	retryOfFailed bool
 }
 
 const saveTaskMaxRetries = 2
@@ -44,14 +45,15 @@ type saveWriter struct {
 	queue   []saveTask
 	running bool
 	written uint64
-	// failedSeq 记录"最早一次彻底写盘失败"的起点序号（<0 表示没有）。
-	// 下一次保存在构建快照时会把起点回退到这里，保证这段数据不会无声丢掉。
-	failedSeq int64
+	// failedSeq 记录最早一次彻底写盘失败的起点序号（<0 表示没有）。
+	failedSeq   int64
+	failedTasks []saveTask
 }
 
 // enqueue 追加任务；空闲时才拉起执行 goroutine，执行完队列为空即退出。
 func (w *saveWriter) enqueue(t saveTask) {
 	w.mu.Lock()
+	w.enqueueFailedLocked()
 	w.queue = append(w.queue, t)
 	start := !w.running
 	if start {
@@ -79,9 +81,9 @@ func (w *saveWriter) loop() {
 		w.mu.Lock()
 		switch {
 		case err == nil:
-			// 成功覆盖了失败起点即清除标记。
-			if w.failedSeq >= 0 && (task.sinceSeq <= 0 || task.sinceSeq <= w.failedSeq) {
-				w.failedSeq = -1
+			// 只有失败快照自身成功后才能清除失败标记。
+			if task.retryOfFailed {
+				w.recomputeFailedSeqLocked()
 			}
 			w.written++
 		case task.retries < saveTaskMaxRetries:
@@ -94,14 +96,59 @@ func (w *saveWriter) loop() {
 			if w.failedSeq < 0 || (task.sinceSeq > 0 && task.sinceSeq < w.failedSeq) {
 				w.failedSeq = task.sinceSeq
 			}
+			w.failedTasks = append(w.failedTasks, task)
 		}
 		w.mu.Unlock()
+	}
+}
+
+func (w *saveWriter) enqueueFailedLocked() {
+	for _, failed := range w.failedTasks {
+		failed.retryOfFailed = true
+		failed.retries = 0
+		w.queue = append(w.queue, failed)
+	}
+	w.failedTasks = nil
+}
+
+func (w *saveWriter) recomputeFailedSeqLocked() {
+	w.failedSeq = -1
+	update := func(task saveTask) {
+		if w.failedSeq < 0 || (task.sinceSeq > 0 && task.sinceSeq < w.failedSeq) {
+			w.failedSeq = task.sinceSeq
+		}
+	}
+	for _, task := range w.failedTasks {
+		update(task)
+	}
+	for _, task := range w.queue {
+		if task.retryOfFailed {
+			update(task)
+		}
+	}
+}
+
+func (w *saveWriter) retryFailed() {
+	w.mu.Lock()
+	if len(w.failedTasks) == 0 {
+		w.mu.Unlock()
+		return
+	}
+	w.enqueueFailedLocked()
+	start := !w.running
+	if start {
+		w.running = true
+	}
+	w.mu.Unlock()
+	if start {
+		go w.loop()
 	}
 }
 
 // flush 等待队列排空（程序退出前调用）。必须在锁外调用：
 // 后台任务会读 App 状态，持写锁等待可能与它们互相阻塞。
 func (w *saveWriter) flush(timeout time.Duration) bool {
+	w.retryFailed()
 	deadline := time.Now().Add(timeout)
 	for {
 		w.mu.Lock()
