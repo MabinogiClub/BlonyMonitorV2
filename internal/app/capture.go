@@ -363,6 +363,8 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 	if pkt == nil || pkt.Msg == nil {
 		return
 	}
+	// 推进事件时钟：后续所有战斗统计的时间戳都以数据包时间为基准。
+	notePacketTime(pkt)
 	if a.farmRecommendationMgr != nil {
 		a.farmRecommendationMgr.recordPacket(pkt)
 	}
@@ -542,7 +544,7 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 			return
 		}
 		attackerId := pkt.Msg[0].Data().(uint64)
-		a.addFinishEvent(pkt.Id, attackerId)
+		a.addFinishEvent(pkt.Id, attackerId, packetCentiseconds(pkt))
 
 	case opcodeDungeonInfo:
 		dungeonInfo, err := ParseDungeonInfoPacket(pkt)

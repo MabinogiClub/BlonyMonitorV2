@@ -127,11 +127,15 @@ func (a *App) addConditionEvent(entityId uint64, conditionId uint32, isEnable bo
 }
 
 // addFinishEvent ??????
-func (a *App) addFinishEvent(targetId uint64, attackerId uint64) {
+// at 是触发该事件的数据包的抓包时刻（厘秒）；为 0 时退回本机时钟。
+func (a *App) addFinishEvent(targetId uint64, attackerId uint64, at int64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	now := nowCentiseconds()
+	now := at
+	if now <= 0 {
+		now = nowCentiseconds()
+	}
 	targetIdStr := strconv.FormatUint(targetId, 10)
 	attackerIdStr := ""
 	if attackerId != 0 {
@@ -139,9 +143,15 @@ func (a *App) addFinishEvent(targetId uint64, attackerId uint64) {
 	}
 
 	if targetStat, ok := a.takenStats[targetIdStr]; ok {
-		targetStat.deathTime = now
-		if a.targetTimerMgr != nil {
-			a.targetTimerMgr.OnDeath(targetIdStr)
+		prevDeathTime := targetStat.deathTime
+		// 同一目标会反复收到 finish（0x7921 的语义并不等价于"此刻死亡"）：
+		// 只有第一次才是真正的结束时刻，若让后续 finish 覆盖 deathTime，
+		// duration 会被越推越长（实测单个目标被推后过 12 分钟）。
+		if prevDeathTime == 0 || now < prevDeathTime {
+			targetStat.deathTime = now
+			if a.targetTimerMgr != nil {
+				a.targetTimerMgr.OnDeath(targetIdStr)
+			}
 		}
 	}
 

@@ -496,16 +496,15 @@ func enrichReforgeEntry(entry string) string {
 	if err != nil || skillID <= 0 {
 		return entry
 	}
-	skill := db.NewSkillInfo(skillID)
-	if skill == nil || (skill.SkillLocalName == "" && skill.SkillEngName == "") {
+	skillName, found := skillNameCache.lookup(skillID)
+	if !found {
 		return entry
 	}
-	return strings.Replace(entry, marker+idPart, marker+idPart+"("+skill.GetName()+")", 1)
+	return strings.Replace(entry, marker+idPart, marker+idPart+"("+skillName+")", 1)
 }
 
 func (a *App) getRaceNameUnsafe(raceId int) string {
-	raceInfo := db.NewRace(raceId)
-	return raceInfo.GetName()
+	return raceNameCache.name(raceId)
 }
 
 var raceIdCache = make(map[string]int)

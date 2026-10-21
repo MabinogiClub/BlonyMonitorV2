@@ -1,7 +1,6 @@
 package app
 
 import (
-	"blonymonitorv2/db"
 	"sort"
 	"strconv"
 	"time"
@@ -11,7 +10,9 @@ import (
 
 // addDamage 添加伤害记录
 func (a *App) addDamage(attackerId, targetId uint64, skillId uint16, damage float32, isCritical bool, metadata ...DamageEventMeta) {
-	now := nowCentiseconds()
+	// 与 packetCentiseconds 同源：没有数据包时间（合成调用）时也用事件时钟，
+	// 避免和前面用 pkt.At 落下的记录落在两条时间轴上。
+	now := eventNow()
 	eventMeta := DamageEventMeta{}
 	if len(metadata) > 0 {
 		eventMeta = metadata[0]
@@ -314,7 +315,7 @@ func (a *App) GetDamageByAttacker() []DamageStats {
 	}
 
 	result := make([]DamageStats, 0, len(attackerIDs))
-	now := nowCentiseconds()
+	now := eventNow()
 	for id := range attackerIDs {
 		stats := a.attackerStats[id]
 		cumulative := a.cumulativeAttackerStats[id]
@@ -394,7 +395,7 @@ func (a *App) GetDamageBySkill() []AttackerWithSkills {
 	}
 
 	result := make([]AttackerWithSkills, 0, len(attackerIDs))
-	now := nowCentiseconds()
+	now := eventNow()
 	for attackerId := range attackerIDs {
 		skillMap := a.skillStats[attackerId]
 		attackerStat := a.attackerStats[attackerId]
@@ -507,7 +508,7 @@ func (a *App) GetDamageTaken() []TargetDamageStats {
 	defer a.mu.RUnlock()
 
 	result := make([]TargetDamageStats, 0)
-	now := nowCentiseconds()
+	now := eventNow()
 	for targetId, targetStat := range a.takenStats {
 		targetTotal := a.aggregateTargetHitRecordsUnsafe(targetId, exportDamage)
 		attackers := make([]AttackerWithSkills, 0)
@@ -888,7 +889,7 @@ func (a *App) HasActivePlayer() bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	now := nowCentiseconds()
+	now := eventNow()
 	for _, stats := range a.attackerStats {
 		if now-stats.lastHit < 8*timePrecisionScale {
 			return true
@@ -928,9 +929,8 @@ func formatDisplayName(id, name string, raceId int, isPC bool) string {
 	if isPC && name != "" {
 		return name
 	} else {
-		// 非PC优先从数据库获取种族名
-		race_info := db.NewRace(raceId)
-		raceName := race_info.GetName()
+		// 非PC优先从数据库获取种族名（走进程内缓存，见 resource_cache.go）
+		raceName := raceNameCache.name(raceId)
 		if raceName != "" {
 			return raceName + " #" + getIdSuffix(id)
 		}
