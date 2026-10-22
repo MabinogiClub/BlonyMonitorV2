@@ -15,7 +15,7 @@ import (
 	"unsafe"
 )
 
-var defaultBuffOrder = []uint32{515, 680, 192, 193, 681, 194, 1225, 63, 1121, 1150}
+var defaultBuffOrder = []uint32{515, 680, 192, 193, 681, 194, 1225, 63, 1121, 1150, 835}
 
 var targetOnlyNotificationBuffs = map[uint32]struct{}{
 	1026: {}, // 倒吊者，仅出现在被标记的 Boss 身上
@@ -23,11 +23,43 @@ var targetOnlyNotificationBuffs = map[uint32]struct{}{
 
 // buffFallbackDurations 用于状态包未提供可计算时长的 Buff。
 // 当前数据库没有结构化的 Buff 时长字段。
+// 835 马纽斯功能饮料（普通 10 分钟 / 强化 20 分钟）共用同一个状态 ID，
+// 时长正常由 DURA 给出；缺失时按普通版兜底。
 var buffFallbackDurations = map[uint32]int64{
 	63:   1800,
 	1121: 1800,
 	1150: 1800,
 	1225: 180,
+	835:  600,
+}
+
+// buffNameVariant 让同一个状态 ID 按包内时长显示不同的名字。
+type buffNameVariant struct {
+	minDurationSec int64
+	name           string
+}
+
+// buffNameVariants 处理"一个状态对应多个道具"的情况：
+// 马纽斯功能饮料 835 的普通版和强化版共用一个状态 ID，只能按时长区分。
+var buffNameVariants = map[uint32][]buffNameVariant{
+	835: {
+		{minDurationSec: 900, name: "强化的马纽斯功能饮料"}, // 20 分钟版
+	},
+}
+
+// buffDisplayName 返回状态在该时长下应显示的名字；durationSec<=0 表示当前
+// 没有活跃实例，返回白名单里的基础名字。
+func (m *BuffTimerManager) buffDisplayName(ccId uint32, durationSec int64) string {
+	name := m.targetBuffs[ccId]
+	if durationSec <= 0 {
+		return name
+	}
+	for _, variant := range buffNameVariants[ccId] {
+		if durationSec >= variant.minDurationSec {
+			name = variant.name
+		}
+	}
+	return name
 }
 
 func resolveBuffDuration(ccID uint32, packetDuration int64) int64 {
@@ -104,6 +136,7 @@ func NewBuffTimerManagerWithVolume(ctx context.Context, selfId string, getSoundV
 		63:   "攻击力增加",
 		1121: "魔法攻击强化",
 		1150: "炼金术伤害增加",
+		835:  "马纽斯功能饮料",
 		1026: "倒吊者",
 	}
 	buffOrder := append(append([]uint32(nil), defaultBuffOrder...), 1026)
@@ -262,11 +295,11 @@ func (m *BuffTimerManager) GetBuffOrder() []uint32 {
 
 // StartTimer 启动buff定时器
 func (m *BuffTimerManager) StartTimer(ccId uint32, entityId uint64, entityName string, disableAt int64, duration int64) {
-	buffName, isTarget := m.targetBuffs[ccId]
-	if !isTarget {
+	if _, isTarget := m.targetBuffs[ccId]; !isTarget {
 		return
 	}
 	duration = resolveBuffDuration(ccId, duration)
+	buffName := m.buffDisplayName(ccId, duration)
 
 	entityIdStr := strconv.FormatUint(entityId, 10)
 	m.mu.RLock()
@@ -633,6 +666,7 @@ func (m *BuffTimerManager) GetBuffDisplayList() []BuffDisplayInfo {
 		}
 
 		if timer, ok := activeByCCId[ccId]; ok {
+			info.BuffName = m.buffDisplayName(ccId, timer.DurationSec)
 			elapsed := time.Since(timer.StartTime).Seconds()
 			remainingSec := timer.DurationSec - int64(elapsed)
 			if remainingSec < 0 {
@@ -693,7 +727,7 @@ func (m *BuffTimerManager) GetActiveTimersInfo() []ActiveBuffTimerInfo {
 
 		infos = append(infos, ActiveBuffTimerInfo{
 			CCId:          timer.CCId,
-			BuffName:      m.targetBuffs[timer.CCId],
+			BuffName:      m.buffDisplayName(timer.CCId, timer.DurationSec),
 			EntityId:      timer.EntityId,
 			EntityName:    timer.EntityName,
 			RemainingTime: remainingSec,
