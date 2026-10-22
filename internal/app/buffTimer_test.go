@@ -184,3 +184,109 @@ func TestAdjustRepeatedBuffDurationIgnoresNormalRefresh(t *testing.T) {
 		t.Fatalf("non-hanged-man duration = %d, want 300", got)
 	}
 }
+
+func TestBuffTimerManagerIncludesManusEnergyDrink(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
+	mgr := NewBuffTimerManager(context.Background(), "1")
+
+	if got := mgr.targetBuffs[835]; got != "马纽斯功能饮料" {
+		t.Fatalf("buff 835 name = %q, want %q", got, "马纽斯功能饮料")
+	}
+	if _, ok := targetOnlyNotificationBuffs[835]; ok {
+		t.Fatal("buff 835 must be monitored on the player, not as a boss debuff")
+	}
+	if got := mgr.getNotifyThreshold(835); got != 30 {
+		t.Fatalf("buff 835 notify threshold = %d, want 30", got)
+	}
+	// The normal drink lasts 10 minutes and the enhanced one 20 minutes; they
+	// share condition 835, so the fallback has to cover the shorter one.
+	if got := resolveBuffDuration(835, 0); got != 600 {
+		t.Fatalf("buff 835 fallback duration = %d, want 600", got)
+	}
+	if got := resolveBuffDuration(835, 1200); got != 1200 {
+		t.Fatalf("buff 835 packet duration = %d, want 1200", got)
+	}
+	if !slices.Contains(mgr.buffOrder, uint32(835)) {
+		t.Fatalf("buff 835 missing from default order: %v", mgr.buffOrder)
+	}
+}
+
+func TestBuffDisplayNameSeparatesManusEnergyDrinkVariants(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
+	mgr := NewBuffTimerManager(context.Background(), "1")
+
+	cases := []struct {
+		duration int64
+		want     string
+	}{
+		{0, "马纽斯功能饮料"},
+		{600, "马纽斯功能饮料"},
+		{1200, "强化的马纽斯功能饮料"},
+	}
+	for _, testCase := range cases {
+		if got := mgr.buffDisplayName(835, testCase.duration); got != testCase.want {
+			t.Errorf("buff 835 name at %ds = %q, want %q", testCase.duration, got, testCase.want)
+		}
+		// Names without duration variants must stay untouched.
+		if got := mgr.buffDisplayName(680, testCase.duration); got != "战争序曲" {
+			t.Errorf("buff 680 name at %ds = %q, want %q", testCase.duration, got, "战争序曲")
+		}
+	}
+}
+
+func TestActiveTimerReportsEnhancedDrinkName(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	mgr := NewBuffTimerManager(ctx, "1")
+
+	mgr.StartTimer(835, 1, "Self", 0, 1200)
+	timer := mgr.timers["1_835"]
+	if timer == nil {
+		t.Fatal("energy drink timer did not start")
+	}
+	if timer.DurationSec != 1200 {
+		t.Fatalf("duration = %d, want 1200", timer.DurationSec)
+	}
+
+	active := mgr.GetActiveTimersInfo()
+	if len(active) != 1 || active[0].BuffName != "强化的马纽斯功能饮料" {
+		t.Fatalf("active timers = %+v, want the enhanced drink name", active)
+	}
+	for _, buff := range mgr.GetBuffDisplayList() {
+		if buff.CCId != 835 {
+			continue
+		}
+		if buff.BuffName != "强化的马纽斯功能饮料" {
+			t.Fatalf("display name = %q, want 强化的马纽斯功能饮料", buff.BuffName)
+		}
+		if !buff.IsActive || buff.TotalTime != 1200 {
+			t.Fatalf("display state = %+v, want active 1200s", buff)
+		}
+	}
+}
+
+func TestStartTimerUsesFallbackDurationForDrink(t *testing.T) {
+	t.Setenv("MABI_WORK_DIR", t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	mgr := NewBuffTimerManager(ctx, "1")
+
+	// A drink packet without DURA/MCAGT still has to start a timer instead of
+	// silently refusing to run.
+	mgr.StartTimer(835, 1, "Self", 0, 0)
+	timer := mgr.timers["1_835"]
+	if timer == nil {
+		t.Fatal("energy drink timer did not start without a packet duration")
+	}
+	if timer.DurationSec != 600 {
+		t.Fatalf("duration = %d, want 600", timer.DurationSec)
+	}
+
+	// It is a self buff, so conditions observed on other entities must not raise
+	// the local character's prompt.
+	mgr.StartTimer(835, 2, "Other", 0, 1200)
+	if mgr.timers["2_835"] != nil {
+		t.Fatal("energy drink timer started for another entity")
+	}
+}
