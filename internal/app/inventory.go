@@ -404,6 +404,17 @@ func (a *App) GetInventoryState() inventory.State {
 	return state
 }
 
+func (a *App) GetItemDisplayNames(ids []uint32) map[uint32]string {
+	items := db.GetItemInfoBatch(ids)
+	names := make(map[uint32]string, len(items))
+	for id, item := range items {
+		if name := strings.TrimSpace(item.DisplayName()); name != "" {
+			names[id] = name
+		}
+	}
+	return names
+}
+
 func (a *App) GetInventoryDatabasePath() string {
 	state := a.GetInventoryState()
 	return fmt.Sprint(state.DatabasePath)

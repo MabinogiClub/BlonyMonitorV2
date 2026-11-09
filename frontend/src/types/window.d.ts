@@ -12,7 +12,7 @@ declare global {
     runtime: WailsRuntime
     go: {
       app: {
-        App: typeof AppBindings
+        App: typeof AppBindings & Pick<GoApp, 'GetItemDisplayNames'>
       }
     }
   }

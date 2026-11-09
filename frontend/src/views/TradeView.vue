@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import SvgIcon from '@jamescoyle/vue-icon'
-import { mdiFerry, mdiSwapHorizontal, mdiChevronDown } from '@mdi/js'
+import { mdiFerry, mdiChevronDown } from '@mdi/js'
 import { useEirinTime } from '../composables/useEirinTime'
 import SmugglerView from './SmugglerView.vue'
+import BarterView from './BarterView.vue'
 import {
   FERRY_GROUPS, formatCountdown, formatRealTime, getSailingStatus, getUpcomingSailings, realDateLabel,
 } from '../data/ferry'
@@ -83,11 +84,7 @@ const groups = computed(() => FERRY_GROUPS.map(group => {
     <p class="schedule-hint footer-hint">双向航线共用所属港口系的时刻表，点击港口概览展开全部班次。</p>
   </div>
   <SmugglerView v-else-if="section === 'tradeSmuggler'" />
-  <div v-else class="trade-placeholder">
-    <svg-icon type="mdi" :path="mdiSwapHorizontal" :size="36" />
-    <h2>以物换物</h2>
-    <p>功能筹备中，敬请期待</p>
-  </div>
+  <BarterView v-else-if="section === 'tradeBarter'" />
 </template>
 
 <style lang="scss" scoped>
@@ -292,24 +289,6 @@ tbody tr.boarding {
 
 .footer-hint {
   margin-bottom: 4px;
-}
-
-.trade-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  color: #666;
-  padding: 70px 16px;
-}
-
-.trade-placeholder h2 {
-  color: #aaa;
-}
-
-.trade-placeholder p {
-  color: #888;
-  font-size: 12px;
 }
 
 </style>

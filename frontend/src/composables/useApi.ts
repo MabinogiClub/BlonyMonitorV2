@@ -729,6 +729,11 @@ export async function getInventoryState(): Promise<InventoryState> {
   return await window.go.app.App.GetInventoryState() as InventoryState
 }
 
+export async function getItemDisplayNames(ids: number[]): Promise<Record<number, string>> {
+  if (!isWailsReady()) return {}
+  return await (window.go.app.App as typeof window.go.app.App & Pick<GoApp, 'GetItemDisplayNames'>).GetItemDisplayNames(ids)
+}
+
 /**
  * 获取所有 PC 实体
  */
