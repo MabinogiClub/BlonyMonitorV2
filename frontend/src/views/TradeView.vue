@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import SvgIcon from '@jamescoyle/vue-icon'
-import { mdiFerry, mdiSwapHorizontal, mdiAccountClockOutline } from '@mdi/js'
+import { mdiFerry, mdiSwapHorizontal, mdiAccountClockOutline, mdiChevronDown } from '@mdi/js'
 import { useEirinTime } from '../composables/useEirinTime'
 import {
   FERRY_GROUPS, formatCountdown, formatRealTime, getSailingStatus, getUpcomingSailings, realDateLabel,
@@ -11,6 +11,13 @@ defineProps<{ section: string }>()
 
 const { clockNow, eirinPhaseOffsetMinutes, eirinTimeLabel, realTimeLabel } = useEirinTime()
 const statusLabels = { waiting: '待登船', boarding: '登船中', sailing: '航行中' }
+const expandedGroups = ref<Set<string>>(new Set())
+
+function toggleGroup(id: string) {
+  if (expandedGroups.value.has(id)) expandedGroups.value.delete(id)
+  else expandedGroups.value.add(id)
+}
+
 const groups = computed(() => FERRY_GROUPS.map(group => {
   const sailings = getUpcomingSailings(group, clockNow.value, eirinPhaseOffsetMinutes.value)
   const next = sailings.find(sailing => sailing.departure > clockNow.value)!
@@ -39,20 +46,30 @@ const groups = computed(() => FERRY_GROUPS.map(group => {
     <p class="schedule-hint">以下班次均为现实时间，倒计时为现实分秒。校准请在首页调整爱琳时间。</p>
 
     <section v-for="group in groups" :key="group.id" class="port-card" :class="group.id" :aria-label="group.name">
-      <header class="port-header">
-        <div class="port-info">
-          <h3>{{ group.name }}</h3>
-          <div class="routes"><span v-for="route in group.routes" :key="route">{{ route }}</span></div>
-        </div>
-        <div class="next-sailing" :class="{ boarding: group.boarding }" aria-live="off">
-          <span>{{ group.boarding ? '登船中 · 距开船' : '下班船 · 距登船' }}</span>
-          <strong>{{ group.remaining }}</strong>
-        </div>
+      <header>
+        <button
+          type="button"
+          class="port-header"
+          :aria-expanded="expandedGroups.has(group.id)"
+          :aria-controls="`sailings-${group.id}`"
+          :aria-label="`${group.name}，${expandedGroups.has(group.id) ? '收起' : '展开'}全部班次`"
+          @click="toggleGroup(group.id)"
+        >
+          <span class="port-info">
+            <span class="port-name">{{ group.name }}</span>
+            <span class="routes"><span v-for="route in group.routes" :key="route">{{ route }}</span></span>
+          </span>
+          <span class="next-sailing" :class="{ boarding: group.boarding }" aria-live="off">
+            <span>{{ group.boarding ? '登船中 · 距开船' : '下班船 · 距登船' }}</span>
+            <strong>{{ group.remaining }}</strong>
+          </span>
+          <svg-icon type="mdi" :path="mdiChevronDown" :size="18" class="expand-icon" :class="{ expanded: expandedGroups.has(group.id) }" aria-hidden="true" />
+        </button>
       </header>
       <table class="sailing-table">
         <thead><tr><th scope="col">登船时间</th><th scope="col">开船时间</th><th scope="col">到达时间</th><th scope="col">状态</th></tr></thead>
-        <tbody>
-          <tr v-for="sailing in group.sailings" :key="sailing.boarding" :class="getSailingStatus(sailing, clockNow)">
+        <tbody :id="`sailings-${group.id}`">
+          <tr v-for="sailing in (expandedGroups.has(group.id) ? group.sailings : group.sailings.slice(0, 1))" :key="sailing.boarding" :class="getSailingStatus(sailing, clockNow)">
             <td v-for="(time, index) in [sailing.boarding, sailing.departure, sailing.arrival]" :key="index">
               <span v-if="realDateLabel(time, clockNow)" class="date-label">{{ realDateLabel(time, clockNow) }}</span>
               <time :datetime="new Date(time).toISOString()">{{ formatRealTime(time) }}</time>
@@ -62,7 +79,7 @@ const groups = computed(() => FERRY_GROUPS.map(group => {
         </tbody>
       </table>
     </section>
-    <p class="schedule-hint footer-hint">双向航线共用所属港口系的时刻表，自动显示当前及后续班次。</p>
+    <p class="schedule-hint footer-hint">双向航线共用所属港口系的时刻表，点击港口概览展开全部班次。</p>
   </div>
   <div v-else class="trade-placeholder">
     <svg-icon type="mdi" :path="section === 'tradeBarter' ? mdiSwapHorizontal : mdiAccountClockOutline" :size="36" />
@@ -137,6 +154,12 @@ h2 {
 }
 
 .port-header {
+  width: 100%;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   padding: 10px 12px;
   display: flex;
   justify-content: space-between;
@@ -147,9 +170,30 @@ h2 {
   border-left: 3px solid var(--port-color);
 }
 
-h3 {
+.port-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.port-header:focus-visible {
+  outline: 2px solid var(--port-color);
+  outline-offset: -2px;
+}
+
+.expand-icon {
+  flex-shrink: 0;
+  color: #888;
+  transition: transform 0.15s ease;
+}
+
+.expand-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.port-name {
+  display: block;
   color: var(--port-color);
   font-size: 13px;
+  font-weight: 600;
   margin-bottom: 5px;
 }
 
@@ -166,6 +210,7 @@ h3 {
 }
 
 .next-sailing {
+  margin-left: auto;
   flex-shrink: 0;
   text-align: right;
   color: #aaa;
