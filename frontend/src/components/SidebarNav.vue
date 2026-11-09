@@ -9,34 +9,37 @@ import {
   mdiHome,
   mdiSproutOutline,
   mdiSwordCross,
-  mdiTimelineClockOutline,
+  mdiFerry,
   mdiTshirtCrew,
 } from '@mdi/js'
 import { useAppStore } from '../stores/app'
 
 const appStore = useAppStore()
-const dpsTabs = new Set(['bySkill', 'taken', 'history'])
+const dpsTabs = new Set(['bySkill', 'taken', 'history', 'timeline'])
+const tradeTabs = new Set(['tradeFerry', 'tradeBarter', 'tradeSmuggler'])
 const lastDpsTab = ref(dpsTabs.has(appStore.activeTab) ? appStore.activeTab : 'bySkill')
+const lastTradeTab = ref(tradeTabs.has(appStore.activeTab) ? appStore.activeTab : 'tradeFerry')
 
 const navigation = [
   { name: 'home', title: '首页', icon: mdiHome },
   { name: 'dps', title: 'DPS统计', icon: mdiSwordCross },
-  { name: 'timeline', title: '玩家时间轴', icon: mdiTimelineClockOutline },
   { name: 'entities', title: '角色列表', icon: mdiAccountGroupOutline },
   { name: 'buffTimer', title: 'Buff通知', icon: mdiBellRingOutline },
   { name: 'farm', title: '塔汀农场', icon: mdiSproutOutline },
+  { name: 'trade', title: '贸易助手', icon: mdiFerry },
   { name: 'equipment', title: '装备耐久', icon: mdiTshirtCrew },
   { name: 'inventory', title: '背包管理', icon: mdiBagPersonalOutline },
 ]
 
-const activePage = computed(() => dpsTabs.has(appStore.activeTab) ? 'dps' : appStore.activeTab)
+const activePage = computed(() => dpsTabs.has(appStore.activeTab) ? 'dps' : tradeTabs.has(appStore.activeTab) ? 'trade' : appStore.activeTab)
 
 watch(() => appStore.activeTab, (tab) => {
   if (dpsTabs.has(tab)) lastDpsTab.value = tab
+  if (tradeTabs.has(tab)) lastTradeTab.value = tab
 })
 
 function selectPage(name: string) {
-  appStore.setActiveTab(name === 'dps' ? lastDpsTab.value : name)
+  appStore.setActiveTab(name === 'dps' ? lastDpsTab.value : name === 'trade' ? lastTradeTab.value : name)
 }
 </script>
 

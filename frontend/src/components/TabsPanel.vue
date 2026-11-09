@@ -11,21 +11,30 @@ import BuffTimerView from '../views/BuffTimerView.vue'
 import FarmView from '../views/FarmView.vue'
 import EquipmentView from '../views/EquipmentView.vue'
 import InventoryView from '../views/InventoryView.vue'
+import TradeView from '../views/TradeView.vue'
 
 const appStore = useAppStore()
 const dpsTabs = [
   { name: 'bySkill', title: '造成伤害' },
   { name: 'taken', title: '受到伤害' },
   { name: 'history', title: '历史记录' },
+  { name: 'timeline', title: '玩家时间轴' },
+]
+const tradeTabs = [
+  { name: 'tradeFerry', title: '商船时间表' },
+  { name: 'tradeBarter', title: '以物换物' },
+  { name: 'tradeSmuggler', title: '走私商人' },
 ]
 const isDpsPage = computed(() => dpsTabs.some(tab => tab.name === appStore.activeTab))
+const isTradePage = computed(() => tradeTabs.some(tab => tab.name === appStore.activeTab))
+const secondaryTabs = computed(() => isDpsPage.value ? dpsTabs : tradeTabs)
 </script>
 
 <template>
   <div class="data-panel">
-    <div v-if="isDpsPage" class="secondary-tabs" role="tablist" aria-label="DPS统计">
+    <div v-if="isDpsPage || isTradePage" class="secondary-tabs" role="tablist" :aria-label="isDpsPage ? 'DPS统计' : '贸易助手'">
       <button
-        v-for="tab in dpsTabs"
+        v-for="tab in secondaryTabs"
         :key="tab.name"
         type="button"
         role="tab"
@@ -53,6 +62,7 @@ const isDpsPage = computed(() => dpsTabs.some(tab => tab.name === appStore.activ
       <EntitiesView v-else-if="appStore.activeTab === 'entities'" />
       <BuffTimerView v-else-if="appStore.activeTab === 'buffTimer'" />
       <FarmView v-else-if="appStore.activeTab === 'farm'" />
+      <TradeView v-else-if="isTradePage" :section="appStore.activeTab" />
       <EquipmentView v-else-if="appStore.activeTab === 'equipment'" />
       <InventoryView v-else-if="appStore.activeTab === 'inventory'" />
     </div>
@@ -71,6 +81,7 @@ const isDpsPage = computed(() => dpsTabs.some(tab => tab.name === appStore.activ
 }
 
 .secondary-tabs {
+  overflow-x: auto;
   height: 36px;
   min-height: 36px;
   flex-shrink: 0;
@@ -83,6 +94,7 @@ const isDpsPage = computed(() => dpsTabs.some(tab => tab.name === appStore.activ
 }
 
 .secondary-tab {
+  flex-shrink: 0;
   min-width: 72px;
   padding: 0 10px;
   position: relative;

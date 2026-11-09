@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import SvgIcon from '@jamescoyle/vue-icon'
 import {
   mdiAlertCircleOutline,
@@ -11,6 +11,7 @@ import {
 } from '@mdi/js'
 import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
 import * as api from '../composables/useApi'
+import { useEirinTime } from '../composables/useEirinTime'
 
 const LATEST_RELEASE_URL = 'https://github.com/MabinogiClub/BlonyMonitorV2/releases/latest'
 const FEEDBACK_URL = 'https://github.com/MabinogiClub/BlonyMonitorV2/issues'
@@ -22,37 +23,13 @@ const currentVersion = ref('dev')
 const latestVersion = ref('')
 const updateState = ref<UpdateState>('idle')
 
-const clockNow = ref(Date.now())
-let clockTimer: number | undefined
-
-const EIRIN_TIME_OFFSET_STORAGE_KEY = 'blony-monitor:eirin-time-offset-minutes'
-const DEFAULT_EIRIN_PHASE_OFFSET_MINUTES = -14
-const MIN_EIRIN_PHASE_OFFSET_MINUTES = -720
-const MAX_EIRIN_PHASE_OFFSET_MINUTES = 720
-
-const eirinPhaseOffsetMinutes = ref(DEFAULT_EIRIN_PHASE_OFFSET_MINUTES)
-
-const realTimeLabel = computed(() => {
-  const now = new Date(clockNow.value)
-  return [now.getHours(), now.getMinutes(), now.getSeconds()]
-    .map(value => String(value).padStart(2, '0'))
-    .join(':')
-})
-
-const mabiTimeLabel = computed(() => {
-  // The game clock runs 40 times faster than real time: one Eirin day is 36
-  // real minutes. The +08:00 anchor matches the conversion used by ruawork.js.
-  const cycleMinutes = Math.floor(((clockNow.value + 8 * 60 * 60 * 1000) % (36 * 60 * 1000)) / 1500)
-  const gameMinutes = (cycleMinutes + eirinPhaseOffsetMinutes.value + 1440) % 1440
-  const hour = Math.floor(gameMinutes / 60) % 24
-  const minute = gameMinutes % 60
-  return String(hour).padStart(2, '0') + ':' + String(minute).padStart(2, '0')
-})
-
-const eirinPhaseOffsetLabel = computed(() => {
-  const value = eirinPhaseOffsetMinutes.value
-  return value > 0 ? `+${value}` : String(value)
-})
+const {
+  realTimeLabel,
+  eirinTimeLabel: mabiTimeLabel,
+  eirinPhaseOffsetLabel,
+  adjustEirinPhaseOffset,
+  resetEirinPhaseOffset,
+} = useEirinTime()
 
 const currentVersionLabel = computed(() => {
   if (currentVersion.value === 'dev') return '开发版'
@@ -112,44 +89,6 @@ function openExternal(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
-function normalizeEirinPhaseOffset(value: number) {
-  const roundedValue = Math.round(value)
-  if (!Number.isFinite(roundedValue)) return DEFAULT_EIRIN_PHASE_OFFSET_MINUTES
-  return Math.min(MAX_EIRIN_PHASE_OFFSET_MINUTES, Math.max(MIN_EIRIN_PHASE_OFFSET_MINUTES, roundedValue))
-}
-
-function readStoredEirinPhaseOffset() {
-  try {
-    const storedValue = window.localStorage.getItem(EIRIN_TIME_OFFSET_STORAGE_KEY)
-    if (storedValue === null) return DEFAULT_EIRIN_PHASE_OFFSET_MINUTES
-    return normalizeEirinPhaseOffset(Number(storedValue))
-  } catch {
-    return DEFAULT_EIRIN_PHASE_OFFSET_MINUTES
-  }
-}
-
-function writeStoredEirinPhaseOffset(value: number) {
-  try {
-    window.localStorage.setItem(EIRIN_TIME_OFFSET_STORAGE_KEY, String(value))
-  } catch {
-    // A restricted WebView may disable local storage; keep the runtime value.
-  }
-}
-
-function setEirinPhaseOffset(value: number, persist = true) {
-  const nextValue = normalizeEirinPhaseOffset(value)
-  eirinPhaseOffsetMinutes.value = nextValue
-  if (persist) writeStoredEirinPhaseOffset(nextValue)
-}
-
-function adjustEirinPhaseOffset(deltaMinutes: number) {
-  setEirinPhaseOffset(eirinPhaseOffsetMinutes.value + deltaMinutes)
-}
-
-function resetEirinPhaseOffset() {
-  setEirinPhaseOffset(DEFAULT_EIRIN_PHASE_OFFSET_MINUTES)
-}
-
 async function loadCurrentVersion() {
   try {
     currentVersion.value = await api.getClientVersion()
@@ -187,17 +126,10 @@ async function checkForUpdates() {
 }
 
 onMounted(() => {
-  setEirinPhaseOffset(readStoredEirinPhaseOffset(), false)
-  clockTimer = window.setInterval(() => {
-    clockNow.value = Date.now()
-  }, 1000)
   void loadCurrentVersion()
   void checkForUpdates()
 })
 
-onBeforeUnmount(() => {
-  if (clockTimer !== undefined) window.clearInterval(clockTimer)
-})
 </script>
 
 <template>
