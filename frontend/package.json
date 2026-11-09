@@ -10,6 +10,7 @@
     "preinstall": "node -e \"const v=process.versions.node.split('.').map(Number);const ok=(v[0]===20&&v[1]>=19)||(v[0]===22&&v[1]>=12)||v[0]>22;if(!ok){console.error('\\x1b[31m错误: 需要 Node.js 20.19+ 或 22.12+，当前版本: '+process.version+'\\x1b[0m');process.exit(1)}\"",
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
+    "test:smuggler": "node --test tests/smuggler.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

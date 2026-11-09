@@ -34,6 +34,7 @@ interface GoApp {
   GetRegion(): Promise<string>
   GetDebugInfo(): Promise<DebugInfo>
   GetClientVersion(): Promise<string>
+  GetSmugglerNotice(): Promise<import('../utils/smuggler').SmugglerNotice | null>
   GetDPSRefreshSettings(): Promise<DPSRefreshSettings>
   SetDPSRefreshSettings(settings: DPSRefreshSettings): Promise<DPSRefreshSettings>
   GetAnalysisLogEnabled(): Promise<boolean>

@@ -16,8 +16,11 @@ import TabsPanel from './components/TabsPanel.vue'
 import SidebarNav from './components/SidebarNav.vue'
 import NpcapGuideDialog from './components/NpcapGuideDialog.vue'
 import StartupNoticeDialog from './components/StartupNoticeDialog.vue'
+import SmugglerBanner from './components/SmugglerBanner.vue'
+import { useSmugglerStore } from './stores/smuggler'
 
 const appStore = useAppStore()
+const smugglerStore = useSmugglerStore()
 
 let updateInterval: number | null = null
 let isHistoryMode = false
@@ -151,6 +154,7 @@ watch(() => appStore.activeTab, async (newTab, oldTab) => {
 })
 
 onMounted(async () => {
+  void smugglerStore.start()
   await appStore.initialize()
   appStore.registerEvents()
   void loadStartupNotices()
@@ -161,6 +165,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  smugglerStore.stop()
   if (updateInterval) {
     clearInterval(updateInterval)
   }
@@ -171,6 +176,7 @@ onUnmounted(() => {
   <div class="app-container" :class="{ 'history-mode': appStore.activeTab === 'history' }">
     <TitleBar />
     <StatusBar />
+    <SmugglerBanner />
 
     <div class="chart-drawer" :class="{ expanded: appStore.chartVisible && appStore.activeTab !== 'history' }">
       <ChartPanel />

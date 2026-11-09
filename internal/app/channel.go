@@ -23,6 +23,7 @@ func (a *App) observeServerConnection(ip string, port uint16, connectionChanged 
 	changed = connectionChanged || knownChannelChanged
 	if changed {
 		a.expireTransientStatusesForChannelChangeUnsafe(at)
+		a.smugglerNotice = nil
 	}
 	a.serverIP = ip
 	a.serverPort = port
@@ -30,6 +31,9 @@ func (a *App) observeServerConnection(ip string, port uint16, connectionChanged 
 	buffTimerMgr := a.buffTimerMgr
 	a.mu.Unlock()
 
+	if changed && a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "smuggler-notice", nil)
+	}
 	if changed && buffTimerMgr != nil {
 		buffTimerMgr.ResetForChannelChange()
 	}
@@ -83,9 +87,11 @@ func (a *App) SetChannel(channel int) {
 	a.autoDetect = false
 	a.selectedChannel = channel
 	a.channelName = constants.GetChannelName(constants.ChannelMap[channel].IP, constants.ChannelMap[channel].Port)
+	a.smugglerNotice = nil
 	a.mu.Unlock()
 
 	// 通知前端频道变更
+	runtime.EventsEmit(a.ctx, "smuggler-notice", nil)
 	runtime.EventsEmit(a.ctx, "channel", a.channelName)
 	runtime.EventsEmit(a.ctx, "autoDetectChanged", false)
 

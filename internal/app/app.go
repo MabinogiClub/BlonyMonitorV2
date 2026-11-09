@@ -65,6 +65,7 @@ type App struct {
 	region                      string
 	resourceURL                 string
 	channelName                 string
+	smugglerNotice              *SmugglerNotice
 	serverIP                    string
 	serverPort                  uint16
 	attackerStats               map[string]*attackerAggStats

@@ -5,8 +5,16 @@
  */
 
 import { constants } from '../../wailsjs/go/models'
+import type { SmugglerNotice } from '../utils/smuggler'
 
 const isWailsReady = () => !!window.go?.app?.App && !!window.runtime
+
+export async function getSmugglerNotice(): Promise<SmugglerNotice | null> {
+  if (!isWailsReady()) return null
+  const notice = await window.go.app.App.GetSmugglerNotice()
+  if (!notice || !['forecast', 'appear', 'disappear_forecast'].includes(notice.type)) return null
+  return { ...notice, type: notice.type as SmugglerNotice['type'] }
+}
 
 const eventUnsubscribers = new Map<string, Map<(...args: any[]) => void, () => void>>()
 

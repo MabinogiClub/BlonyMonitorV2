@@ -20,6 +20,7 @@ declare module 'vue' {
     PlayerChart: typeof import('./../components/PlayerChart.vue')['default']
     SidebarNav: typeof import('./../components/SidebarNav.vue')['default']
     SkillDetailItem: typeof import('./../components/SkillDetailItem.vue')['default']
+    SmugglerBanner: typeof import('./../components/SmugglerBanner.vue')['default']
     StartupNoticeDialog: typeof import('./../components/StartupNoticeDialog.vue')['default']
     StatusBar: typeof import('./../components/StatusBar.vue')['default']
     TabsPanel: typeof import('./../components/TabsPanel.vue')['default']

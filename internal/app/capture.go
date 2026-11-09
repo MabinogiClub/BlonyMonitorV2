@@ -555,7 +555,9 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 		a.onDungeonEnter(pkt, dungeonInfo)
 
 	case opcodeChineseName:
-		a.handleChineseName(pkt)
+		if !a.handleSmugglerNotice(pkt) {
+			a.handleChineseName(pkt)
+		}
 
 	case opcodePerformanceStart:
 		a.handleMusicPerformanceStart(pkt)

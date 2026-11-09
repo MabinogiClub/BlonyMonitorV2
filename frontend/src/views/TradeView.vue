@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import SvgIcon from '@jamescoyle/vue-icon'
-import { mdiFerry, mdiSwapHorizontal, mdiAccountClockOutline, mdiChevronDown } from '@mdi/js'
+import { mdiFerry, mdiSwapHorizontal, mdiChevronDown } from '@mdi/js'
 import { useEirinTime } from '../composables/useEirinTime'
+import SmugglerView from './SmugglerView.vue'
 import {
   FERRY_GROUPS, formatCountdown, formatRealTime, getSailingStatus, getUpcomingSailings, realDateLabel,
 } from '../data/ferry'
@@ -81,9 +82,10 @@ const groups = computed(() => FERRY_GROUPS.map(group => {
     </section>
     <p class="schedule-hint footer-hint">双向航线共用所属港口系的时刻表，点击港口概览展开全部班次。</p>
   </div>
+  <SmugglerView v-else-if="section === 'tradeSmuggler'" />
   <div v-else class="trade-placeholder">
-    <svg-icon type="mdi" :path="section === 'tradeBarter' ? mdiSwapHorizontal : mdiAccountClockOutline" :size="36" />
-    <h2>{{ section === 'tradeBarter' ? '以物换物' : '走私商人' }}</h2>
+    <svg-icon type="mdi" :path="mdiSwapHorizontal" :size="36" />
+    <h2>以物换物</h2>
     <p>功能筹备中，敬请期待</p>
   </div>
 </template>
