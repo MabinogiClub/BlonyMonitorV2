@@ -100,18 +100,15 @@ const barterSource = readFileSync(new URL('../src/utils/barterLoadout.ts', impor
 const { calculateBarterLoadout } = await import(moduleURL(barterSource))
 const barterProducts = (await import(moduleURL(readFileSync(new URL('../src/data/barter.ts', import.meta.url), 'utf8')))).BARTER_PRODUCTS
 
-test('the partner airship loadout prioritizes grade, then station, within all limits', () => {
+test('the partner airship maximizes estimated total value within stack, slot and weight limits', () => {
   const exchangeable = new Map(barterProducts.map(product => [product.id, product.weeklyLimit]))
   const ship = { name: 'airship', block: 10, weight: 1500, speed: 240 }
   const loadout = calculateBarterLoadout(barterProducts, exchangeable, ship)
 
   assert.equal(loadout.slotsUsed, 10)
-  assert.equal(loadout.totalWeight, 1340)
-  assert.deepEqual(loadout.items.map(({ postId, level, quantity }) => [postId, level, quantity]), [
-    [204, 5, 3], [203, 5, 3], [202, 5, 3], [201, 5, 3],
-    [204, 4, 7], [203, 4, 7], [202, 4, 7], [201, 4, 7],
-    [204, 3, 7], [203, 3, 7],
-  ])
+  assert.equal(loadout.slotsUsed, 10)
+  assert(loadout.items.every(item => item.quantity <= item.boxCapacity))
+  assert.equal(loadout.totalValue, 3017933)
   assert(loadout.totalWeight <= ship.weight)
   assert(loadout.slotsUsed <= ship.block)
 })
@@ -125,5 +122,5 @@ test('loadout respects backpack availability and can use partial stacks on a sma
   assert.equal(loadout.slotsUsed, 1)
   assert.equal(loadout.totalWeight, 30)
   assert.equal(loadout.items[0].quantity, 1)
-  assert.equal(loadout.items[0].estimatedValue, 150000)
+  assert.equal(loadout.totalValue, 150000)
 })

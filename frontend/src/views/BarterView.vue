@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import SvgIcon from '@jamescoyle/vue-icon'
 import { mdiSwapHorizontal, mdiRefresh } from '@mdi/js'
 import * as api from '../composables/useApi'
@@ -13,7 +13,6 @@ const itemNames = ref<Record<number, string>>({})
 const loading = ref(false)
 const appStore = useAppStore()
 const vehicles = getTradeVehicles()
-const selectedVehicleName = ref('[伙伴]高配版浮游船')
 
 const backpackCounts = computed(() => {
   const counts = new Map<number, number>()
@@ -34,12 +33,24 @@ const stations = computed(() => BARTER_STATIONS.map(station => ({
   })),
 })))
 
-const selectedVehicle = computed(() => vehicles.find(vehicle => vehicle.name === selectedVehicleName.value) || vehicles[0])
-const loadout = computed(() => calculateBarterLoadout(
-  BARTER_PRODUCTS,
-  new Map(BARTER_PRODUCTS.map(product => [product.id, exchangeableCount(product)])),
-  selectedVehicle.value,
+const exchangeableCounts = computed(() => new Map(BARTER_PRODUCTS.map(product => [product.id, exchangeableCount(product)])))
+const vehiclePlans = computed(() => vehicles.map(vehicle => ({
+  vehicle,
+  loadout: calculateBarterLoadout(BARTER_PRODUCTS, exchangeableCounts.value, vehicle),
+})))
+const recommendedPlan = computed(() => vehiclePlans.value.reduce((best, plan) =>
+  plan.loadout.totalValue > best.loadout.totalValue ? plan : best,
 ))
+const selectedVehicleName = ref('')
+const manuallySelectedVehicle = ref(false)
+const selectedPlan = computed(() => vehiclePlans.value.find(plan => plan.vehicle.name === selectedVehicleName.value) || recommendedPlan.value)
+const selectedVehicle = computed(() => selectedPlan.value.vehicle)
+const loadout = computed(() => selectedPlan.value.loadout)
+const stationName = (postId: number) => BARTER_STATIONS.find(station => station.id === postId)?.name.replace('交易所', '') || ''
+
+watch(recommendedPlan, plan => {
+  if (!manuallySelectedVehicle.value) selectedVehicleName.value = plan.vehicle.name
+}, { immediate: true })
 
 function exchangeableCount(product: BarterProduct): number {
   return Math.min(...product.materials.map(material =>
@@ -127,25 +138,26 @@ onUnmounted(() => api.offEvent('inventory-updated', handleInventoryUpdated))
         </div>
         <label class="vehicle-select">
           <span>载具</span>
-          <select v-model="selectedVehicleName" aria-label="选择贸易载具">
-            <option v-for="vehicle in vehicles" :key="vehicle.name" :value="vehicle.name">{{ vehicle.name }}</option>
+          <select v-model="selectedVehicleName" aria-label="选择贸易载具" @change="manuallySelectedVehicle = true">
+            <option v-for="plan in vehiclePlans" :key="plan.vehicle.name" :value="plan.vehicle.name">
+              {{ plan.vehicle.name }}{{ plan.vehicle.name === recommendedPlan.vehicle.name ? ' · 推荐' : '' }}
+            </option>
           </select>
         </label>
       </header>
       <div class="loadout-summary">
         <span>{{ loadout.slotsUsed }}/{{ selectedVehicle.block }} 格</span>
         <span>{{ loadout.totalWeight }}/{{ selectedVehicle.weight }} 负重</span>
-        <strong>估算收益 {{ loadout.estimatedValue.toLocaleString() }}</strong>
+        <strong v-if="selectedVehicle.name === recommendedPlan.vehicle.name">单次价值最高</strong>
       </div>
-      <div class="cargo-grid" :style="{ '--slot-count': selectedVehicle.block }">
+      <div class="cargo-grid">
         <article v-for="slot in selectedVehicle.block" :key="slot" class="cargo-slot" :class="{ empty: !loadout.items[slot - 1] }">
           <template v-if="loadout.items[slot - 1]">
             <img :src="getBarterProductImage(loadout.items[slot - 1])" :alt="loadout.items[slot - 1].name" />
             <div class="cargo-info">
               <strong :title="loadout.items[slot - 1].name">{{ loadout.items[slot - 1].name }}</strong>
-              <span>{{ loadout.items[slot - 1].quantity }} 个 · {{ loadout.items[slot - 1].level }}级</span>
+              <span>{{ loadout.items[slot - 1].quantity }}个 · {{ stationName(loadout.items[slot - 1].postId) }} · {{ loadout.items[slot - 1].level }}级</span>
             </div>
-            <b>{{ loadout.items[slot - 1].estimatedValue.toLocaleString() }}</b>
           </template>
           <span v-else class="empty-label">空格 {{ slot }}</span>
         </article>
@@ -189,15 +201,13 @@ h3 { margin: 0 0 4px; padding: 0 0 4px; border-bottom: 1px solid rgba(255,255,25
 .vehicle-select select { max-width: min(260px, 65vw); padding: 5px 7px; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; color: #ddd; background: #292929; font: inherit; }
 .loadout-summary { display: flex; align-items: center; gap: 12px; margin: 8px 0 6px; color: #aaa; font-size: 10px; font-variant-numeric: tabular-nums; }
 .loadout-summary strong { margin-left: auto; color: #a5d6a7; font-weight: 600; }
-.cargo-grid { display: grid; grid-template-columns: repeat(var(--slot-count), minmax(0, 1fr)); gap: 4px; }
-.cargo-slot { display: flex; align-items: center; gap: 5px; min-width: 0; min-height: 50px; padding: 5px; border: 1px solid rgba(255,255,255,.11); border-radius: 3px; background: rgba(35,35,35,.55); }
-.cargo-slot img { width: 30px; height: 30px; flex: 0 0 30px; object-fit: contain; image-rendering: pixelated; }
+.cargo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.cargo-slot { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 58px; padding: 6px; border: 1px solid rgba(255,255,255,.11); border-radius: 3px; background: rgba(35,35,35,.55); }
+.cargo-slot img { width: 36px; height: 36px; flex: 0 0 36px; object-fit: contain; image-rendering: pixelated; }
 .cargo-info { display: grid; min-width: 0; gap: 2px; }
-.cargo-info strong { overflow: hidden; color: #eee; font-size: 9px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.cargo-info span { color: #888; font-size: 9px; white-space: nowrap; }
-.cargo-slot b { margin-left: auto; color: #a5d6a7; font-size: 9px; font-variant-numeric: tabular-nums; }
+.cargo-info strong { overflow: hidden; color: #eee; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.cargo-info span { color: #aaa; font-size: 10px; white-space: nowrap; }
 .cargo-slot.empty { justify-content: center; border-style: dashed; background: transparent; }
 .empty-label { color: #666; font-size: 9px; }
 @media (max-width: 520px) { .station-grid { grid-template-columns: 1fr; } }
-@media (max-width: 760px) { .cargo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

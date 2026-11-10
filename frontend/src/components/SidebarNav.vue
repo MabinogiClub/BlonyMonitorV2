@@ -9,7 +9,7 @@ import {
   mdiHome,
   mdiSproutOutline,
   mdiSwordCross,
-  mdiFerry,
+  mdiHorseVariant,
   mdiTshirtCrew,
 } from '@mdi/js'
 import { useAppStore } from '../stores/app'
@@ -26,7 +26,7 @@ const navigation = [
   { name: 'entities', title: '角色列表', icon: mdiAccountGroupOutline },
   { name: 'buffTimer', title: 'Buff通知', icon: mdiBellRingOutline },
   { name: 'farm', title: '塔汀农场', icon: mdiSproutOutline },
-  { name: 'trade', title: '贸易助手', icon: mdiFerry },
+  { name: 'trade', title: '贸易助手', icon: mdiHorseVariant },
   { name: 'equipment', title: '装备耐久', icon: mdiTshirtCrew },
   { name: 'inventory', title: '背包管理', icon: mdiBagPersonalOutline },
 ]
