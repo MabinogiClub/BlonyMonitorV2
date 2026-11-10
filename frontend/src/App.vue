@@ -16,7 +16,6 @@ import TabsPanel from './components/TabsPanel.vue'
 import SidebarNav from './components/SidebarNav.vue'
 import NpcapGuideDialog from './components/NpcapGuideDialog.vue'
 import StartupNoticeDialog from './components/StartupNoticeDialog.vue'
-import SmugglerBanner from './components/SmugglerBanner.vue'
 import { useSmugglerStore } from './stores/smuggler'
 
 const appStore = useAppStore()
@@ -176,8 +175,6 @@ onUnmounted(() => {
   <div class="app-container" :class="{ 'history-mode': appStore.activeTab === 'history' }">
     <TitleBar />
     <StatusBar />
-    <SmugglerBanner />
-
     <div class="chart-drawer" :class="{ expanded: appStore.chartVisible && appStore.activeTab !== 'history' }">
       <ChartPanel />
     </div>

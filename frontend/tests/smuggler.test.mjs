@@ -12,7 +12,7 @@ function moduleURL(source) {
 }
 const eirinURL = moduleURL(readFileSync(new URL('../src/utils/eirinTime.ts', import.meta.url), 'utf8'))
 const source = readFileSync(new URL('../src/utils/smuggler.ts', import.meta.url), 'utf8')
-const { getSmugglerWindow, isCurrentSmugglerNotice, calculateVehicleLoads } = await import(moduleURL(source.replace("'./eirinTime'", JSON.stringify(eirinURL))))
+const { getSmugglerWindow, isCurrentSmugglerNotice, getSmugglerMarqueeText, calculateVehicleLoads } = await import(moduleURL(source.replace("'./eirinTime'", JSON.stringify(eirinURL))))
 const { getEirinDayStart, EIRIN_DAY_MS } = await import(eirinURL)
 const offset = -14
 const dayStart = getEirinDayStart(Date.parse('2026-11-09T20:00:00+08:00'), offset)
@@ -44,6 +44,11 @@ test('all three announcement types identify the same appearance, including a mis
   }
   assert.equal(isCurrentSmugglerNotice(null, at(1650), offset), false)
   assert.equal(isCurrentSmugglerNotice(notice('appear', 1320), at(1200), offset), false)
+})
+
+test('marquee requires trade goods and keeps goods carried from the earlier notice', () => {
+  assert.equal(getSmugglerMarqueeText(notice('disappear_forecast', 1620, ''), '即将消失', '后消失'), '')
+  assert.match(getSmugglerMarqueeText(notice('disappear_forecast', 1620), '即将消失', '后消失'), /热气结晶/)
 })
 
 test('location and goods expire at 06:00 and never carry into the following cycle', () => {
@@ -89,4 +94,36 @@ test('weight limits, partial slots and speed tie breaking apply across every loc
       if (rows[i - 1].totalCost === rows[i].totalCost) assert(rows[i - 1].speed >= rows[i].speed)
     }
   }
+})
+
+const barterSource = readFileSync(new URL('../src/utils/barterLoadout.ts', import.meta.url), 'utf8')
+const { calculateBarterLoadout } = await import(moduleURL(barterSource))
+const barterProducts = (await import(moduleURL(readFileSync(new URL('../src/data/barter.ts', import.meta.url), 'utf8')))).BARTER_PRODUCTS
+
+test('the partner airship loadout prioritizes grade, then station, within all limits', () => {
+  const exchangeable = new Map(barterProducts.map(product => [product.id, product.weeklyLimit]))
+  const ship = { name: 'airship', block: 10, weight: 1500, speed: 240 }
+  const loadout = calculateBarterLoadout(barterProducts, exchangeable, ship)
+
+  assert.equal(loadout.slotsUsed, 10)
+  assert.equal(loadout.totalWeight, 1340)
+  assert.deepEqual(loadout.items.map(({ postId, level, quantity }) => [postId, level, quantity]), [
+    [204, 5, 3], [203, 5, 3], [202, 5, 3], [201, 5, 3],
+    [204, 4, 7], [203, 4, 7], [202, 4, 7], [201, 4, 7],
+    [204, 3, 7], [203, 3, 7],
+  ])
+  assert(loadout.totalWeight <= ship.weight)
+  assert(loadout.slotsUsed <= ship.block)
+})
+
+test('loadout respects backpack availability and can use partial stacks on a small vehicle', () => {
+  const firstProduct = barterProducts.find(product => product.id === 20405)
+  const exchangeable = new Map([[firstProduct.id, 20]])
+  const smallVehicle = { name: 'small', block: 1, weight: 50, speed: 100 }
+  const loadout = calculateBarterLoadout(barterProducts, exchangeable, smallVehicle)
+
+  assert.equal(loadout.slotsUsed, 1)
+  assert.equal(loadout.totalWeight, 30)
+  assert.equal(loadout.items[0].quantity, 1)
+  assert.equal(loadout.items[0].estimatedValue, 150000)
 })

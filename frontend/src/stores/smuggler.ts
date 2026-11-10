@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as api from '../composables/useApi'
 import { useEirinTime } from '../composables/useEirinTime'
-import { getSmugglerWindow, isCurrentSmugglerNotice, type SmugglerNotice } from '../utils/smuggler'
+import { getSmugglerMarqueeText, getSmugglerWindow, isCurrentSmugglerNotice, type SmugglerNotice } from '../utils/smuggler'
 import { formatCountdown, formatRealTime } from '../data/ferry'
 
 export const useSmugglerStore = defineStore('smuggler', () => {
@@ -19,11 +19,7 @@ export const useSmugglerStore = defineStore('smuggler', () => {
     const action = phase === 'absent' || phase === 'forecast' ? '出现' : '消失'
     return `${formatCountdown(target - clockNow.value)} 后${action}（${formatRealTime(target)}）`
   })
-  const marqueeText = computed(() => {
-    if (!currentNotice.value) return ''
-    const { area, item } = currentNotice.value
-    return `${statusLabel.value} · ${area}${item ? ` · 今日贸易物品：${item}` : ''} · ${countdown.value}`
-  })
+  const marqueeText = computed(() => getSmugglerMarqueeText(currentNotice.value, statusLabel.value, countdown.value))
 
   let revision = 0
   function receiveNotice(value: SmugglerNotice | null) {

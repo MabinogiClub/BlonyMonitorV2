@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import SvgIcon from '@jamescoyle/vue-icon'
 import { mdiMapMarkerOutline, mdiPackageVariantClosed, mdiTruckOutline } from '@mdi/js'
 import { useSmugglerStore } from '../stores/smuggler'
+import SmugglerBanner from '../components/SmugglerBanner.vue'
 import { getSmugglerAreaImage, getSmugglerProduct, getSmugglerProductImage, getSmugglerVehicles } from '../data/smuggler'
 
 const smuggler = useSmugglerStore()
@@ -15,6 +16,7 @@ const levelColors = ['#888', '#a5d6a7', '#90caf9', '#ce93d8', '#ffab91', '#ffd54
 
 <template>
   <div class="smuggler-view">
+    <SmugglerBanner />
     <section class="smuggler-card location-card" aria-label="走私商人位置">
       <header class="card-header">
         <svg-icon type="mdi" :path="mdiMapMarkerOutline" :size="17" />

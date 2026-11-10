@@ -34,6 +34,11 @@ export function isCurrentSmugglerNotice(notice: SmugglerNotice | null, now: numb
   return forecastAt === cycle.forecastAt
 }
 
+export function getSmugglerMarqueeText(notice: SmugglerNotice | null, status: string, countdown: string): string {
+  if (!notice?.item) return ''
+  return `${status} · ${notice.area} · 今日贸易物品：${notice.item} · ${countdown}`
+}
+
 export interface TradeProduct {
   name: string
   area: string

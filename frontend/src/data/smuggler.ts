@@ -1,6 +1,7 @@
 import products from '../assets/smuggler/product.json'
 import vehicles from '../assets/smuggler/vehicle.json'
 import { calculateVehicleLoads, type TradeProduct } from '../utils/smuggler'
+import type { BarterProduct } from './barter'
 
 // Game images and trade data from baibaibot's local smuggler query assets.
 const areaImages = import.meta.glob<string>('../assets/smuggler/area/*.png', { eager: true, query: '?url', import: 'default' })
@@ -22,6 +23,14 @@ export function getSmugglerProductImage(product: TradeProduct): string | undefin
   return productImages[`../assets/smuggler/product/${product.img}`]
 }
 
+export function getBarterProductImage(product: BarterProduct): string | undefined {
+  return productImages[`../assets/smuggler/product/${product.id}.png`]
+}
+
 export function getSmugglerVehicles(product: TradeProduct) {
   return calculateVehicleLoads(product, vehicles)
+}
+
+export function getTradeVehicles() {
+  return vehicles
 }
