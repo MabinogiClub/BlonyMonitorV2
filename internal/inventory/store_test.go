@@ -82,6 +82,41 @@ func TestReplaceSnapshotsAndPetOwner(t *testing.T) {
 	}
 }
 
+func TestCharacterBackpackCountsExcludesOtherHoldersAndContainers(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "inventory.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	snapshots := []Snapshot{
+		{HolderID: "1", HolderType: "character", HolderName: "同名", Container: "backpack", Items: []Item{
+			{InstanceID: 1, ItemID: 60022, Amount: 4, PocketType: 2},
+			{InstanceID: 2, ItemID: 60022, Amount: 3, PocketType: 23},
+			{InstanceID: 3, ItemID: 5110021, Amount: 712, PocketType: 23},
+			{InstanceID: 4, ItemID: 5110038, Amount: 0, PocketType: 23},
+			{InstanceID: 5, ItemID: 60022, Amount: 100, PocketType: 65},
+		}},
+		{HolderID: "1", HolderType: "character", HolderName: "同名", Container: "gacha", Items: []Item{{InstanceID: 6, ItemID: 60022, Amount: 100}}},
+		{HolderID: "2", HolderType: "character", HolderName: "同名", Container: "backpack", Items: []Item{{InstanceID: 7, ItemID: 60022, Amount: 100}}},
+		{HolderID: "3", HolderType: "pet", HolderName: "同名", Container: "backpack", Items: []Item{{InstanceID: 8, ItemID: 60022, Amount: 100}}},
+		{HolderID: "account:a", HolderType: "account", Container: "bank", Items: []Item{{InstanceID: 9, ItemID: 60022, Amount: 100}}},
+	}
+	if err := store.ReplaceSnapshots(snapshots); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := store.CharacterBackpackCounts("1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(counts) != 3 || counts[60022] != 7 || counts[5110021] != 712 || counts[5110038] != 0 {
+		t.Fatalf("counts = %#v", counts)
+	}
+	counts, err = store.CharacterBackpackCounts("3")
+	if err != nil || len(counts) != 0 {
+		t.Fatalf("pet counts = %#v, error = %v", counts, err)
+	}
+}
+
 func TestStateMergesSameItemAcrossPockets(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "inventory.db"))
 	if err != nil {

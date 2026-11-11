@@ -729,6 +729,11 @@ export async function getInventoryState(): Promise<InventoryState> {
   return await window.go.app.App.GetInventoryState() as InventoryState
 }
 
+export async function getCharacterBackpackCounts(holderID: string): Promise<Record<number, number>> {
+  if (!holderID || !isWailsReady()) return {}
+  return await (window.go.app.App as typeof window.go.app.App & Pick<GoApp, 'GetCharacterBackpackCounts'>).GetCharacterBackpackCounts(holderID)
+}
+
 export async function getItemDisplayNames(ids: number[]): Promise<Record<number, string>> {
   if (!isWailsReady()) return {}
   return await (window.go.app.App as typeof window.go.app.App & Pick<GoApp, 'GetItemDisplayNames'>).GetItemDisplayNames(ids)

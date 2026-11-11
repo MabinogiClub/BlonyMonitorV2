@@ -134,6 +134,7 @@ type App struct {
 	saveWriterMu                sync.Mutex
 	saveWriter                  *saveWriter
 	inventoryStore              *inventory.Store
+	inventoryLive               inventoryLiveState
 	farmStatsStore              *farmstats.Store
 	lifeCoinStacks              map[string]map[uint64]int64
 	lifeCoinBalances            map[string]int64
@@ -265,6 +266,7 @@ func (a *App) Shutdown(ctx context.Context) {
 		a.farmRecommendationMgr.close()
 	}
 	if a.inventoryStore != nil {
+		a.closeInventoryUpdates()
 		if err := a.inventoryStore.Close(); err != nil {
 			logger.Printf("[Inventory] close database failed: %v", err)
 		}

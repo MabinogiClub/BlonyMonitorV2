@@ -3,8 +3,10 @@ import { computed } from 'vue'
 import SvgIcon from '@jamescoyle/vue-icon'
 import { mdiAlert } from '@mdi/js'
 import { useAppStore } from '../stores/app'
+import { formatSelfName } from '../utils/selfName'
 
 const appStore = useAppStore()
+const selfNameDisplayText = computed(() => formatSelfName(appStore.selfInfo?.name || '', appStore.maskSelfName))
 
 const selfLoadingHint =
   '尚未识别到您的角色，战斗、Buff 等数据可能不准确。请切换地图（进入农场）或进入副本以完成识别。'
@@ -68,16 +70,6 @@ const channelDisplayText = computed(() => {
   return '未选择频道'
 })
 
-const selfNameDisplayText = computed(() => {
-  const name = appStore.selfInfo?.name || ''
-  if (!appStore.maskSelfName || !name) return name
-
-  const characters = Array.from(name)
-  if (characters.length <= 1) return name
-
-  const visibleCount = characters.length === 2 ? 1 : 2
-  return `${characters.slice(0, visibleCount).join('')}**`
-})
 </script>
 
 <template>

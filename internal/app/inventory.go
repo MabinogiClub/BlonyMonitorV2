@@ -167,7 +167,10 @@ func inventoryItems(records []packet.InventoryItemRecord) []inventory.Item {
 			names[record.Item.ItemId] = name
 		}
 		amount := int(record.Item.Amount)
-		if amount <= 0 {
+		if isTextileMaterialSac(record.Item.ItemId) {
+			amount = int(record.RawAmount)
+		}
+		if amount <= 0 && !isTextileMaterialSac(record.Item.ItemId) {
 			amount = 1
 		}
 		name = inventoryDisplayName(record.Item.ItemId, name, record.ExtendedData, record.Attributes)
@@ -186,10 +189,17 @@ func (a *App) replaceInventorySnapshots(snapshots ...inventory.Snapshot) {
 	if a.inventoryStore == nil || len(snapshots) == 0 {
 		return
 	}
+	a.inventoryLive.mu.Lock()
+	defer a.inventoryLive.mu.Unlock()
+	if a.inventoryLive.closed {
+		return
+	}
+	a.flushInventoryUpdatesLocked()
 	if err := a.inventoryStore.ReplaceSnapshots(snapshots); err != nil {
 		logger.Printf("[Inventory] replace snapshot failed: %v", err)
 		return
 	}
+	a.trackInventorySnapshotsLocked(snapshots)
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "inventory-updated")
 	}
@@ -229,6 +239,12 @@ func (a *App) handleInventoryCharacterPacket(pkt *packet.GamePacket, character *
 		HolderType: holderType,
 		HolderName: character.Name,
 		CapturedAt: inventoryCapturedAt(pkt),
+	}
+	if holderType == "character" {
+		currentID, currentName := a.currentInventoryCharacter()
+		if currentID == base.HolderID && currentName != character.Name {
+			a.setSelfInfo(base.HolderID, character.Name)
+		}
 	}
 	backpackSnapshot := base
 	backpackSnapshot.Container = inventoryContainerBackpack
@@ -402,6 +418,18 @@ func (a *App) GetInventoryState() inventory.State {
 		}
 	}
 	return state
+}
+
+func (a *App) GetCharacterBackpackCounts(holderID string) map[uint32]int {
+	if a.inventoryStore == nil || holderID == "" {
+		return map[uint32]int{}
+	}
+	counts, err := a.inventoryStore.CharacterBackpackCounts(holderID)
+	if err != nil {
+		logger.Printf("[Inventory] read backpack counts failed: %v", err)
+		return map[uint32]int{}
+	}
+	return counts
 }
 
 func (a *App) GetItemDisplayNames(ids []uint32) map[uint32]string {

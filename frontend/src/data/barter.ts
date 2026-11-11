@@ -21,6 +21,27 @@ export const BARTER_STATIONS = [
   { id: 201, name: '卡鲁森林交易所' },
 ]
 
+// R147 ItemDB sac_item fields: material bags carry their contained quantity.
+export const BARTER_MATERIAL_BAGS: Record<number, readonly number[]> = {
+  60011: [2052, 2122, 5110022, 5110039],
+  60012: [2053, 2123, 5110023, 5110040],
+  60013: [2054, 2124, 5110024, 5110041],
+  60014: [2055, 2125, 5110025, 5110042],
+  60019: [2048, 2118, 5110018, 5110035],
+  60020: [2049, 2119, 5110019, 5110036],
+  60021: [2050, 2120, 5110020, 5110037],
+  60022: [2051, 2121, 5110021, 5110038],
+}
+
+export function addBarterMaterialBagContents(counts: Map<number, number>): Map<number, number> {
+  const result = new Map(counts)
+  for (const [materialId, bagIds] of Object.entries(BARTER_MATERIAL_BAGS)) {
+    const containedAmount = bagIds.reduce((sum, bagId) => sum + (counts.get(bagId) || 0), 0)
+    if (containedAmount > 0) result.set(Number(materialId), (result.get(Number(materialId)) || 0) + containedAmount)
+  }
+  return result
+}
+
 // R147 CommerceCommon, gf2022CommerceAlbanEiler recipes.
 export const BARTER_PRODUCTS: BarterProduct[] = [
   { id: 20101, postId: 201, level: 1, name: '木制桌', weeklyLimit: 25, boxCapacity: 10, weight: 15, materials: [{ itemId: 50664, amount: 4 }, { itemId: 67201, amount: 2 }] },

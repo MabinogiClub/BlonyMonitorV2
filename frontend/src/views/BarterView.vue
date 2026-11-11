@@ -4,25 +4,24 @@ import SvgIcon from '@jamescoyle/vue-icon'
 import { mdiSwapHorizontal, mdiRefresh } from '@mdi/js'
 import * as api from '../composables/useApi'
 import { useAppStore } from '../stores/app'
-import { BARTER_PRODUCTS, BARTER_STATIONS, type BarterProduct } from '../data/barter'
+import { addBarterMaterialBagContents, BARTER_PRODUCTS, BARTER_STATIONS, type BarterProduct } from '../data/barter'
 import { getBarterProductImage, getTradeVehicles } from '../data/smuggler'
 import { calculateBarterLoadout } from '../utils/barterLoadout'
+import { formatSelfName } from '../utils/selfName'
 
-const inventory = ref<InventoryState>({ databasePath: '', rows: [], holders: [] })
+const materialCounts = ref<Record<number, number>>({})
 const itemNames = ref<Record<number, string>>({})
 const loading = ref(false)
 const appStore = useAppStore()
+const selfNameDisplayText = computed(() => formatSelfName(appStore.selfInfo?.name || '', appStore.maskSelfName))
 const vehicles = getTradeVehicles()
+let inventoryLoadInFlight: Promise<void> | null = null
+let inventoryRefreshQueued = false
+let unmounted = false
 
 const backpackCounts = computed(() => {
-  const counts = new Map<number, number>()
-  const characterId = appStore.selfInfo?.id
-  if (!characterId) return counts
-  for (const row of inventory.value.rows) {
-    if (row.container !== 'backpack' || row.holderType !== 'character' || row.holderId !== characterId) continue
-    counts.set(row.itemId, (counts.get(row.itemId) || 0) + row.amount)
-  }
-  return counts
+  const counts = new Map(Object.entries(materialCounts.value).map(([id, amount]) => [Number(id), amount]))
+  return addBarterMaterialBagContents(counts)
 })
 
 const stations = computed(() => BARTER_STATIONS.map(station => ({
@@ -63,27 +62,51 @@ function itemName(id: number): string {
 }
 
 async function load() {
-  loading.value = true
-  try {
-    inventory.value = await api.getInventoryState()
-    const ids = [...new Set(BARTER_PRODUCTS.flatMap(product => product.materials.map(material => material.itemId)))]
-    itemNames.value = await api.getItemDisplayNames(ids)
-  } catch (error) {
-    console.error('加载以物换物数据失败:', error)
-  } finally {
-    loading.value = false
+  if (inventoryLoadInFlight) {
+    inventoryRefreshQueued = true
+    return inventoryLoadInFlight
   }
+  loading.value = true
+  inventoryLoadInFlight = (async () => {
+    try {
+      const characterId = appStore.selfInfo?.id || ''
+      const counts = await api.getCharacterBackpackCounts(characterId)
+      if (!unmounted && characterId === (appStore.selfInfo?.id || '')) materialCounts.value = counts
+      if (Object.keys(itemNames.value).length === 0) {
+        const ids = [...new Set(BARTER_PRODUCTS.flatMap(product => product.materials.map(material => material.itemId)))]
+        itemNames.value = await api.getItemDisplayNames(ids)
+      }
+    } catch (error) {
+      console.error('加载以物换物数据失败:', error)
+    } finally {
+      loading.value = false
+      inventoryLoadInFlight = null
+      if (inventoryRefreshQueued && !unmounted) {
+        inventoryRefreshQueued = false
+        void load()
+      }
+    }
+  })()
+  return inventoryLoadInFlight
 }
 
 function handleInventoryUpdated() {
   void load()
 }
 
+watch(() => appStore.selfInfo?.id, () => {
+  materialCounts.value = {}
+  void load()
+})
+
 onMounted(() => {
   void load()
   api.onEvent('inventory-updated', handleInventoryUpdated)
 })
-onUnmounted(() => api.offEvent('inventory-updated', handleInventoryUpdated))
+onUnmounted(() => {
+  unmounted = true
+  api.offEvent('inventory-updated', handleInventoryUpdated)
+})
 </script>
 
 <template>
@@ -94,7 +117,7 @@ onUnmounted(() => api.offEvent('inventory-updated', handleInventoryUpdated))
         <h2>以物换物</h2>
       </div>
       <div class="heading-actions">
-        <span v-if="appStore.selfInfo">当前角色：{{ appStore.selfInfo.name }}</span>
+        <span v-if="appStore.selfInfo">当前角色：{{ selfNameDisplayText }}</span>
         <span v-else>等待角色信息</span>
         <button type="button" title="刷新背包数据" aria-label="刷新背包数据" :disabled="loading" @click="load">
           <svg-icon type="mdi" :path="mdiRefresh" :size="17" />

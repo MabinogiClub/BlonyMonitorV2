@@ -51,6 +51,7 @@ interface GoApp {
   GetAllPCEntities(): Promise<EntityInfo[]>
   GetSelfEquipmentState(): Promise<SelfEquipmentState>
   GetInventoryState(): Promise<InventoryState>
+  GetCharacterBackpackCounts(holderID: string): Promise<Record<number, number>>
   GetItemDisplayNames(ids: number[]): Promise<Record<number, string>>
   GetAllCreatures(): Promise<CreatureInfo[]>
   Clear(): Promise<void>

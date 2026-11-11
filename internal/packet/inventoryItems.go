@@ -1,5 +1,7 @@
 package packet
 
+import "encoding/binary"
+
 const (
 	publicItemBlockSizeLegacy = 80
 	// R143 appends 4 trailing bytes (observed as 00 00 FF FF) to the public
@@ -22,7 +24,10 @@ func IsPublicItemBlock(data []byte) bool {
 // InventoryItemRecord is the stable portion shared by character, bank,
 // dressing-room and cash-shop inventory snapshots.
 type InventoryItemRecord struct {
-	InstanceID   uint64
+	InstanceID uint64
+	// RawAmount preserves zero for an empty material sac. EntityItemReader
+	// normalizes zero to one for ordinary, unstackable items.
+	RawAmount    uint16
 	Item         *EntityItem
 	ExtendedData []byte
 	// Attributes is the optional instance attribute string following the
@@ -80,6 +85,7 @@ func ParseInventoryItemRecords(msg Message) []InventoryItemRecord {
 		}
 		records = append(records, InventoryItemRecord{
 			InstanceID:   instanceID,
+			RawAmount:    binary.LittleEndian.Uint16(publicData[36:]),
 			Item:         item,
 			ExtendedData: extendedData,
 			Attributes:   attributes,

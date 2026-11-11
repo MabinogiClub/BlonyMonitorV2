@@ -99,6 +99,14 @@ test('weight limits, partial slots and speed tie breaking apply across every loc
 const barterSource = readFileSync(new URL('../src/utils/barterLoadout.ts', import.meta.url), 'utf8')
 const { calculateBarterLoadout } = await import(moduleURL(barterSource))
 const barterProducts = (await import(moduleURL(readFileSync(new URL('../src/data/barter.ts', import.meta.url), 'utf8')))).BARTER_PRODUCTS
+const { addBarterMaterialBagContents } = await import(moduleURL(readFileSync(new URL('../src/data/barter.ts', import.meta.url), 'utf8')))
+
+test('barter material totals include cloth and silk stored in their matching bags', () => {
+  const counts = addBarterMaterialBagContents(new Map([[60022, 4], [5110021, 712], [5110042, 5]]))
+  assert.equal(counts.get(60022), 716)
+  assert.equal(counts.get(60014), 5)
+  assert.equal(counts.get(5110021), 712)
+})
 
 test('the partner airship maximizes estimated total value within stack, slot and weight limits', () => {
   const exchangeable = new Map(barterProducts.map(product => [product.id, product.weeklyLimit]))

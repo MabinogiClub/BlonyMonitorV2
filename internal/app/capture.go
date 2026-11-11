@@ -405,9 +405,14 @@ func (a *App) processPacket(pkt *packet.GamePacket) {
 
 	case opcodeItemInfoUpdate, opcodeItemMoveUpdate:
 		a.handleSelfEquipmentItemUpdatePacket(pkt)
+		a.handleInventoryDelta(pkt)
 
 	case opcodeItemPocketMove, opcodeItemPocketSwap:
 		a.handleSelfEquipmentPocketMovePacket(pkt)
+		a.handleInventoryDelta(pkt)
+
+	case opcodeItemStackUpdate, opcodeItemRemoveUpdate:
+		a.handleInventoryDelta(pkt)
 
 	case opcodeItemDurabilityUpdate:
 		a.handleItemDurabilityUpdatePacket(pkt)

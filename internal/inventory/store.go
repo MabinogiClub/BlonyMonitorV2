@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS items (
 );
 CREATE INDEX IF NOT EXISTS idx_inventory_items_item_id ON items(item_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_items_name ON items(name);
+CREATE INDEX IF NOT EXISTS idx_inventory_items_instance ON items(instance_id);
 `)
 	if err != nil {
 		return err
@@ -228,14 +229,91 @@ scanned_by_id=excluded.scanned_by_id, scanned_by_name=excluded.scanned_by_name, 
 		if item.ItemID == 0 {
 			continue
 		}
-		if item.Amount <= 0 {
-			item.Amount = 1
+		if item.Amount < 0 {
+			item.Amount = 0
 		}
 		if _, err := statement.Exec(snapshotID, fmt.Sprint(item.InstanceID), item.ItemID, item.Name, item.Amount, item.PocketType); err != nil {
 			return fmt.Errorf("insert inventory item: %w", err)
 		}
 	}
 	return nil
+}
+
+// ItemChange updates an instance established by a complete inventory snapshot.
+// Changes are settled in one transaction without rewriting the other items.
+type ItemChange struct {
+	HolderID  string
+	Container string
+	Item      Item
+	Removed   bool
+	UpdatedAt int64
+}
+
+func (s *Store) ApplyItemChanges(changes []ItemChange) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, change := range changes {
+		instanceID := fmt.Sprint(change.Item.InstanceID)
+		var oldSnapshot int64
+		err := tx.QueryRow(`SELECT i.snapshot_id FROM items i JOIN snapshots sn ON sn.id=i.snapshot_id
+WHERE i.instance_id=? AND sn.holder_id=? AND sn.sub_location='' AND sn.container IN ('backpack','gacha','currency') LIMIT 1`, instanceID, change.HolderID).Scan(&oldSnapshot)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if change.Removed {
+			if _, err := tx.Exec(`DELETE FROM items WHERE snapshot_id=? AND instance_id=?`, oldSnapshot, instanceID); err != nil {
+				return err
+			}
+		} else {
+			var targetSnapshot int64
+			if err := tx.QueryRow(`SELECT id FROM snapshots WHERE holder_id=? AND container=? AND sub_location=''`, change.HolderID, change.Container).Scan(&targetSnapshot); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`UPDATE items SET snapshot_id=?, item_id=?, name=?, amount=?, pocket_type=? WHERE snapshot_id=? AND instance_id=?`,
+				targetSnapshot, change.Item.ItemID, change.Item.Name, change.Item.Amount, change.Item.PocketType, oldSnapshot, instanceID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`UPDATE snapshots SET updated_at=MAX(updated_at,?) WHERE id=?`, change.UpdatedAt, targetSnapshot); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(`UPDATE snapshots SET updated_at=MAX(updated_at,?) WHERE id=?`, change.UpdatedAt, oldSnapshot); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// CharacterBackpackCounts avoids reading and formatting every saved inventory
+// when the barter view only needs one character's aggregate material counts.
+func (s *Store) CharacterBackpackCounts(holderID string) (map[uint32]int, error) {
+	counts := make(map[uint32]int)
+	rows, err := s.db.Query(`SELECT i.item_id, SUM(i.amount)
+FROM items i JOIN snapshots sn ON sn.id=i.snapshot_id JOIN holders h ON h.holder_id=sn.holder_id
+WHERE sn.holder_id=? AND h.holder_type='character' AND sn.container='backpack' AND sn.sub_location='' AND i.pocket_type<>65
+GROUP BY i.item_id`, holderID)
+	if err != nil {
+		return counts, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uint32
+		var amount int
+		if err := rows.Scan(&id, &amount); err != nil {
+			return counts, err
+		}
+		counts[id] = amount
+	}
+	return counts, rows.Err()
 }
 
 func (s *Store) UpdatePetOwner(petID, petName, ownerID, ownerName string, updatedAt int64) error {
