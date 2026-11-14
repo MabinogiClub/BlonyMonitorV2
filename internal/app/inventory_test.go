@@ -52,6 +52,32 @@ func TestCharacterSnapshotSplitsSpecialContainersFromBackpack(t *testing.T) {
 	}
 }
 
+func TestCharacterSnapshotSeparatesMoonlightAndFarmStorageFromBackpack(t *testing.T) {
+	store, err := inventory.Open(filepath.Join(t.TempDir(), "inventory.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	app := NewApp()
+	app.inventoryStore = store
+	message := append(inventoryTestRecord(1, 104, 60022, 2), inventoryTestRecord(2, 88, 60022, 10)...)
+	message = append(message, inventoryTestRecord(3, farmStoragePocketType, 60022, 20)...)
+	app.handleInventoryCharacterPacket(&packet.GamePacket{Msg: message}, &packet.CharacterDataPacket{
+		Id: 1, Name: "角色", RaceId: 10001,
+	})
+	counts := app.GetCharacterBackpackCounts("1")
+	if len(counts) != 1 || counts[60022] != 2 {
+		t.Fatalf("backpack counts = %#v", counts)
+	}
+	containers := make(map[int]string)
+	for _, row := range app.GetInventoryState().Rows {
+		containers[row.Amount] = row.Container
+	}
+	if containers[2] != inventoryContainerBackpack || containers[10] != inventoryContainerMoonlight || containers[20] != inventoryContainerFarm {
+		t.Fatalf("container rows = %#v", containers)
+	}
+}
+
 func TestCurrencyPocketInExistingBackpackSnapshotIsReclassified(t *testing.T) {
 	store, err := inventory.Open(filepath.Join(t.TempDir(), "inventory.db"))
 	if err != nil {

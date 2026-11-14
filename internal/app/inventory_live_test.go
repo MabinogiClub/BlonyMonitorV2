@@ -89,6 +89,19 @@ func TestInventoryLiveTracksInfoUpdatesAndEmptyMaterialSacs(t *testing.T) {
 	}
 }
 
+func TestInventoryLiveAcceptsTransformedItemRecord(t *testing.T) {
+	a := newInventoryLiveTestApp(t)
+	at := time.UnixMilli(1000)
+	a.handleInventoryCharacterPacket(&packet.GamePacket{At: at, Msg: inventoryTestRecord(1, 104, 4001473, 1)},
+		&packet.CharacterDataPacket{Id: 101, Name: "角色", RaceId: 10001})
+	a.handleInventoryDelta(&packet.GamePacket{Id: 101, At: at.Add(time.Second), Op: opcodeItemMoveUpdate,
+		Msg: inventoryTestRecord(1, 104, 5000138, 1)})
+	a.flushInventoryUpdates()
+	if rows := a.GetInventoryState().Rows; len(rows) != 1 || rows[0].ItemID != 5000138 {
+		t.Fatalf("transformed item rows = %#v", rows)
+	}
+}
+
 func TestInventoryLiveBatchesBurstAndSkipsUnchangedItems(t *testing.T) {
 	a := newInventoryLiveTestApp(t)
 	at := time.UnixMilli(1000)
@@ -141,5 +154,65 @@ func TestInventoryLiveRejectsDifferentRecipientsAndDelayedUpdates(t *testing.T) 
 	a.flushInventoryUpdates()
 	if counts := a.GetCharacterBackpackCounts("101"); len(counts) != 0 {
 		t.Fatalf("removed item was restored: %#v", counts)
+	}
+}
+
+func TestInventoryLiveTracksNewInstancesTransfersAndSpecialStorage(t *testing.T) {
+	a := newInventoryLiveTestApp(t)
+	at := time.UnixMilli(1000)
+	a.handleInventoryCharacterPacket(&packet.GamePacket{At: at, Msg: inventoryTestRecord(1, 104, 60022, 2)},
+		&packet.CharacterDataPacket{Id: 101, Name: "角色", RaceId: 10001})
+	a.handleInventoryCharacterPacket(&packet.GamePacket{At: at, Msg: inventoryTestRecord(2, 104, 60022, 3)},
+		&packet.CharacterDataPacket{Id: 202, Name: "宠物", RaceId: 10002})
+
+	// Pocket 88 is the Moonlight Island store, not the trade backpack. Pocket
+	// 307 is the farm store. Both stay out of barter material totals.
+	for pocket, want := range map[uint32]string{88: inventoryContainerMoonlight, farmStoragePocketType: inventoryContainerFarm} {
+		a.handleInventoryDelta(&packet.GamePacket{Id: 101, At: at.Add(time.Second), Op: opcodeItemStackUpdate,
+			Msg: packet.Message{packet.NewMessageElemLong(1), packet.NewMessageElemShort(2), packet.NewMessageElemInt(pocket)}})
+		a.flushInventoryUpdates()
+		found := false
+		for _, row := range a.GetInventoryState().Rows {
+			if row.HolderID == "101" && row.ItemID == 60022 && row.Container == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("pocket %d did not map to %s: %#v", pocket, want, a.GetInventoryState().Rows)
+		}
+		if counts := a.GetCharacterBackpackCounts("101"); len(counts) != 0 {
+			t.Fatalf("pocket %d leaked into backpack counts: %#v", pocket, counts)
+		}
+	}
+
+	// A split creates an instance absent from the login snapshot; its full
+	// item record is enough to add it under the established packet recipient.
+	a.handleInventoryDelta(&packet.GamePacket{Id: 101, At: at.Add(2 * time.Second), Op: opcodeItemMoveUpdate,
+		Msg: inventoryTestRecord(3, 104, 60022, 4)})
+	a.flushInventoryUpdates()
+	if counts := a.GetCharacterBackpackCounts("101"); counts[60022] != 4 {
+		t.Fatalf("split instance counts = %#v", counts)
+	}
+
+	// Pet removal followed by the character's public item record transfers the
+	// same instance without leaving a stale pet copy.
+	a.handleInventoryDelta(&packet.GamePacket{Id: 202, At: at.Add(3 * time.Second), Op: opcodeItemRemoveUpdate,
+		Msg: packet.Message{packet.NewMessageElemLong(2)}})
+	a.handleInventoryDelta(&packet.GamePacket{Id: 101, At: at.Add(4 * time.Second), Op: opcodeItemMoveUpdate,
+		Msg: inventoryTestRecord(2, 104, 60022, 3)})
+	a.flushInventoryUpdates()
+	petCount, characterCount := 0, 0
+	for _, row := range a.GetInventoryState().Rows {
+		if row.ItemID != 60022 {
+			continue
+		}
+		if row.HolderID == "202" && row.Container == inventoryContainerBackpack {
+			petCount += row.Amount
+		} else if row.HolderID == "101" && row.Container == inventoryContainerBackpack {
+			characterCount += row.Amount
+		}
+	}
+	if petCount != 0 || characterCount != 7 {
+		t.Fatalf("pet=%d character=%d rows=%#v", petCount, characterCount, a.GetInventoryState().Rows)
 	}
 }

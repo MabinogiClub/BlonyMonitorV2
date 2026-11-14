@@ -15,6 +15,7 @@ import (
 type inventoryLiveState struct {
 	mu      sync.Mutex
 	items   map[uint64]inventory.ItemChange
+	holders map[string]string
 	pending map[uint64]inventory.ItemChange
 	timer   *time.Timer
 	closed  bool
@@ -33,6 +34,10 @@ func inventoryContainerForPocket(pocket uint32) string {
 		return inventoryContainerGacha
 	case inventoryCurrencyPocket:
 		return inventoryContainerCurrency
+	case 88:
+		return inventoryContainerMoonlight
+	case farmStoragePocketType:
+		return inventoryContainerFarm
 	default:
 		return inventoryContainerBackpack
 	}
@@ -43,13 +48,17 @@ func (a *App) trackInventorySnapshotsLocked(snapshots []inventory.Snapshot) {
 	if state.items == nil {
 		state.items = make(map[uint64]inventory.ItemChange)
 	}
+	if state.holders == nil {
+		state.holders = make(map[string]string)
+	}
 	for _, snapshot := range snapshots {
 		if snapshot.HolderType == "account" || snapshot.SubLocation != "" {
 			continue
 		}
-		if snapshot.Container != inventoryContainerBackpack && snapshot.Container != inventoryContainerGacha && snapshot.Container != inventoryContainerCurrency {
+		if snapshot.Container != inventoryContainerBackpack && snapshot.Container != inventoryContainerGacha && snapshot.Container != inventoryContainerCurrency && snapshot.Container != inventoryContainerMoonlight && snapshot.Container != inventoryContainerFarm {
 			continue
 		}
+		state.holders[snapshot.HolderID] = snapshot.HolderType
 		for id, item := range state.items {
 			if item.HolderID == snapshot.HolderID && item.Container == snapshot.Container {
 				delete(state.items, id)
@@ -124,17 +133,43 @@ func (a *App) handleInventoryDelta(pkt *packet.GamePacket) {
 		}
 	case opcodeItemInfoUpdate, opcodeItemMoveUpdate:
 		for _, record := range packet.ParseInventoryItemRecords(pkt.Msg) {
-			queue(record.InstanceID, func(item *inventory.ItemChange) {
-				if record.Item.ItemId != item.Item.ItemID {
-					return
-				}
-				item.Item.Amount = int(record.Item.Amount)
-				if isTextileMaterialSac(record.Item.ItemId) {
-					item.Item.Amount = int(record.RawAmount)
-				}
-				item.Item.PocketType = record.Item.PocketType
-				item.Container = inventoryContainerForPocket(record.Item.PocketType)
-			})
+			if record.InstanceID == 0 {
+				continue
+			}
+			holderID := ""
+			if pkt.Id != 0 {
+				holderID = strconv.FormatUint(pkt.Id, 10)
+			}
+			existing, known := state.items[record.InstanceID]
+			if holderID == "" && known {
+				holderID = existing.HolderID
+			}
+			if known && !existing.Removed && existing.HolderID == holderID {
+				queue(record.InstanceID, func(item *inventory.ItemChange) {
+					item.Item = inventoryItems([]packet.InventoryItemRecord{record})[0]
+					item.Container = inventoryContainerForPocket(record.Item.PocketType)
+				})
+				continue
+			}
+			holderType, established := state.holders[holderID]
+			if !established || (holderType != "character" && holderType != "pet") {
+				continue
+			}
+			item := inventoryItems([]packet.InventoryItemRecord{record})[0]
+			change := inventory.ItemChange{
+				HolderID:  holderID,
+				Container: inventoryContainerForPocket(record.Item.PocketType),
+				Item:      item,
+				UpdatedAt: at,
+			}
+			if previous, known := state.items[record.InstanceID]; known && previous.HolderID != holderID {
+				change.PreviousHolderID = previous.HolderID
+			}
+			state.items[record.InstanceID] = change
+			if state.pending == nil {
+				state.pending = make(map[uint64]inventory.ItemChange)
+			}
+			state.pending[record.InstanceID] = change
 		}
 	}
 	// A fixed 300 ms window coalesces stack split/merge bursts and bounds UI

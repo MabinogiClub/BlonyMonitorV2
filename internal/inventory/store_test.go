@@ -117,6 +117,28 @@ func TestCharacterBackpackCountsExcludesOtherHoldersAndContainers(t *testing.T) 
 	}
 }
 
+func TestCharacterBackpackCountsExcludesSpecialPocketsInLegacyBackpackSnapshot(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "inventory.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.ReplaceSnapshots([]Snapshot{{
+		HolderID: "1", HolderType: "character", Container: "backpack",
+		Items: []Item{
+			{InstanceID: 1, ItemID: 60022, Amount: 2, PocketType: 104},
+			{InstanceID: 2, ItemID: 60022, Amount: 100, PocketType: 88},
+			{InstanceID: 3, ItemID: 60022, Amount: 100, PocketType: 307},
+		},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := store.CharacterBackpackCounts("1")
+	if err != nil || len(counts) != 1 || counts[60022] != 2 {
+		t.Fatalf("counts = %#v, error = %v", counts, err)
+	}
+}
+
 func TestStateMergesSameItemAcrossPockets(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "inventory.db"))
 	if err != nil {

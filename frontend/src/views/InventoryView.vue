@@ -22,6 +22,8 @@ const containerLabels: Record<string, string> = {
   dressing: '美容室',
   cash: '商城栏',
   currency: '货币保管盒',
+  moonlight: '月光岛仓库',
+  farm: '农场仓库',
 }
 
 function subjectType(row: InventoryRow): string {
@@ -159,6 +161,8 @@ onUnmounted(() => {
         <option value="dressing">美容室</option>
         <option value="cash">商城栏</option>
         <option value="currency">货币保管盒</option>
+        <option value="moonlight">月光岛仓库</option>
+        <option value="farm">农场仓库</option>
       </select>
 
       <select v-model="holderID" aria-label="角色或宠物">

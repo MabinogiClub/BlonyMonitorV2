@@ -83,13 +83,15 @@ func slicesContains(values []string, target string) bool {
 }
 
 const (
-	inventoryContainerBackpack = "backpack"
-	inventoryContainerGacha    = "gacha"
-	inventoryContainerBank     = "bank"
-	inventoryContainerDressing = "dressing"
-	inventoryContainerCash     = "cash"
-	inventoryContainerCurrency = "currency"
-	inventoryCurrencyPocket    = 65
+	inventoryContainerBackpack  = "backpack"
+	inventoryContainerGacha     = "gacha"
+	inventoryContainerBank      = "bank"
+	inventoryContainerDressing  = "dressing"
+	inventoryContainerCash      = "cash"
+	inventoryContainerCurrency  = "currency"
+	inventoryContainerMoonlight = "moonlight"
+	inventoryContainerFarm      = "farm"
+	inventoryCurrencyPocket     = 65
 )
 
 func inventoryCapturedAt(pkt *packet.GamePacket) int64 {
@@ -218,21 +220,19 @@ func (a *App) handleInventoryCharacterPacket(pkt *packet.GamePacket, character *
 	} else if isBlockedTemporaryPet(character.Id, character.Name, character.RaceId) {
 		return
 	}
-	backpack := make([]packet.InventoryItemRecord, 0)
-	gacha := make([]packet.InventoryItemRecord, 0)
-	currency := make([]packet.InventoryItemRecord, 0)
+	containers := map[string][]packet.InventoryItemRecord{
+		inventoryContainerBackpack:  {},
+		inventoryContainerGacha:     {},
+		inventoryContainerCurrency:  {},
+		inventoryContainerMoonlight: {},
+		inventoryContainerFarm:      {},
+	}
 	for _, record := range packet.ParseInventoryItemRecords(pkt.Msg) {
 		if record.Item == nil {
 			continue
 		}
-		switch record.Item.PocketType {
-		case 61:
-			gacha = append(gacha, record)
-		case inventoryCurrencyPocket:
-			currency = append(currency, record)
-		default:
-			backpack = append(backpack, record)
-		}
+		container := inventoryContainerForPocket(record.Item.PocketType)
+		containers[container] = append(containers[container], record)
 	}
 	base := inventory.Snapshot{
 		HolderID:   strconv.FormatUint(character.Id, 10),
@@ -246,16 +246,14 @@ func (a *App) handleInventoryCharacterPacket(pkt *packet.GamePacket, character *
 			a.setSelfInfo(base.HolderID, character.Name)
 		}
 	}
-	backpackSnapshot := base
-	backpackSnapshot.Container = inventoryContainerBackpack
-	backpackSnapshot.Items = inventoryItems(backpack)
-	gachaSnapshot := base
-	gachaSnapshot.Container = inventoryContainerGacha
-	gachaSnapshot.Items = inventoryItems(gacha)
-	currencySnapshot := base
-	currencySnapshot.Container = inventoryContainerCurrency
-	currencySnapshot.Items = inventoryItems(currency)
-	a.replaceInventorySnapshots(backpackSnapshot, gachaSnapshot, currencySnapshot)
+	snapshots := make([]inventory.Snapshot, 0, len(containers))
+	for _, container := range []string{inventoryContainerBackpack, inventoryContainerGacha, inventoryContainerCurrency, inventoryContainerMoonlight, inventoryContainerFarm} {
+		snapshot := base
+		snapshot.Container = container
+		snapshot.Items = inventoryItems(containers[container])
+		snapshots = append(snapshots, snapshot)
+	}
+	a.replaceInventorySnapshots(snapshots...)
 }
 
 func stringMessageValue(msg packet.Message, index int) string {
@@ -415,6 +413,10 @@ func (a *App) GetInventoryState() inventory.State {
 		row.EnchantName = inventoryEnchantNameWithBase(row.ItemID, row.Name, base)
 		if state.Rows[index].Container == inventoryContainerBackpack && state.Rows[index].PocketType == inventoryCurrencyPocket {
 			row.Container = inventoryContainerCurrency
+		} else if row.Container == inventoryContainerBackpack && row.PocketType == 88 {
+			row.Container = inventoryContainerMoonlight
+		} else if row.Container == inventoryContainerBackpack && row.PocketType == farmStoragePocketType {
+			row.Container = inventoryContainerFarm
 		}
 	}
 	return state

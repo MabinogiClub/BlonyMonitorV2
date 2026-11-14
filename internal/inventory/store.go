@@ -242,11 +242,12 @@ scanned_by_id=excluded.scanned_by_id, scanned_by_name=excluded.scanned_by_name, 
 // ItemChange updates an instance established by a complete inventory snapshot.
 // Changes are settled in one transaction without rewriting the other items.
 type ItemChange struct {
-	HolderID  string
-	Container string
-	Item      Item
-	Removed   bool
-	UpdatedAt int64
+	HolderID         string
+	PreviousHolderID string
+	Container        string
+	Item             Item
+	Removed          bool
+	UpdatedAt        int64
 }
 
 func (s *Store) ApplyItemChanges(changes []ItemChange) error {
@@ -260,17 +261,12 @@ func (s *Store) ApplyItemChanges(changes []ItemChange) error {
 	defer tx.Rollback()
 	for _, change := range changes {
 		instanceID := fmt.Sprint(change.Item.InstanceID)
-		var oldSnapshot int64
-		err := tx.QueryRow(`SELECT i.snapshot_id FROM items i JOIN snapshots sn ON sn.id=i.snapshot_id
-WHERE i.instance_id=? AND sn.holder_id=? AND sn.sub_location='' AND sn.container IN ('backpack','gacha','currency') LIMIT 1`, instanceID, change.HolderID).Scan(&oldSnapshot)
-		if err == sql.ErrNoRows {
-			continue
-		}
-		if err != nil {
-			return err
-		}
 		if change.Removed {
-			if _, err := tx.Exec(`DELETE FROM items WHERE snapshot_id=? AND instance_id=?`, oldSnapshot, instanceID); err != nil {
+			if _, err := tx.Exec(`DELETE FROM items WHERE instance_id=? AND snapshot_id IN (
+SELECT id FROM snapshots WHERE holder_id=? AND sub_location='' AND container IN ('backpack','gacha','currency','moonlight','farm'))`, instanceID, change.HolderID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`UPDATE snapshots SET updated_at=MAX(updated_at,?) WHERE holder_id=? AND sub_location=''`, change.UpdatedAt, change.HolderID); err != nil {
 				return err
 			}
 		} else {
@@ -278,16 +274,18 @@ WHERE i.instance_id=? AND sn.holder_id=? AND sn.sub_location='' AND sn.container
 			if err := tx.QueryRow(`SELECT id FROM snapshots WHERE holder_id=? AND container=? AND sub_location=''`, change.HolderID, change.Container).Scan(&targetSnapshot); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(`UPDATE items SET snapshot_id=?, item_id=?, name=?, amount=?, pocket_type=? WHERE snapshot_id=? AND instance_id=?`,
-				targetSnapshot, change.Item.ItemID, change.Item.Name, change.Item.Amount, change.Item.PocketType, oldSnapshot, instanceID); err != nil {
+			if _, err := tx.Exec(`DELETE FROM items WHERE instance_id=? AND snapshot_id IN (
+SELECT id FROM snapshots WHERE holder_id IN (?,?) AND sub_location='' AND container IN ('backpack','gacha','currency','moonlight','farm'))`,
+				instanceID, change.HolderID, change.PreviousHolderID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`INSERT INTO items(snapshot_id, instance_id, item_id, name, amount, pocket_type) VALUES(?,?,?,?,?,?)`,
+				targetSnapshot, instanceID, change.Item.ItemID, change.Item.Name, change.Item.Amount, change.Item.PocketType); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(`UPDATE snapshots SET updated_at=MAX(updated_at,?) WHERE id=?`, change.UpdatedAt, targetSnapshot); err != nil {
 				return err
 			}
-		}
-		if _, err := tx.Exec(`UPDATE snapshots SET updated_at=MAX(updated_at,?) WHERE id=?`, change.UpdatedAt, oldSnapshot); err != nil {
-			return err
 		}
 	}
 	return tx.Commit()
@@ -299,7 +297,7 @@ func (s *Store) CharacterBackpackCounts(holderID string) (map[uint32]int, error)
 	counts := make(map[uint32]int)
 	rows, err := s.db.Query(`SELECT i.item_id, SUM(i.amount)
 FROM items i JOIN snapshots sn ON sn.id=i.snapshot_id JOIN holders h ON h.holder_id=sn.holder_id
-WHERE sn.holder_id=? AND h.holder_type='character' AND sn.container='backpack' AND sn.sub_location='' AND i.pocket_type<>65
+WHERE sn.holder_id=? AND h.holder_type='character' AND sn.container='backpack' AND sn.sub_location='' AND i.pocket_type NOT IN (65,88,307)
 GROUP BY i.item_id`, holderID)
 	if err != nil {
 		return counts, err
