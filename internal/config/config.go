@@ -17,7 +17,7 @@ var AnnouncementEndpoint = ""
 var UploadEnabled = true
 
 // UploadDungeonKeyword 仅上传文件名/副本名包含任一关键字的战斗记录（逗号分隔）。
-var UploadDungeonKeyword = "布里列赫"
+var UploadDungeonKeyword = "布里列赫,深渊之科隆巴斯"
 
 // MinUploadTargetMaxHP 上传时仅保留 Boss 最大血量不低于该值的目标（单位：点）。
 const MinUploadTargetMaxHP = 200_000_000

@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -107,12 +108,52 @@ func TestFilterSaveDataForUpload(t *testing.T) {
 		},
 	}
 
-	filtered := filterSaveDataForUpload(data)
+	filtered := filterSaveDataForUpload(data, "布里列赫")
 	if len(filtered.Targets) != 2 {
 		t.Fatalf("expected 2 targets, got %d", len(filtered.Targets))
 	}
 	if filtered.Targets[0].TargetID != "2" || filtered.Targets[1].TargetID != "3" {
 		t.Fatalf("unexpected target ids: %s, %s", filtered.Targets[0].TargetID, filtered.Targets[1].TargetID)
+	}
+}
+
+func TestFilterAbyssCromBasUpload(t *testing.T) {
+	complete := func() targetExport {
+		return targetExport{
+			TargetID: "complete", TargetName: "佩隆 #0411", TotalDamage: 1_800_000_000,
+			DeathTime: 179406761702,
+			BossHP: &BossHPExport{RaceID: 193810, MaxHP: 1_800_000_000,
+				History: []BossHPRecord{{CurrentHP: 1_800_000_128}, {CurrentHP: 0}}},
+		}
+	}
+	tests := []struct {
+		name   string
+		change func(*targetExport)
+		want   bool
+	}{
+		{"complete", func(*targetExport) {}, true},
+		{"trimmed HP history", func(t *targetExport) { t.BossHP.History = t.BossHP.History[1:] }, true},
+		{"wipe near kill", func(t *targetExport) { t.DeathTime = 0; t.TotalDamage = 1_795_000_000 }, false},
+		{"partial recording of kill", func(t *targetExport) { t.TotalDamage = 1_600_000_000 }, false},
+		{"HP not zero", func(t *targetExport) { t.BossHP.History[1].CurrentHP = 1 }, false},
+		{"missing HP history", func(t *targetExport) { t.BossHP.History = nil }, false},
+		{"phantom", func(t *targetExport) { t.TargetName = "佩隆的幻影 #0411" }, false},
+		{"different race", func(t *targetExport) { t.BossHP.RaceID = 193813 }, false},
+		{"normal dungeon boss", func(t *targetExport) { t.BossHP.MaxHP = 300_000_000; t.TotalDamage = 300_000_000 }, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			target := complete()
+			tc.change(&target)
+			got := filterSaveDataForUpload(SaveFileData{Targets: []targetExport{target}}, "深渊之科隆巴斯")
+			if (len(got.Targets) == 1) != tc.want {
+				t.Fatalf("eligible = %v, want %v", len(got.Targets) == 1, tc.want)
+			}
+		})
+	}
+	data := SaveFileData{Targets: []targetExport{complete(), {TargetName: "终极格拉斯贝恩", BossHP: &BossHPExport{MaxHP: 300_000_000}}}}
+	if got := filterSaveDataForUpload(data, "深渊之科隆巴斯"); len(got.Targets) != 1 || got.Targets[0].TargetID != "complete" {
+		t.Fatalf("mixed dungeon upload = %+v", got.Targets)
 	}
 }
 
@@ -129,12 +170,18 @@ func TestShouldUploadBattle(t *testing.T) {
 	}()
 
 	config.UploadEndpoint = "http://example.com/upload"
-	config.UploadDungeonKeyword = "布里列赫"
+	config.UploadDungeonKeyword = "布里列赫,深渊之科隆巴斯"
 	config.UploadSecret = "test-secret"
 	config.UploadEnabled = true
 
 	if !shouldUploadBattle("布里列赫") {
 		t.Fatal("expected upload for matching dungeon")
+	}
+	if !shouldUploadBattle("2026-11-08_00-07-46_深渊之科隆巴斯") {
+		t.Fatal("expected upload for abyss crom bas")
+	}
+	if shouldUploadBattle("科隆巴斯") {
+		t.Fatal("normal crom bas must not trigger upload")
 	}
 	if shouldUploadBattle("其他副本") {
 		t.Fatal("expected skip for non-matching dungeon")
@@ -255,6 +302,46 @@ func TestMaskUploadText(t *testing.T) {
 	}
 	if strings.Contains(got, endpoint) {
 		t.Fatalf("raw endpoint should not appear, got %q", got)
+	}
+}
+
+func TestUploadDiagnosticsRedactPrivateConfig(t *testing.T) {
+	origEndpoint, origSecret := config.UploadEndpoint, config.UploadSecret
+	origDebug := getUploadDebugInfo()
+	t.Cleanup(func() {
+		config.UploadEndpoint, config.UploadSecret = origEndpoint, origSecret
+		setUploadDebug(origDebug)
+	})
+	// Use a loopback address and a synthetic key; never copy private config into fixtures.
+	config.UploadEndpoint = "https://127.0.0.1:34567/upload"
+	rawKey := []byte("synthetic-signing-key-for-redaction")
+	config.UploadSecret = base64.StdEncoding.EncodeToString(rawKey)
+	message := "lookup 127.0.0.1: no such host; " + config.UploadEndpoint +
+		"; key=" + config.UploadSecret + "; decoded=" + string(rawKey)
+	assertRedacted := func(value string) {
+		t.Helper()
+		for _, private := range []string{config.UploadEndpoint, "127.0.0.1", config.UploadSecret, string(rawKey)} {
+			if strings.Contains(value, private) {
+				t.Fatal("upload diagnostics contain private configuration")
+			}
+		}
+		if !strings.Contains(value, "[server]") || !strings.Contains(value, "[secret]") {
+			t.Fatal("upload diagnostics lack redaction markers")
+		}
+	}
+	assertRedacted(sanitizeUploadError(errors.New(message), config.UploadEndpoint).Error())
+	recordUploadSuccess("深渊之科隆巴斯", "test.json.gz", 200, message)
+	assertRedacted(getUploadDebugInfo().Response)
+	recordUploadError("深渊之科隆巴斯", "test.json.gz", 500, message, errors.New(message))
+	info := getUploadDebugInfo()
+	assertRedacted(info.Response)
+	assertRedacted(info.Message)
+	settings, err := json.Marshal((&App{}).GetUploadSettings())
+	if err != nil {
+		t.Fatal("marshal upload settings failed")
+	}
+	if strings.Contains(string(settings), config.UploadEndpoint) || strings.Contains(string(settings), config.UploadSecret) {
+		t.Fatal("upload settings expose private configuration")
 	}
 }
 

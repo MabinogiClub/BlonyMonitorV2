@@ -2,14 +2,17 @@ package app
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -97,11 +100,36 @@ func saveNameMatchesUploadKeyword(saveName, keyword string) bool {
 	return false
 }
 
-func filterSaveDataForUpload(data SaveFileData) SaveFileData {
+// 本地深渊存档：佩隆本体 raceId=193810、maxHp=18 亿；幻影为 5000 万。
+// 要求完整血量伤害、归零记录和死亡事件，避免把接近击杀的团灭或中途记录计入。
+func isCompletePeronKill(target targetExport) bool {
+	const maxHP = 1_800_000_000
+	const tolerance = 10_000_000
+	name := strings.TrimSpace(strings.SplitN(target.TargetName, " #", 2)[0])
+	hp := target.BossHP
+	if name != "佩隆" || hp == nil || (hp.RaceID != 0 && hp.RaceID != 193810) {
+		return false
+	}
+	if math.IsNaN(hp.MaxHP) || math.Abs(hp.MaxHP-maxHP) > tolerance ||
+		math.IsNaN(target.TotalDamage) || math.Abs(target.TotalDamage-maxHP) > tolerance || target.DeathTime <= 0 {
+		return false
+	}
+	if len(hp.History) == 0 {
+		return false
+	}
+	// HP 历史有长度上限，长战斗的满血起点可能已被裁掉，完整性以累计伤害判断。
+	return hp.History[len(hp.History)-1].CurrentHP == 0
+}
+
+func filterSaveDataForUpload(data SaveFileData, saveName string) SaveFileData {
 	minHP := config.MinUploadTargetMaxHP
+	peronOnly := strings.Contains(saveName, "深渊之科隆巴斯")
 	filtered := make([]targetExport, 0, len(data.Targets))
 	for _, target := range data.Targets {
 		if target.BossHP == nil || target.BossHP.MaxHP < float64(minHP) {
+			continue
+		}
+		if peronOnly && !isCompletePeronKill(target) {
 			continue
 		}
 		filtered = append(filtered, target)
@@ -215,10 +243,14 @@ func (a *App) prepareBattleUploadUnsafe(saveName, filePath string) *battleUpload
 func (a *App) runBattleUpload(plan battleUploadPlan, saveData SaveFileData, filePath string) {
 	fileName := filepath.Base(filePath)
 
-	uploadData := filterSaveDataForUpload(saveData)
+	uploadData := filterSaveDataForUpload(saveData, plan.saveName)
 	if len(uploadData.Targets) == 0 {
-		uploadLog.Printf("跳过上传：无符合血量条件的目标 (dungeon=%s file=%s)\n", plan.saveName, fileName)
-		recordUploadSkipped(plan.saveName, fileName, "无符合血量条件的目标")
+		reason := "无符合血量条件的目标"
+		if strings.Contains(plan.saveName, "深渊之科隆巴斯") {
+			reason = "无完整的佩隆击杀样本"
+		}
+		uploadLog.Printf("跳过上传：%s (dungeon=%s file=%s)\n", reason, plan.saveName, fileName)
+		recordUploadSkipped(plan.saveName, fileName, reason)
 		return
 	}
 
@@ -372,9 +404,34 @@ func maskUploadText(text, endpoint string) string {
 	if text == "" {
 		return text
 	}
-	maskedEndpoint := maskUploadEndpoint(endpoint)
-	if endpoint != "" {
-		text = strings.ReplaceAll(text, endpoint, maskedEndpoint)
+	for _, address := range []string{endpoint, config.UploadEndpoint, config.RankingConsentEndpoint, config.AnnouncementEndpoint} {
+		address = strings.TrimSpace(address)
+		if address == "" {
+			continue
+		}
+		text = strings.ReplaceAll(text, address, "[server]")
+		if parsed, err := url.Parse(address); err == nil && parsed.Hostname() != "" {
+			// DNS/TLS errors and redirects may contain only the hostname or a different path.
+			host := parsed.Hostname()
+			for start := 0; start < len(text); {
+				index := strings.Index(strings.ToLower(text[start:]), strings.ToLower(host))
+				if index < 0 {
+					break
+				}
+				index += start
+				text = text[:index] + "[server]" + text[index+len(host):]
+				start = index + len("[server]")
+			}
+		}
+	}
+	if secret := strings.TrimSpace(config.UploadSecret); secret != "" {
+		text = strings.ReplaceAll(text, secret, "[secret]")
+		text = strings.ReplaceAll(text, url.QueryEscape(secret), "[secret]")
+		text = strings.ReplaceAll(text, url.PathEscape(secret), "[secret]")
+		if key := uploadSecretKey(secret); len(key) > 0 {
+			text = strings.ReplaceAll(text, string(key), "[secret]")
+			text = strings.ReplaceAll(text, hex.EncodeToString(key), "[secret]")
+		}
 	}
 	return text
 }
@@ -453,7 +510,7 @@ func UploadSaveFile(filePath, playerID, playerName string) error {
 		return fmt.Errorf("player id not found in save file")
 	}
 
-	uploadData := filterSaveDataForUpload(saveData)
+	uploadData := filterSaveDataForUpload(saveData, saveName)
 	if len(uploadData.Targets) == 0 {
 		return fmt.Errorf("no upload-eligible targets in %q", saveName)
 	}
